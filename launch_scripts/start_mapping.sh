@@ -96,7 +96,7 @@ ros2 launch robot_bringup system.launch.py \
     use_rviz:=true \
     camera_use_uvc:=true \
     camera_enable_ir:=false \
-    camera_color_info_url:=file:///home/robot/.ros/camera_info/rgb_Astra_Orbbec.yaml \
+    camera_color_info_url:=file:///home/robot/ros2_ws/src/robot_bringup/config/camera_info/rgb_Astra_Orbbec.yaml \
     slam_params_file:=/home/robot/ros2_ws/src/robot_bringup/config/slam_toolbox_mapping_fast.yaml
 
 echo ""
