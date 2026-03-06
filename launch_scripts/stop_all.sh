@@ -38,6 +38,12 @@ done
 sleep 1
 pkill -f "ros2 run" 2>/dev/null
 pkill -f "ros2 launch" 2>/dev/null
+pkill -f "astra_camera_node" 2>/dev/null
+pkill -f "depthimage_to_laserscan_node" 2>/dev/null
+pkill -f "rgbd_odometry" 2>/dev/null
+pkill -f "slam_toolbox" 2>/dev/null
+pkill -f "rviz2" 2>/dev/null
+pkill -f "rtabmap" 2>/dev/null
 
 echo -e "${GREEN}✓ 所有节点已停止${NC}"
 echo ""

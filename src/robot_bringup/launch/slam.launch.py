@@ -26,5 +26,8 @@ def generate_launch_description():
                 {'scan_topic': LaunchConfiguration('scan_topic')},
                 {'use_sim_time': LaunchConfiguration('use_sim_time')},
             ],
+            remappings=[
+                ('/scan', LaunchConfiguration('scan_topic')),
+            ],
         ),
     ])

@@ -40,7 +40,7 @@ else
     exit 1
 fi
 
-# 启动雷达
+# 启动雷达（仅传感器数据，不包含 SLAM 建图）
 echo ""
 echo -e "${GREEN}正在启动传感器层（雷达）...${NC}"
 echo -e "${YELLOW}配置文件: X2.yaml${NC}"
@@ -48,12 +48,12 @@ echo -e "${YELLOW}波特率: 115200${NC}"
 echo -e "${YELLOW}测距范围: 0.1-12.0m${NC}"
 echo ""
 echo -e "${YELLOW}按 Ctrl+C 停止雷达${NC}"
+echo -e "${YELLOW}提示: 该脚本不会发布 /map；雷达建图请运行 ./start_mapping.sh lidar${NC}"
 echo ""
 
 ros2 launch robot_bringup sensors.launch.py \
     use_lidar:=true \
-    use_camera:=false \
-    use_rviz:=true
+    use_camera:=false
 
 echo ""
 echo -e "${GREEN}雷达已停止${NC}"

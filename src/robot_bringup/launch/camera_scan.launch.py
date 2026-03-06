@@ -17,10 +17,13 @@ def generate_launch_description():
             name='depthimage_to_laserscan',
             output='screen',
             parameters=[{
-                'output_frame': 'base_link',
+                # Keep scan frame consistent with depth image frame semantics.
+                'output_frame': 'camera_depth_optical_frame',
                 'scan_time': 0.1,
-                'range_min': 0.10,
-                'range_max': 6.0,
+                # Use a small depth band instead of a single row to increase valid scan points.
+                'scan_height': 12,
+                'range_min': 0.20,
+                'range_max': 8.0,
             }],
             remappings=[
                 ('depth', LaunchConfiguration('depth_topic')),

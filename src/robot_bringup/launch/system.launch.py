@@ -45,6 +45,11 @@ def _validate_and_compose(context):
         launch_arguments={
             'use_lidar': 'true' if lidar_enabled else 'false',
             'use_camera': 'true' if camera_enabled else 'false',
+            'camera_enable_color': LaunchConfiguration('camera_enable_color'),
+            'camera_enable_ir': LaunchConfiguration('camera_enable_ir'),
+            'camera_use_uvc': LaunchConfiguration('camera_use_uvc'),
+            'camera_color_info_url': LaunchConfiguration('camera_color_info_url'),
+            'camera_ir_info_url': LaunchConfiguration('camera_ir_info_url'),
         }.items(),
     )
 
@@ -91,6 +96,21 @@ def _validate_and_compose(context):
                 }.items(),
             )
         )
+        if no_base and visual_odom_enabled:
+            if not _package_exists('rtabmap_odom'):
+                raise RuntimeError("Missing package: rtabmap_odom. Install 'ros-foxy-rtabmap-ros'.")
+            actions.append(
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'visual_odom.launch.py')),
+                    launch_arguments={
+                        'rgb_topic': LaunchConfiguration('visual_odom_rgb_topic'),
+                        'depth_topic': LaunchConfiguration('visual_odom_depth_topic'),
+                        'camera_info_topic': LaunchConfiguration('visual_odom_camera_info_topic'),
+                        'base_frame': LaunchConfiguration('visual_odom_base_frame'),
+                        'odom_frame': LaunchConfiguration('visual_odom_odom_frame'),
+                    }.items(),
+                )
+            )
     elif mode == 'mapping' and no_base and camera_enabled and visual_odom_enabled:
         if not _package_exists('rtabmap_odom'):
             raise RuntimeError("Missing package: rtabmap_odom. Install 'ros-foxy-rtabmap-ros'.")
@@ -109,14 +129,15 @@ def _validate_and_compose(context):
 
     # In no-base mapping, always keep a valid odom->base_link chain.
     if mode == 'mapping' and no_base and fallback_static_odom and (
-        mapping_source == 'camera' or (mapping_source == 'lidar' and not (camera_enabled and visual_odom_enabled))
+        (mapping_source == 'camera' and not visual_odom_enabled)
+        or (mapping_source == 'lidar' and not (camera_enabled and visual_odom_enabled))
     ):
         actions.append(
             Node(
                 package='tf2_ros',
                 executable='static_transform_publisher',
                 name='odom_fallback_static_tf',
-                arguments=['0', '0', '0', '0', '0', '0', '1', 'odom', 'base_link'],
+                arguments=['0', '0', '0', '0', '0', '0', 'odom', 'base_link'],
                 output='screen',
             )
         )
@@ -186,9 +207,14 @@ def generate_launch_description():
         DeclareLaunchArgument('use_lidar', default_value='true'),
         DeclareLaunchArgument('use_camera', default_value='false'),
         DeclareLaunchArgument('use_base', default_value='true'),
-        DeclareLaunchArgument('use_visual_odom', default_value='true'),
+        DeclareLaunchArgument('use_visual_odom', default_value='false'),
         DeclareLaunchArgument('fallback_static_odom', default_value='true'),
         DeclareLaunchArgument('use_rviz', default_value='true'),
+        DeclareLaunchArgument('camera_enable_color', default_value='true'),
+        DeclareLaunchArgument('camera_enable_ir', default_value='false'),
+        DeclareLaunchArgument('camera_use_uvc', default_value='true'),
+        DeclareLaunchArgument('camera_color_info_url', default_value=''),
+        DeclareLaunchArgument('camera_ir_info_url', default_value=''),
 
         DeclareLaunchArgument('lidar_params_file', default_value=os.path.join(ydlidar_share, 'params', 'X2.yaml')),
         DeclareLaunchArgument('slam_params_file', default_value=os.path.join(rb_share, 'config', 'slam_toolbox_mapping.yaml')),

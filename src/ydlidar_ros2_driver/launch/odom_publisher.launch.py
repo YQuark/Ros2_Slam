@@ -16,7 +16,7 @@ def generate_launch_description():
         package='tf2_ros',
         executable='static_transform_publisher',
         name='odom_publisher',
-        arguments=['0', '0', '0', '0', '0', '0', '1', 'odom', 'base_link'],
+        arguments=['0', '0', '0', '0', '0', '0', 'odom', 'base_link'],
         parameters=[{'use_sim_time': use_sim_time}],
         output='screen'
     )

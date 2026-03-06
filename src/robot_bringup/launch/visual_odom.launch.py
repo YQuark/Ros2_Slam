@@ -8,9 +8,9 @@ from launch_ros.actions import Node
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('rgb_topic', default_value='/camera/ir/image_raw'),
+        DeclareLaunchArgument('rgb_topic', default_value='/camera/color/image_raw'),
         DeclareLaunchArgument('depth_topic', default_value='/camera/depth/image_raw'),
-        DeclareLaunchArgument('camera_info_topic', default_value='/camera/ir/camera_info'),
+        DeclareLaunchArgument('camera_info_topic', default_value='/camera/color/camera_info'),
         DeclareLaunchArgument('base_frame', default_value='base_link'),
         DeclareLaunchArgument('odom_frame', default_value='odom'),
         Node(
@@ -21,14 +21,18 @@ def generate_launch_description():
             parameters=[{
                 'frame_id': LaunchConfiguration('base_frame'),
                 'odom_frame_id': LaunchConfiguration('odom_frame'),
-                'publish_tf': False,
+                'publish_tf': True,
                 'approx_sync': True,
-                'approx_sync_max_interval': 0.02,
-                'queue_size': 30,
-                'qos': 2,
-                'qos_camera_info': 2,
+                # Astra color/depth timestamps can drift by >50 ms, widen sync window.
+                'approx_sync_max_interval': 0.10,
+                'queue_size': 60,
+                # Prefer reliable transport for local camera topics to reduce frame drops.
+                'qos': 1,
+                'qos_camera_info': 1,
                 'publish_null_when_lost': True,
+                'Odom/GuessMotion': 'true',
                 'Odom/MinInliers': '8',
+                'Vis/MinInliers': '6',
                 'wait_for_transform': 1.0,
             }],
             remappings=[

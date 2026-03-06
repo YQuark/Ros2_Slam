@@ -25,34 +25,77 @@ source $ROS_WS/install/setup.bash
 # 获取地图名称
 MAP_NAME=${1:-robot_map_$(date +%Y%m%d_%H%M%S)}
 MAP_DIR="$HOME/ros2_maps"
+MAP_BASENAME="$MAP_DIR/$MAP_NAME"
 
 # 创建地图保存目录
 mkdir -p "$MAP_DIR"
 
 echo -e "${YELLOW}地图信息:${NC}"
 echo "  名称: $MAP_NAME"
-echo "  保存路径: $MAP_DIR/$MAP_NAME"
+echo "  保存路径: $MAP_BASENAME"
 echo ""
 
-# 检查SLAM服务是否运行
-if ros2 service list | grep -q "/slam_toolbox/save_map"; then
-    echo -e "${GREEN}正在保存地图...${NC}"
-    ros2 service call /slam_toolbox/save_map slam_toolbox/srv/SaveMap "{name: {data: '$MAP_DIR/$MAP_NAME'}}"
-
-    if [ $? -eq 0 ]; then
-        echo ""
-        echo -e "${GREEN}✓ 地图保存成功！${NC}"
-        echo ""
-        echo -e "${YELLOW}地图文件:${NC}"
-        ls -lh "$MAP_DIR/${MAP_NAME}".* 2>/dev/null || echo "  未找到生成的地图文件"
-        echo ""
-        echo -e "${YELLOW}加载地图进行导航:${NC}"
-        echo "  ros2 launch robot_bringup system.launch.py mode:=navigation use_camera:=true use_base:=true map_file:=$MAP_DIR/$MAP_NAME.yaml"
-    else
-        echo -e "${RED}✗ 地图保存失败${NC}"
-    fi
-else
-    echo -e "${RED}✗ SLAM服务未运行${NC}"
+# 检查 /map 是否存在
+if ! ros2 topic list | grep -q '^/map$'; then
+    echo -e "${RED}✗ 未检测到 /map 话题${NC}"
     echo -e "${YELLOW}请先运行建图系统:${NC}"
-    echo "  $SCRIPT_DIR/start_mapping.sh"
+    echo "  $SCRIPT_DIR/start_mapping.sh camera"
+    echo "  或"
+    echo "  $SCRIPT_DIR/start_mapping.sh lidar"
+    exit 1
+fi
+
+# 在保存前确认 /map 确实有消息可读，避免 map_saver 直接超时
+echo -e "${YELLOW}检查 /map 是否有可用数据(最长等待15秒)...${NC}"
+if ! timeout 15s bash -c "ros2 topic echo /map --qos-durability transient_local --qos-reliability reliable | head -n 5 >/tmp/map_probe.txt"; then
+    echo -e "${RED}✗ /map 在15秒内没有可读消息${NC}"
+    echo -e "${YELLOW}请保持建图进程运行，并推动机器人移动后重试。${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}正在保存地图(/map -> yaml/pgm)...${NC}"
+SAVE_RC=1
+for TRY in 1 2 3; do
+    echo "  尝试 $TRY/3 ..."
+    ros2 run nav2_map_server map_saver_cli \
+        -t /map \
+        -f "$MAP_BASENAME" \
+        --ros-args \
+        -p save_map_timeout:=15000 \
+        -p map_subscribe_transient_local:=true
+    SAVE_RC=$?
+    if [ $SAVE_RC -eq 0 ]; then
+        break
+    fi
+    sleep 1
+done
+
+if [ $SAVE_RC -ne 0 ]; then
+    echo -e "${RED}✗ map_saver_cli 执行失败 (exit code: $SAVE_RC)${NC}"
+    echo -e "${YELLOW}请确认建图进程仍在运行，且机器人已移动一小段距离让SLAM先生成地图。${NC}"
+    exit 1
+fi
+
+# map_saver_cli 返回后短暂等待文件刷新
+for _ in 1 2 3 4 5; do
+    if [ -f "${MAP_BASENAME}.yaml" ] && [ -f "${MAP_BASENAME}.pgm" ]; then
+        break
+    fi
+    sleep 0.3
+done
+
+if [ -f "${MAP_BASENAME}.yaml" ] && [ -f "${MAP_BASENAME}.pgm" ]; then
+    echo ""
+    echo -e "${GREEN}✓ 地图保存成功！${NC}"
+    echo ""
+    echo -e "${YELLOW}地图文件:${NC}"
+    ls -lh "${MAP_BASENAME}.yaml" "${MAP_BASENAME}.pgm"
+    echo ""
+    echo -e "${YELLOW}加载地图进行导航:${NC}"
+    echo "  ros2 launch robot_bringup system.launch.py mode:=navigation use_camera:=true use_base:=true map_file:=${MAP_BASENAME}.yaml"
+else
+    echo ""
+    echo -e "${RED}✗ 未找到生成的地图文件(.yaml/.pgm)${NC}"
+    echo -e "${YELLOW}请确认 /map 有数据后重试。${NC}"
+    exit 1
 fi

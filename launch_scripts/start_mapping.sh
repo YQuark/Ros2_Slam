@@ -30,8 +30,18 @@ fi
 echo -e "${YELLOW}系统组件:${NC}"
 if [ "$MAPPING_SOURCE" = "camera" ]; then
     echo "  • Astra Pro 深度相机 -> depthimage_to_laserscan"
+    USE_CAMERA=true
+    # Prefer visual odom for camera-only mapping when available.
+    if ros2 pkg list 2>/dev/null | grep -qx "rtabmap_odom"; then
+        USE_VISUAL_ODOM=true
+    else
+        USE_VISUAL_ODOM=false
+        echo -e "${YELLOW}提示: 未检测到 rtabmap_odom，回退到无视觉里程计模式${NC}"
+    fi
 else
     echo "  • YDLIDAR X2 激光雷达"
+    USE_CAMERA=false
+    USE_VISUAL_ODOM=false
 fi
 echo "  • SLAM Toolbox 建图引擎"
 echo "  • RViz2 可视化界面"
@@ -80,9 +90,14 @@ echo ""
 ros2 launch robot_bringup system.launch.py \
     mode:=mapping \
     mapping_source:=${MAPPING_SOURCE} \
-    use_camera:=true \
+    use_camera:=${USE_CAMERA} \
     use_base:=false \
-    use_rviz:=true
+    use_visual_odom:=${USE_VISUAL_ODOM} \
+    use_rviz:=true \
+    camera_use_uvc:=true \
+    camera_enable_ir:=false \
+    camera_color_info_url:=file:///home/robot/.ros/camera_info/rgb_Astra_Orbbec.yaml \
+    slam_params_file:=/home/robot/ros2_ws/src/robot_bringup/config/slam_toolbox_mapping_fast.yaml
 
 echo ""
 echo -e "${GREEN}SLAM建图系统已停止${NC}"
