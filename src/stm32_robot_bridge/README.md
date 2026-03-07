@@ -9,6 +9,18 @@ ROS2 bridge for `YQuark/STM32_Robot` serial protocol.
 - Poll `CMD_GET_STATUS (0x02)` for heartbeat and diagnostics
 - Publish `odom` and `odom -> base_link` TF
 
+## Upper-layer interface contract (must keep stable)
+- Input: `/cmd_vel` (`geometry_msgs/Twist`)
+- Output: `/odom` (`nav_msgs/Odometry`) at >= 20 Hz (recommended)
+- TF: `odom -> base_link` continuous and timestamp-aligned with odom
+- Static TF expected by upper stack: `base_link -> laser_frame`
+
+### Pre-integration acceptance checklist
+- `/cmd_vel` timeout fallback to zero velocity works
+- `/odom` header/frame IDs remain fixed (`odom` / `base_link`)
+- `odom` timestamp monotonic, no large backward jumps
+- Speed limits consistent with launch params (`max_linear`, `max_angular`)
+
 ## Launch
 ```bash
 source /opt/ros/foxy/setup.bash

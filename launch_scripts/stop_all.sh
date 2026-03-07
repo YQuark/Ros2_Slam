@@ -38,6 +38,13 @@ done
 sleep 1
 pkill -f "ros2 run" 2>/dev/null
 pkill -f "ros2 launch" 2>/dev/null
+pkill -f "ydlidar_ros2_driver_node" 2>/dev/null
+pkill -f "odom_simulator" 2>/dev/null
+pkill -f "fake_base_odom.py" 2>/dev/null
+pkill -f "fake_base_odom" 2>/dev/null
+pkill -f "async_slam_toolbox_node" 2>/dev/null
+pkill -f "map_to_pointcloud_viz.py" 2>/dev/null
+pkill -f "static_transform_publisher" 2>/dev/null
 pkill -f "astra_camera_node" 2>/dev/null
 pkill -f "depthimage_to_laserscan_node" 2>/dev/null
 pkill -f "rgbd_odometry" 2>/dev/null

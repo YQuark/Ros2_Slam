@@ -25,15 +25,28 @@ def _validate_and_compose(context):
     use_rviz = LaunchConfiguration('use_rviz')
     use_lidar = LaunchConfiguration('use_lidar')
     use_camera = LaunchConfiguration('use_camera')
-    use_base = LaunchConfiguration('use_base')
+    use_base_legacy = LaunchConfiguration('use_base').perform(context).lower() == 'true'
+    base_mode = LaunchConfiguration('base_mode').perform(context).strip().lower()
     use_visual_odom = LaunchConfiguration('use_visual_odom')
     fallback_static_odom = LaunchConfiguration('fallback_static_odom').perform(context).lower() == 'true'
     map_file = LaunchConfiguration('map_file').perform(context)
+    rviz_enabled = use_rviz.perform(context).lower() == 'true'
 
     if mode not in ('mapping', 'navigation'):
         raise RuntimeError("Invalid 'mode'. Use 'mapping' or 'navigation'.")
 
     this_share = get_package_share_directory('robot_bringup')
+
+    if base_mode not in ('real', 'fake', 'none'):
+        raise RuntimeError("Invalid 'base_mode'. Use 'real', 'fake' or 'none'.")
+
+    # Backward compatibility: legacy use_base:=false disables real base by default.
+    if base_mode == 'real' and not use_base_legacy:
+        base_mode = 'none'
+
+    real_base_enabled = base_mode == 'real'
+    fake_base_enabled = base_mode == 'fake'
+    no_base = base_mode == 'none'
 
     lidar_enabled = use_lidar.perform(context).lower() == 'true'
     camera_enabled = use_camera.perform(context).lower() == 'true'
@@ -45,6 +58,7 @@ def _validate_and_compose(context):
         launch_arguments={
             'use_lidar': 'true' if lidar_enabled else 'false',
             'use_camera': 'true' if camera_enabled else 'false',
+            'lidar_params_file': LaunchConfiguration('lidar_params_file'),
             'camera_enable_color': LaunchConfiguration('camera_enable_color'),
             'camera_enable_ir': LaunchConfiguration('camera_enable_ir'),
             'camera_use_uvc': LaunchConfiguration('camera_use_uvc'),
@@ -55,7 +69,6 @@ def _validate_and_compose(context):
 
     base_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'base.launch.py')),
-        condition=IfCondition(use_base),
         launch_arguments={
             'port': LaunchConfiguration('base_port'),
             'baudrate': LaunchConfiguration('base_baudrate'),
@@ -63,6 +76,13 @@ def _validate_and_compose(context):
             'max_angular': LaunchConfiguration('base_max_angular'),
             'publish_tf': LaunchConfiguration('base_publish_tf'),
         }.items(),
+    )
+
+    fake_base_node = Node(
+        package='robot_bringup',
+        executable='fake_base_odom.py',
+        name='fake_base_odom',
+        output='screen',
     )
 
     viz_launch = IncludeLaunchDescription(
@@ -73,9 +93,12 @@ def _validate_and_compose(context):
         }.items(),
     )
 
-    actions = [sensors_launch, base_launch]
+    actions = [sensors_launch]
+    if real_base_enabled:
+        actions.append(base_launch)
+    if fake_base_enabled:
+        actions.append(fake_base_node)
 
-    no_base = use_base.perform(context).lower() != 'true'
     visual_odom_enabled = use_visual_odom.perform(context).lower() == 'true'
 
     if mode == 'mapping' and mapping_source not in ('camera', 'lidar'):
@@ -143,7 +166,7 @@ def _validate_and_compose(context):
         )
 
     if mode == 'mapping':
-        actions.append(LogInfo(msg=f'[robot_bringup] mode=mapping, mapping_source={mapping_source}'))
+        actions.append(LogInfo(msg=f'[robot_bringup] mode=mapping, mapping_source={mapping_source}, base_mode={base_mode}'))
         if not _package_exists('slam_toolbox'):
             raise RuntimeError('Missing package: slam_toolbox. Install and rebuild workspace.')
 
@@ -158,7 +181,30 @@ def _validate_and_compose(context):
                 }.items(),
             )
         )
+
+        # RViz map plugin may fail on some GPUs; publish map as point cloud for robust visualization.
+        if rviz_enabled and mapping_source == 'lidar':
+            actions.append(
+                Node(
+                    package='robot_bringup',
+                    executable='map_to_pointcloud_viz.py',
+                    name='map_to_pointcloud_viz',
+                    output='screen',
+                    parameters=[{
+                        'map_topic': '/map',
+                        'points_topic': '/map_points',
+                        'occupied_threshold': 50,
+                        'free_threshold': 20,
+                        'publish_free_cells': True,
+                        'free_cell_stride': 4,
+                        'z_height': 0.02,
+                    }],
+                )
+            )
     else:
+        actions.append(LogInfo(msg=f'[robot_bringup] mode=navigation, base_mode={base_mode}'))
+        if no_base:
+            raise RuntimeError("Navigation mode requires base_mode:=real or base_mode:=fake.")
         if not _package_exists('nav2_bringup'):
             raise RuntimeError(
                 "Missing package: nav2_bringup. Install nav2 first, e.g. 'sudo apt install ros-foxy-navigation2 ros-foxy-nav2-bringup'."
@@ -206,6 +252,7 @@ def generate_launch_description():
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('use_lidar', default_value='true'),
         DeclareLaunchArgument('use_camera', default_value='false'),
+        DeclareLaunchArgument('base_mode', default_value='real'),
         DeclareLaunchArgument('use_base', default_value='true'),
         DeclareLaunchArgument('use_visual_odom', default_value='false'),
         DeclareLaunchArgument('fallback_static_odom', default_value='true'),

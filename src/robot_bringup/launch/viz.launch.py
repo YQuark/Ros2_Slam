@@ -19,6 +19,10 @@ def generate_launch_description():
             executable='rviz2',
             name='rviz2',
             output='screen',
+            additional_env={
+                # Work around GLSL sampler-link errors on some Mesa/OGRE combinations.
+                'LIBGL_ALWAYS_SOFTWARE': '1',
+            },
             arguments=['-d', LaunchConfiguration('rviz_config')],
         ),
     ])

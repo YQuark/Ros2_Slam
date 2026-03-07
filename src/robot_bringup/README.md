@@ -14,6 +14,7 @@ ros2 launch robot_bringup system.launch.py mode:=mapping
 ## Common args
 - `use_camera:=true|false`
 - `use_base:=true|false`
+- `base_mode:=real|fake|none` (recommended; legacy `use_base` kept for compatibility)
 - `use_rviz:=true|false`
 - `map_file:=/abs/path/map.yaml` (required for navigation)
 - `base_port:=/dev/ttyUSB1`
@@ -29,6 +30,7 @@ ros2 launch robot_bringup system.launch.py mode:=mapping use_camera:=false
 # navigation
 ros2 launch robot_bringup system.launch.py \
   mode:=navigation \
+  base_mode:=fake \
   map_file:=/home/robot/ros2_maps/my_map.yaml
 ```
 

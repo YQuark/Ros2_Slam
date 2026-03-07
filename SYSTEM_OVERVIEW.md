@@ -24,7 +24,7 @@
 
 说明：
 - 这个模式不依赖视觉特征点里程计。
-- 在 `use_base:=false` 时，会自动补 `odom -> base_link` 静态 TF，保证 TF 链完整。
+- 在 `base_mode:=none` 时，会自动补 `odom -> base_link` 静态 TF，保证 TF 链完整。
 
 ### 2.2 雷达建图（lidar 模式）
 
@@ -43,7 +43,7 @@ ros2 launch robot_bringup system.launch.py \
   mode:=mapping \
   mapping_source:=camera \
   use_camera:=true \
-  use_base:=false \
+  base_mode:=none \
   use_rviz:=true
 ```
 
@@ -56,7 +56,7 @@ ros2 launch robot_bringup system.launch.py \
   mode:=mapping \
   mapping_source:=lidar \
   use_camera:=false \
-  use_base:=false \
+  base_mode:=none \
   use_rviz:=true
 ```
 
@@ -67,7 +67,18 @@ source /opt/ros/foxy/setup.bash
 source /home/robot/ros2_ws/install/setup.bash
 ros2 launch robot_bringup system.launch.py \
   mode:=navigation \
-  use_base:=true \
+  base_mode:=real \
+  map_file:=/home/robot/ros2_maps/my_map.yaml
+```
+
+### 3.4 导航（底盘未接入，虚拟底盘联调）
+
+```bash
+source /opt/ros/foxy/setup.bash
+source /home/robot/ros2_ws/install/setup.bash
+ros2 launch robot_bringup system.launch.py \
+  mode:=navigation \
+  base_mode:=fake \
   map_file:=/home/robot/ros2_maps/my_map.yaml
 ```
 
@@ -81,7 +92,20 @@ ros2 launch robot_bringup system.launch.py \
 
 # 雷达建图
 /home/robot/ros2_ws/launch_scripts/start_mapping.sh lidar
+
+# 雷达建图（高精档）
+/home/robot/ros2_ws/launch_scripts/start_mapping.sh lidar quality
+
+# 雷达建图（更高精度档）
+/home/robot/ros2_ws/launch_scripts/start_mapping.sh lidar precision
+
+# 雷达建图（无 RViz）
+/home/robot/ros2_ws/launch_scripts/start_mapping.sh lidar precision --no-rviz
 ```
+
+说明：
+- `lidar` 模式默认走 `quality` 参数档位。
+- 启动前会自动调用 `launch_scripts/check_lidar_health.sh` 做雷达数据验收。
 
 ## 5. 关键文件
 

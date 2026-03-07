@@ -72,7 +72,23 @@ cd /home/robot/ros2_ws/launch_scripts
 ```
 
 说明：
+- 启动前会自动执行雷达健康检查（检测 `Check Sum` / `/scan` 频率）
+- 默认使用高精参数档位（`quality`）
 - 使用 YDLIDAR `/scan` -> `slam_toolbox`
+
+可选参数：
+
+```bash
+# 指定参数档位（auto|quality|precision|fast）
+./start_mapping.sh lidar quality
+./start_mapping.sh lidar precision
+
+# 跳过健康检查（不建议）
+./start_mapping.sh lidar quality --skip-lidar-check
+
+# 不启动 RViz（显卡渲染异常时建议）
+./start_mapping.sh lidar precision --no-rviz
+```
 
 ### 4.3 保存地图
 
@@ -80,16 +96,25 @@ cd /home/robot/ros2_ws/launch_scripts
 ./save_map.sh my_map
 ```
 
-### 4.4 导航（需已保存地图 + 底盘可用）
+### 4.4 导航（需已保存地图）
 
 ```bash
-source /opt/ros/foxy/setup.bash
-source /home/robot/ros2_ws/install/setup.bash
-ros2 launch robot_bringup system.launch.py \
-  mode:=navigation \
-  use_base:=true \
-  map_file:=/home/robot/ros2_maps/my_map.yaml
+# 真实底盘
+./start_navigation.sh /home/robot/ros2_maps/my_map.yaml
+
+# 虚拟底盘联调（底盘未接入时）
+./start_navigation.sh /home/robot/ros2_maps/my_map.yaml --fake-base
+# 或
+./start_nav_fake.sh /home/robot/ros2_maps/my_map.yaml
 ```
+
+### 4.5 建图链路验收
+
+```bash
+./check_mapping_pipeline.sh
+```
+
+默认检查：`/scan` 频率、`/map` 发布、`map->odom` TF、RViz 订阅状态。
 
 ## 5. 常用排查
 
@@ -107,8 +132,13 @@ ros2 topic list | grep -E "^/camera/depth/image_raw$|^/camera/scan$|^/scan$|^/ma
 - 避免多开旧 launch（脚本已自动清理）
 - 检查 USB 连接与供电稳定
 
+### 5.3 雷达模式图小/不准时
+
+- 先跑健康检查：`./check_lidar_health.sh`
+- 如出现 `Check Sum`，优先排查 USB 线、供电、Hub
+- 确认没有并发雷达进程占用 `/dev/ttyUSB0`
+
 ## 6. 关键入口
 
 - 总入口：`src/robot_bringup/launch/system.launch.py`
 - 详细说明：`SYSTEM_OVERVIEW.md`
-
