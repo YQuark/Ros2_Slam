@@ -31,6 +31,11 @@ cd /home/robot/ros2_ws/launch_scripts
 ./start_mapping.sh lidar
 ```
 
+接入真实底盘里程计：
+```bash
+./start_mapping.sh lidar --real-base
+```
+
 可选：
 ```bash
 # 强制不同参数档位
@@ -43,6 +48,9 @@ cd /home/robot/ros2_ws/launch_scripts
 
 # 不启动 RViz（显卡渲染异常时）
 ./start_mapping.sh lidar precision --no-rviz
+
+# 雷达建图 + 真实底盘里程计
+./start_mapping.sh lidar quality --real-base
 ```
 
 3. 保存地图
@@ -72,5 +80,6 @@ cd /home/robot/ros2_ws/launch_scripts
 - 不要同时启动多个雷达 launch，避免串口抢占导致 `Check Sum` 错误。
 - 先执行 `./check_lidar_health.sh`，通过后再做雷达建图。
 - 没有底盘里程计时，建图请使用 `base_mode:=none`（`start_mapping.sh` 已默认设置）。
-- 如果要接底盘，请确认端口 `base_port:=/dev/ttyUSB1` 正确。
+- 需要接入真实底盘里程计时，使用 `./start_mapping.sh lidar --real-base`。
+- 如果要接底盘，默认可直接用 `base_port:=auto`，脚本会优先找 CP2102/`cp210x` 串口。
 - `start_navigation.sh` 默认使用真实底盘；无底盘时请加 `--fake-base`。

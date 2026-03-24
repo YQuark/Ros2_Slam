@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
+import glob
 import math
+import os
 import struct
 import time
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
@@ -29,6 +31,72 @@ MSG_NACK = 0x81
 FLAG_ACK_REQ = 0x01
 
 MODE_CLOSED_LOOP = 2
+
+
+def _wrap_angle(angle: float) -> float:
+    return math.atan2(math.sin(angle), math.cos(angle))
+
+
+def _safe_read_text(path: str) -> str:
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            return handle.read().strip()
+    except OSError:
+        return ''
+
+
+def _find_usb_ids(sys_path: str) -> Tuple[str, str]:
+    current = os.path.realpath(sys_path)
+    for _ in range(8):
+        vendor = _safe_read_text(os.path.join(current, 'idVendor')).lower()
+        product = _safe_read_text(os.path.join(current, 'idProduct')).lower()
+        if vendor:
+            return vendor, product
+        parent = os.path.dirname(current)
+        if parent == current:
+            break
+        current = parent
+    return '', ''
+
+
+def detect_cp210x_ports() -> List[str]:
+    candidates: List[str] = []
+    seen = set()
+
+    def add_port(port: str) -> None:
+        resolved = os.path.realpath(port)
+        if not resolved.startswith('/dev/'):
+            resolved = port
+        if resolved in seen or not os.path.exists(resolved):
+            return
+        seen.add(resolved)
+        candidates.append(resolved)
+
+    by_id_patterns = (
+        '/dev/serial/by-id/*CP210*',
+        '/dev/serial/by-id/*cp210*',
+        '/dev/serial/by-id/*Silicon_Labs*',
+        '/dev/serial/by-id/*USB*UART*',
+    )
+    for pattern in by_id_patterns:
+        for entry in sorted(glob.glob(pattern)):
+            add_port(entry)
+
+    for port in sorted(glob.glob('/dev/ttyUSB*')):
+        tty_name = os.path.basename(port)
+        sys_device = os.path.join('/sys/class/tty', tty_name, 'device')
+        driver = os.path.realpath(os.path.join(sys_device, 'driver')).lower()
+        vendor, product = _find_usb_ids(sys_device)
+        if 'cp210x' in driver or vendor == '10c4' or product == 'ea60':
+            add_port(port)
+
+    if candidates:
+        return candidates
+
+    tty_ports = sorted(glob.glob('/dev/ttyUSB*'))
+    if len(tty_ports) == 1:
+        return tty_ports
+    return []
 
 
 class Protocol:
@@ -122,7 +190,7 @@ class STM32Bridge(Node):
     def __init__(self) -> None:
         super().__init__('stm32_bridge')
 
-        self.declare_parameter('port', '/dev/ttyUSB1')
+        self.declare_parameter('port', 'auto')
         self.declare_parameter('baudrate', 115200)
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter('odom_topic', '/odom')
@@ -135,8 +203,10 @@ class STM32Bridge(Node):
         self.declare_parameter('cmd_timeout', 0.30)
         self.declare_parameter('control_hz', 20.0)
         self.declare_parameter('status_hz', 5.0)
+        self.declare_parameter('serial_open_retry_sec', 2.0)
+        self.declare_parameter('status_timeout', 0.75)
 
-        self.port = self.get_parameter('port').value
+        self.port = str(self.get_parameter('port').value)
         self.baudrate = int(self.get_parameter('baudrate').value)
         self.cmd_vel_topic = self.get_parameter('cmd_vel_topic').value
         self.odom_topic = self.get_parameter('odom_topic').value
@@ -149,10 +219,15 @@ class STM32Bridge(Node):
         self.cmd_timeout = float(self.get_parameter('cmd_timeout').value)
         self.control_hz = float(self.get_parameter('control_hz').value)
         self.status_hz = float(self.get_parameter('status_hz').value)
+        self.serial_open_retry_sec = float(self.get_parameter('serial_open_retry_sec').value)
+        self.status_timeout = float(self.get_parameter('status_timeout').value)
 
         self.serial = None
+        self.connected_port = ''
         self.rx_buf = bytearray()
         self.seq = 0
+        self.last_open_attempt = 0.0
+        self.last_missing_port_log = 0.0
 
         self.last_cmd_time = self.get_clock().now()
         self.target_vx = 0.0
@@ -165,6 +240,14 @@ class STM32Bridge(Node):
         self.y = 0.0
         self.yaw = 0.0
         self.last_odom_ts = self.get_clock().now()
+        self.last_status_ts = None
+        self.feedback_vx = 0.0
+        self.feedback_wz = 0.0
+        self.feedback_yaw = 0.0
+        self.feedback_yaw_available = False
+        self.last_encoder_cps = (0, 0, 0, 0)
+        self.status_revision = 0
+        self.applied_status_revision = 0
 
         self.odom_pub = self.create_publisher(Odometry, self.odom_topic, 20)
         self.tf_br = TransformBroadcaster(self) if self.publish_tf else None
@@ -174,19 +257,67 @@ class STM32Bridge(Node):
         self.create_timer(1.0 / max(self.control_hz, 1.0), self.control_loop)
         self.create_timer(1.0 / max(self.status_hz, 1.0), self.status_poll)
 
-        self.open_serial()
-        self.send_set_mode(MODE_CLOSED_LOOP)
-        self.get_logger().info(f'STM32 bridge started on {self.port}@{self.baudrate}')
+        self.ensure_serial(force_log_missing=True)
+        self.get_logger().info(f'STM32 bridge started with port={self.port} baudrate={self.baudrate}')
 
-    def open_serial(self) -> None:
+    def resolve_port(self) -> Optional[str]:
+        requested = self.port.strip()
+        if requested and requested.lower() != 'auto':
+            return requested
+
+        candidates = detect_cp210x_ports()
+        if not candidates:
+            return None
+        return candidates[0]
+
+    def close_serial(self, reason: str) -> None:
+        port = self.connected_port
+        if self.serial is not None:
+            try:
+                self.serial.close()
+            except Exception:
+                pass
+        self.serial = None
+        self.connected_port = ''
+        self.rx_buf.clear()
+        if reason:
+            self.get_logger().warn(reason if not port else f'{reason} ({port})')
+
+    def ensure_serial(self, force_log_missing: bool = False) -> bool:
+        if self.serial is not None:
+            return True
         if serial is None:
             self.get_logger().error('python3-serial not installed')
-            return
+            return False
+
+        now_monotonic = time.monotonic()
+        if not force_log_missing and (now_monotonic - self.last_open_attempt) < self.serial_open_retry_sec:
+            return False
+        self.last_open_attempt = now_monotonic
+
+        resolved_port = self.resolve_port()
+        if resolved_port is None:
+            if force_log_missing or (now_monotonic - self.last_missing_port_log) >= 5.0:
+                if self.port.strip().lower() == 'auto':
+                    self.get_logger().warn('No CP2102 serial port detected yet; bridge will keep retrying')
+                else:
+                    self.get_logger().warn(f'Serial port {self.port} not available yet; bridge will keep retrying')
+                self.last_missing_port_log = now_monotonic
+            return False
+
         try:
-            self.serial = serial.Serial(self.port, self.baudrate, timeout=0.0)
+            self.serial = serial.Serial(resolved_port, self.baudrate, timeout=0.0, write_timeout=0.2)
+            self.connected_port = resolved_port
+            self.rx_buf.clear()
+            self.get_logger().info(f'Opened STM32 serial {resolved_port}@{self.baudrate}')
+            self.send_set_mode(MODE_CLOSED_LOOP)
+            self.write_frame(MSG_CMD_GET_STATUS, b'', ack_req=True)
+            return True
         except Exception as e:
             self.serial = None
-            self.get_logger().error(f'Failed to open serial {self.port}: {e}')
+            self.connected_port = ''
+            self.get_logger().warn(f'Failed to open serial {resolved_port}: {e}')
+            return False
 
     def next_seq(self) -> int:
         self.seq = (self.seq + 1) & 0xFF
@@ -201,7 +332,7 @@ class STM32Bridge(Node):
             self.serial.write(frame)
             return True
         except Exception as e:
-            self.get_logger().error(f'Serial write failed: {e}')
+            self.close_serial(f'Serial write failed: {e}')
             return False
 
     def on_cmd_vel(self, msg: Twist) -> None:
@@ -210,6 +341,7 @@ class STM32Bridge(Node):
         self.last_cmd_time = self.get_clock().now()
 
     def control_loop(self) -> None:
+        self.ensure_serial()
         self.read_serial_frames()
 
         now = self.get_clock().now()
@@ -237,6 +369,8 @@ class STM32Bridge(Node):
         self.publish_odom(now)
 
     def status_poll(self) -> None:
+        if not self.ensure_serial():
+            return
         self.read_serial_frames()
         self.write_frame(MSG_CMD_GET_STATUS, b'', ack_req=True)
 
@@ -251,7 +385,7 @@ class STM32Bridge(Node):
             if waiting > 0:
                 self.rx_buf.extend(self.serial.read(waiting))
         except Exception as e:
-            self.get_logger().error(f'Serial read failed: {e}')
+            self.close_serial(f'Serial read failed: {e}')
             return
 
         while True:
@@ -285,11 +419,92 @@ class STM32Bridge(Node):
             return
 
         ext = payload[4:]
-        # GET_STATUS ACK 扩展区: tick(4) mode(1) src(1) vb_mv(2) pct_x10(2) v_q15(2) w_q15(2) gz_x10(2) imu_en(1) imu_valid(1)
-        if len(ext) >= 18:
-            _, mode, src, vb_mv, pct_x10, v_q15, w_q15, _, imu_en, imu_valid = struct.unpack('<IBBHHhhhBB', ext[:18])
+        if len(ext) >= 40:
+            (
+                tick_ms,
+                mode,
+                src,
+                vb_mv,
+                pct_x10,
+                v_q15,
+                w_q15,
+                gz_x10,
+                imu_en,
+                imu_valid,
+                v_est_q15,
+                w_est_q15,
+                enc_fault_mask,
+                vel_l1,
+                vel_l2,
+                vel_r1,
+                vel_r2,
+                yaw_est_x100,
+                raw_ax_mg,
+                raw_ay_mg,
+                raw_az_mg,
+                imu_accel_valid,
+            ) = struct.unpack('<IBBHHhhhBBhhBhhhhhhhhB', ext[:40])
+            self.feedback_vx = (v_est_q15 / 32767.0) * self.max_linear
+            self.feedback_wz = (w_est_q15 / 32767.0) * self.max_angular
+            self.feedback_yaw = _wrap_angle(math.radians(yaw_est_x100 / 100.0))
+            self.feedback_yaw_available = True
+            self.last_status_ts = self.get_clock().now()
+            self.last_encoder_cps = (vel_l1, vel_l2, vel_r1, vel_r2)
+            self.status_revision += 1
             self.get_logger().debug(
                 f'status mode={mode} src={src} vb={vb_mv/1000.0:.2f}V pct={pct_x10/10.0:.1f}% '
+                f'cmd=({v_q15/32767.0:.2f},{w_q15/32767.0:.2f}) '
+                f'est=({v_est_q15/32767.0:.2f},{w_est_q15/32767.0:.2f}) '
+                f'yaw={yaw_est_x100/100.0:.2f}deg g_z={gz_x10/10.0:.1f} imu={imu_en}/{imu_valid}/{imu_accel_valid} '
+                f'acc=({raw_ax_mg},{raw_ay_mg},{raw_az_mg})mg '
+                f'enc_fault=0x{enc_fault_mask:02X} tick={tick_ms}'
+            )
+            return
+
+        if len(ext) >= 31:
+            (
+                tick_ms,
+                mode,
+                src,
+                vb_mv,
+                pct_x10,
+                v_q15,
+                w_q15,
+                gz_x10,
+                imu_en,
+                imu_valid,
+                v_est_q15,
+                w_est_q15,
+                enc_fault_mask,
+                vel_l1,
+                vel_l2,
+                vel_r1,
+                vel_r2,
+            ) = struct.unpack('<IBBHHhhhBBhhBhhhh', ext[:31])
+            self.feedback_vx = (v_est_q15 / 32767.0) * self.max_linear
+            self.feedback_wz = (w_est_q15 / 32767.0) * self.max_angular
+            self.feedback_yaw_available = False
+            self.last_status_ts = self.get_clock().now()
+            self.last_encoder_cps = (vel_l1, vel_l2, vel_r1, vel_r2)
+            self.status_revision += 1
+            self.get_logger().debug(
+                f'status mode={mode} src={src} vb={vb_mv/1000.0:.2f}V pct={pct_x10/10.0:.1f}% '
+                f'cmd=({v_q15/32767.0:.2f},{w_q15/32767.0:.2f}) '
+                f'est=({v_est_q15/32767.0:.2f},{w_est_q15/32767.0:.2f}) '
+                f'g_z={gz_x10/10.0:.1f} imu={imu_en}/{imu_valid} '
+                f'enc_fault=0x{enc_fault_mask:02X} tick={tick_ms}'
+            )
+            return
+
+        if len(ext) >= 18:
+            _, mode, src, vb_mv, pct_x10, v_q15, w_q15, _, imu_en, imu_valid = struct.unpack('<IBBHHhhhBB', ext[:18])
+            self.feedback_vx = (v_q15 / 32767.0) * self.max_linear
+            self.feedback_wz = (w_q15 / 32767.0) * self.max_angular
+            self.feedback_yaw_available = False
+            self.last_status_ts = self.get_clock().now()
+            self.status_revision += 1
+            self.get_logger().debug(
+                f'legacy status mode={mode} src={src} vb={vb_mv/1000.0:.2f}V pct={pct_x10/10.0:.1f}% '
                 f'cmd=({v_q15/32767.0:.2f},{w_q15/32767.0:.2f}) imu={imu_en}/{imu_valid}'
             )
 
@@ -299,10 +514,22 @@ class STM32Bridge(Node):
             return
         self.last_odom_ts = now
 
-        yaw_mid = self.yaw + 0.5 * self.current_wz * dt
-        self.x += self.current_vx * math.cos(yaw_mid) * dt
-        self.y += self.current_vx * math.sin(yaw_mid) * dt
-        self.yaw += self.current_wz * dt
+        odom_vx = self.current_vx
+        odom_wz = self.current_wz
+        if self.last_status_ts is not None:
+            age = (now - self.last_status_ts).nanoseconds * 1e-9
+            if 0.0 <= age <= self.status_timeout:
+                odom_vx = self.feedback_vx
+                odom_wz = self.feedback_wz
+
+        yaw_mid = self.yaw + 0.5 * odom_wz * dt
+        self.x += odom_vx * math.cos(yaw_mid) * dt
+        self.y += odom_vx * math.sin(yaw_mid) * dt
+        self.yaw = _wrap_angle(self.yaw + odom_wz * dt)
+
+        if self.feedback_yaw_available and self.applied_status_revision != self.status_revision:
+            self.yaw = self.feedback_yaw
+            self.applied_status_revision = self.status_revision
 
         qz = math.sin(self.yaw * 0.5)
         qw = math.cos(self.yaw * 0.5)
@@ -318,8 +545,8 @@ class STM32Bridge(Node):
         odom.pose.pose.orientation.z = qz
         odom.pose.pose.orientation.w = qw
 
-        odom.twist.twist.linear.x = self.current_vx
-        odom.twist.twist.angular.z = self.current_wz
+        odom.twist.twist.linear.x = odom_vx
+        odom.twist.twist.angular.z = odom_wz
 
         odom.pose.covariance[0] = 0.05
         odom.pose.covariance[7] = 0.05

@@ -18,6 +18,8 @@ NC='\033[0m'
 ROS_WS="/home/robot/ros2_ws"
 PARAM_FILE="${1:-$ROS_WS/src/ydlidar_ros2_driver/params/X2.yaml}"
 NODE_EXE="$ROS_WS/install/ydlidar_ros2_driver/lib/ydlidar_ros2_driver/ydlidar_ros2_driver_node"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+DETECT_LIDAR_PORT_SCRIPT="$SCRIPT_DIR/detect_lidar_port.sh"
 MIN_SCAN_HZ=6.0
 CHECK_SECONDS=6
 
@@ -26,11 +28,15 @@ DRIVER_LOG="${LOG_PREFIX}_driver.log"
 HZ_LOG="${LOG_PREFIX}_scan_hz.log"
 
 NODE_PID=""
+TMP_PARAM_FILE=""
 
 cleanup() {
     if [ -n "$NODE_PID" ] && kill -0 "$NODE_PID" 2>/dev/null; then
         kill "$NODE_PID" >/dev/null 2>&1 || true
         wait "$NODE_PID" 2>/dev/null || true
+    fi
+    if [ -n "$TMP_PARAM_FILE" ] && [ -f "$TMP_PARAM_FILE" ]; then
+        rm -f "$TMP_PARAM_FILE"
     fi
 }
 trap cleanup EXIT INT TERM
@@ -48,20 +54,36 @@ if [ ! -f "$PARAM_FILE" ]; then
     exit 1
 fi
 
-if [ ! -e /dev/ttyUSB0 ]; then
-    echo -e "${RED}✗ 未找到雷达设备: /dev/ttyUSB0${NC}"
+CONFIG_PORT="$(awk '$1 == "port:" {print $2; exit}' "$PARAM_FILE")"
+LIDAR_PORT="$CONFIG_PORT"
+if [ -x "$DETECT_LIDAR_PORT_SCRIPT" ]; then
+    DETECTED_PORT="$($DETECT_LIDAR_PORT_SCRIPT "$CONFIG_PORT" 2>/dev/null || true)"
+    if [ -n "$DETECTED_PORT" ]; then
+        LIDAR_PORT="$DETECTED_PORT"
+    fi
+fi
+
+if [ -z "$LIDAR_PORT" ] || [ ! -e "$LIDAR_PORT" ]; then
+    echo -e "${RED}✗ 未找到雷达设备${NC}"
     exit 1
 fi
 
-if fuser /dev/ttyUSB0 >/dev/null 2>&1; then
-    echo -e "${RED}✗ /dev/ttyUSB0 正被其它进程占用${NC}"
+if [ "$LIDAR_PORT" != "$CONFIG_PORT" ]; then
+    TMP_PARAM_FILE="$(mktemp /tmp/ydlidar_health_XXXX.yaml)"
+    sed -E "s|^([[:space:]]*port:).*|\\1 ${LIDAR_PORT}|" "$PARAM_FILE" > "$TMP_PARAM_FILE"
+    PARAM_FILE="$TMP_PARAM_FILE"
+fi
+
+if fuser "$LIDAR_PORT" >/dev/null 2>&1; then
+    echo -e "${RED}✗ ${LIDAR_PORT} 正被其它进程占用${NC}"
     echo -e "${YELLOW}请先执行: /home/robot/ros2_ws/launch_scripts/stop_all.sh${NC}"
-    echo -e "${YELLOW}或手动检查: fuser -v /dev/ttyUSB0${NC}"
+    echo -e "${YELLOW}或手动检查: fuser -v ${LIDAR_PORT}${NC}"
     exit 1
 fi
 
 echo -e "${YELLOW}启动 ydlidar 驱动进行采样...${NC}"
 echo -e "${YELLOW}参数文件: $PARAM_FILE${NC}"
+echo -e "${YELLOW}雷达串口: $LIDAR_PORT${NC}"
 if [ -x "$NODE_EXE" ]; then
     "$NODE_EXE" --ros-args --params-file "$PARAM_FILE" >"$DRIVER_LOG" 2>&1 &
 else

@@ -9,6 +9,12 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+BASE_PORT=""
+
+if [ -x "$SCRIPT_DIR/detect_base_port.sh" ]; then
+    BASE_PORT="$($SCRIPT_DIR/detect_base_port.sh)"
+fi
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}    系统诊断工具${NC}"
@@ -57,10 +63,10 @@ else
 fi
 
 # 下位机
-if [ -e /dev/ttyUSB1 ]; then
-    echo -e "${GREEN}✓ 下位机: /dev/ttyUSB1${NC}"
+if [ -n "$BASE_PORT" ] && [ -e "$BASE_PORT" ]; then
+    echo -e "${GREEN}✓ 下位机: ${BASE_PORT}${NC}"
 else
-    echo -e "${YELLOW}⚠ 下位机: /dev/ttyUSB1 不存在（待配置）${NC}"
+    echo -e "${YELLOW}⚠ 下位机: 未检测到 CP2102 串口（当前可保持未连接）${NC}"
 fi
 echo ""
 

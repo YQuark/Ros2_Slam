@@ -2,7 +2,7 @@
 # ============================================
 # 建图模式启动脚本
 # 功能：camera/lidar 二选一建图 + SLAM Toolbox + RViz
-# 用法：./start_mapping.sh [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz]
+# 用法：./start_mapping.sh [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz] [--real-base] [--base-port PORT]
 # ============================================
 
 # 颜色定义
@@ -16,6 +16,8 @@ NC='\033[0m'
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROS_WS="/home/robot/ros2_ws"
 LIDAR_HEALTH_SCRIPT="$SCRIPT_DIR/check_lidar_health.sh"
+DETECT_BASE_PORT_SCRIPT="$SCRIPT_DIR/detect_base_port.sh"
+DETECT_LIDAR_PORT_SCRIPT="$SCRIPT_DIR/detect_lidar_port.sh"
 DEFAULT_LIDAR_PARAMS="$ROS_WS/src/robot_bringup/config/slam_toolbox_mapping.yaml"
 PRECISION_PARAMS="$ROS_WS/src/robot_bringup/config/slam_toolbox_mapping_lidar_precision.yaml"
 FAST_PARAMS="$ROS_WS/src/robot_bringup/config/slam_toolbox_mapping_fast.yaml"
@@ -23,13 +25,70 @@ MAPPING_LIDAR_DEVICE_PARAMS="$ROS_WS/src/robot_bringup/config/ydlidar_X2_mapping
 DEFAULT_LIDAR_DEVICE_PARAMS="$ROS_WS/src/ydlidar_ros2_driver/params/X2.yaml"
 LIDAR_RVIZ_CONFIG="$ROS_WS/src/robot_bringup/rviz/lidar_mapping.rviz"
 DEFAULT_RVIZ_CONFIG="$ROS_WS/src/robot_bringup/rviz/system.rviz"
+BASE_PORT="${BASE_PORT:-auto}"
+TMP_LIDAR_PARAMS_FILE=""
+
+cleanup() {
+    if [ -n "$TMP_LIDAR_PARAMS_FILE" ] && [ -f "$TMP_LIDAR_PARAMS_FILE" ]; then
+        rm -f "$TMP_LIDAR_PARAMS_FILE"
+    fi
+}
+
+trap cleanup EXIT
+
+resolve_port() {
+    local candidate="$1"
+    readlink -f "$candidate" 2>/dev/null || printf '%s\n' "$candidate"
+}
+
+get_yaml_port() {
+    local yaml_file="$1"
+    awk '
+        $1 == "port:" {
+            print $2
+            exit
+        }
+    ' "$yaml_file"
+}
+
+render_lidar_params_with_port() {
+    local src="$1"
+    local port="$2"
+    local dst="$3"
+
+    sed -E "s|^([[:space:]]*port:).*|\\1 ${port}|" "$src" > "$dst"
+}
+
+infer_lidar_port() {
+    local base_port="$1"
+    local resolved_base
+    local port
+    local resolved_port
+    local candidates=()
+
+    resolved_base="$(resolve_port "$base_port")"
+
+    for port in /dev/ttyUSB*; do
+        [ -e "$port" ] || continue
+        resolved_port="$(resolve_port "$port")"
+        if [ "$resolved_port" != "$resolved_base" ]; then
+            candidates+=("$resolved_port")
+        fi
+    done
+
+    if [ "${#candidates[@]}" -eq 1 ]; then
+        printf '%s\n' "${candidates[0]}"
+    fi
+}
 
 usage() {
-    echo "用法: $0 [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz]"
+    echo "用法: $0 [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz] [--real-base] [--base-port PORT]"
     echo "  camera|lidar: 建图源，默认 camera"
     echo "  auto|quality|precision|fast: SLAM 参数档位，默认 auto（lidar->quality, camera->fast）"
     echo "  --skip-lidar-check: 跳过雷达健康检查（仅 lidar 模式有效）"
     echo "  --no-rviz: 不启动 RViz（适用于显卡渲染异常场景）"
+    echo "  --real-base: 接入真实底盘里程计（仅在底盘已连接时使用）"
+    echo "  --base-port PORT: 指定底盘串口，默认 auto"
 }
 
 echo -e "${BLUE}========================================${NC}"
@@ -41,10 +100,12 @@ MAPPING_SOURCE="camera"
 SLAM_PROFILE="auto"
 SKIP_LIDAR_CHECK=false
 USE_RVIZ=true
+USE_REAL_BASE=false
 HAS_SOURCE=false
 HAS_PROFILE=false
 
-for arg in "$@"; do
+while [ $# -gt 0 ]; do
+    arg="$1"
     case "$arg" in
         camera|lidar)
             if [ "$HAS_SOURCE" = true ]; then
@@ -54,6 +115,7 @@ for arg in "$@"; do
             fi
             MAPPING_SOURCE="$arg"
             HAS_SOURCE=true
+            shift
             ;;
         auto|quality|precision|fast)
             if [ "$HAS_PROFILE" = true ]; then
@@ -63,12 +125,28 @@ for arg in "$@"; do
             fi
             SLAM_PROFILE="$arg"
             HAS_PROFILE=true
+            shift
             ;;
         --skip-lidar-check)
             SKIP_LIDAR_CHECK=true
+            shift
             ;;
         --no-rviz)
             USE_RVIZ=false
+            shift
+            ;;
+        --real-base)
+            USE_REAL_BASE=true
+            shift
+            ;;
+        --base-port)
+            if [ $# -lt 2 ]; then
+                echo -e "${RED}参数错误: --base-port 需要一个串口路径${NC}"
+                usage
+                exit 1
+            fi
+            BASE_PORT="$2"
+            shift 2
             ;;
         -h|--help)
             usage
@@ -115,6 +193,36 @@ else
     LIDAR_DEVICE_PARAMS_FILE="$DEFAULT_LIDAR_DEVICE_PARAMS"
 fi
 
+BASE_MODE="none"
+USE_BASE_ARG="false"
+if [ "$USE_REAL_BASE" = true ]; then
+    BASE_MODE="real"
+    USE_BASE_ARG="true"
+    if [ "$BASE_PORT" = "auto" ] && [ -x "$DETECT_BASE_PORT_SCRIPT" ]; then
+        DETECTED_BASE_PORT="$($DETECT_BASE_PORT_SCRIPT)"
+        if [ -n "$DETECTED_BASE_PORT" ]; then
+            BASE_PORT="$DETECTED_BASE_PORT"
+        fi
+    fi
+fi
+
+if [ "$MAPPING_SOURCE" = "lidar" ]; then
+    CONFIGURED_LIDAR_PORT="$(get_yaml_port "$LIDAR_DEVICE_PARAMS_FILE" || true)"
+    DETECTED_LIDAR_PORT=""
+
+    if [ -x "$DETECT_LIDAR_PORT_SCRIPT" ]; then
+        DETECTED_LIDAR_PORT="$($DETECT_LIDAR_PORT_SCRIPT "$CONFIGURED_LIDAR_PORT" 2>/dev/null || true)"
+    elif [ "$USE_REAL_BASE" = true ] && [ "$BASE_PORT" != "auto" ]; then
+        DETECTED_LIDAR_PORT="$(infer_lidar_port "$BASE_PORT" || true)"
+    fi
+
+    if [ -n "$DETECTED_LIDAR_PORT" ] && [ "$DETECTED_LIDAR_PORT" != "$CONFIGURED_LIDAR_PORT" ]; then
+        TMP_LIDAR_PARAMS_FILE="$(mktemp /tmp/ydlidar_mapping_XXXX.yaml)"
+        render_lidar_params_with_port "$LIDAR_DEVICE_PARAMS_FILE" "$DETECTED_LIDAR_PORT" "$TMP_LIDAR_PARAMS_FILE"
+        LIDAR_DEVICE_PARAMS_FILE="$TMP_LIDAR_PARAMS_FILE"
+    fi
+fi
+
 echo -e "${YELLOW}系统组件:${NC}"
 if [ "$MAPPING_SOURCE" = "camera" ]; then
     echo "  • Astra Pro 深度相机 -> depthimage_to_laserscan"
@@ -130,6 +238,11 @@ else
     echo "  • YDLIDAR X2 激光雷达"
     USE_CAMERA=false
     USE_VISUAL_ODOM=false
+fi
+if [ "$USE_REAL_BASE" = true ]; then
+    echo "  • STM32 底盘里程计 (${BASE_PORT})"
+else
+    echo "  • 底盘里程计已禁用"
 fi
 echo "  • SLAM Toolbox 建图引擎"
 if [ "$USE_RVIZ" = true ]; then
@@ -149,10 +262,11 @@ fi
 if [ "$MAPPING_SOURCE" = "lidar" ]; then
     echo ""
     echo -e "${YELLOW}检查雷达设备...${NC}"
-    if [ -e /dev/ttyUSB0 ]; then
-        echo -e "${GREEN}✓ 找到雷达设备: /dev/ttyUSB0${NC}"
+    CURRENT_LIDAR_PORT="$(get_yaml_port "$LIDAR_DEVICE_PARAMS_FILE" || true)"
+    if [ -n "$CURRENT_LIDAR_PORT" ] && [ -e "$CURRENT_LIDAR_PORT" ]; then
+        echo -e "${GREEN}✓ 找到雷达设备: ${CURRENT_LIDAR_PORT}${NC}"
     else
-        echo -e "${RED}✗ 未找到雷达设备 /dev/ttyUSB0${NC}"
+        echo -e "${RED}✗ 未找到雷达设备${NC}"
         echo -e "${YELLOW}请检查雷达连接${NC}"
         exit 1
     fi
@@ -175,6 +289,13 @@ echo -e "${YELLOW}建图源: ${MAPPING_SOURCE}${NC}"
 echo -e "${YELLOW}参数档位: ${SLAM_PROFILE}${NC}"
 echo -e "${YELLOW}SLAM参数: ${SLAM_PARAMS_FILE}${NC}"
 echo -e "${YELLOW}雷达参数: ${LIDAR_DEVICE_PARAMS_FILE}${NC}"
+echo -e "${YELLOW}底盘模式: ${BASE_MODE}${NC}"
+if [ "$USE_REAL_BASE" = true ]; then
+    echo -e "${YELLOW}底盘串口: ${BASE_PORT}${NC}"
+fi
+if [ "$MAPPING_SOURCE" = "lidar" ]; then
+    echo -e "${YELLOW}雷达串口: $(get_yaml_port "$LIDAR_DEVICE_PARAMS_FILE")${NC}"
+fi
 echo -e "${YELLOW}RViz配置: ${RVIZ_CONFIG_FILE}${NC}"
 echo ""
 echo -e "${YELLOW}操作提示:${NC}"
@@ -189,8 +310,9 @@ ros2 launch robot_bringup system.launch.py \
     mode:=mapping \
     mapping_source:=${MAPPING_SOURCE} \
     use_camera:=${USE_CAMERA} \
-    base_mode:=none \
-    use_base:=false \
+    base_mode:=${BASE_MODE} \
+    use_base:=${USE_BASE_ARG} \
+    base_port:=${BASE_PORT} \
     use_visual_odom:=${USE_VISUAL_ODOM} \
     use_rviz:=${USE_RVIZ} \
     lidar_params_file:=${LIDAR_DEVICE_PARAMS_FILE} \

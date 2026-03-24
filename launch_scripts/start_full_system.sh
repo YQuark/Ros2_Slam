@@ -14,6 +14,14 @@ NC='\033[0m'
 # 获取脚本所在目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROS_WS="/home/robot/ros2_ws"
+BASE_PORT="${BASE_PORT:-auto}"
+
+if [ "$BASE_PORT" = "auto" ] && [ -x "$SCRIPT_DIR/detect_base_port.sh" ]; then
+    DETECTED_BASE_PORT="$($SCRIPT_DIR/detect_base_port.sh)"
+    if [ -n "$DETECTED_BASE_PORT" ]; then
+        BASE_PORT="$DETECTED_BASE_PORT"
+    fi
+fi
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}    完整系统启动${NC}"
@@ -51,10 +59,10 @@ else
 fi
 
 # 检查下位机
-if [ -e /dev/ttyUSB1 ]; then
-    echo -e "${GREEN}✓ 下位机设备: /dev/ttyUSB1${NC}"
+if [ "$BASE_PORT" = "auto" ]; then
+    echo -e "${YELLOW}⚠ 下位机 CP2102 串口暂未检测到，桥接节点将以 auto 模式持续重试${NC}"
 else
-    echo -e "${YELLOW}⚠ 下位机连接待检查${NC}"
+    echo -e "${GREEN}✓ 下位机设备: ${BASE_PORT}${NC}"
 fi
 
 echo ""
@@ -68,5 +76,5 @@ ros2 launch robot_bringup system.launch.py \
     use_camera:=true \
     use_base:=true \
     use_rviz:=true \
-    base_port:=/dev/ttyUSB1 \
+    base_port:=${BASE_PORT} \
     base_baudrate:=115200

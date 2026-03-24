@@ -267,7 +267,7 @@ def generate_launch_description():
         DeclareLaunchArgument('slam_params_file', default_value=os.path.join(rb_share, 'config', 'slam_toolbox_mapping.yaml')),
         DeclareLaunchArgument('map_file', default_value=''),
 
-        DeclareLaunchArgument('base_port', default_value='/dev/ttyUSB1'),
+        DeclareLaunchArgument('base_port', default_value='auto'),
         DeclareLaunchArgument('base_baudrate', default_value='115200'),
         DeclareLaunchArgument('base_max_linear', default_value='0.50'),
         DeclareLaunchArgument('base_max_angular', default_value='1.50'),

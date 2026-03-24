@@ -24,7 +24,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument('port', default_value='/dev/ttyUSB1'),
+        DeclareLaunchArgument('port', default_value='auto'),
         DeclareLaunchArgument('baudrate', default_value='115200'),
         DeclareLaunchArgument('max_linear', default_value='0.50'),
         DeclareLaunchArgument('max_angular', default_value='1.50'),
