@@ -1,85 +1,64 @@
-# 机器人启动脚本说明
+# 启动与运维入口
 
-## 目录
+`launch_scripts/` 现在分为两层：
 
-`/home/robot/ros2_ws/launch_scripts`
+- 统一入口：`robot.sh`
+- 兼容入口：历史 `start_*.sh` 脚本，内部已收编为 `robot.sh` 的包装层
 
-- `start_mapping.sh`：建图模式（可选 `camera` 或 `lidar`）
-- `start_navigation.sh`：导航模式（需要已有地图）
-- `start_nav_fake.sh`：导航模式（虚拟底盘联调）
-- `start_full_system.sh`：完整系统（雷达 + Astra + 底盘 + SLAM）
-- `start_lidar.sh`：仅雷达与可视化
-- `start_camera.sh`：仅 Astra Pro 摄像头
-- `start_controller.sh`：仅底盘串口桥接
-- `save_map.sh`：保存 SLAM 地图
-- `stop_all.sh`：停止 ROS2 相关进程
-- `check_system.sh`：基础环境检查
-- `check_lidar_health.sh`：雷达数据健康检查（CheckSum + /scan 频率）
-- `check_mapping_pipeline.sh`：建图链路验收（/scan、/map、map->odom、RViz订阅）
-- `test_camera.sh`：Astra 驱动自检
+## 推荐入口
 
-## 推荐用法
-
-1. 摄像头建图
 ```bash
 cd /home/robot/ros2_ws/launch_scripts
-./start_mapping.sh camera
+./robot.sh --help
 ```
 
-2. 雷达建图
+常用命令：
+
 ```bash
-./start_mapping.sh lidar
+./robot.sh mapping camera
+./robot.sh mapping lidar --real-base
+./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base
+./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --fake-base
+./robot.sh sensor lidar
+./robot.sh sensor camera
+./robot.sh base
+./robot.sh system
+./robot.sh check-lidar
+./robot.sh check mapping
+./robot.sh save-map my_map
+./robot.sh doctor
+./robot.sh teleop
+./robot.sh stop
 ```
 
-接入真实底盘里程计：
-```bash
-./start_mapping.sh lidar --real-base
-```
+## 目录分层
 
-可选：
-```bash
-# 强制不同参数档位
-./start_mapping.sh lidar quality
-./start_mapping.sh lidar precision
-./start_mapping.sh lidar fast
+- `robot.sh`
+  统一 CLI，总控建图、导航、传感器、底盘和健康检查入口。
+- `lib/common.sh`
+  启动脚本共享函数，包括 ROS 环境加载、日志输出和 YAML/串口辅助逻辑。
+- `start_*.sh`
+  历史兼容包装，内部直接转发到 `robot.sh`。
+- `check_*.sh`、`detect_*.sh`
+  诊断与设备探测工具，供 `robot.sh` 和运维排障复用。
 
-# 跳过雷达健康检查（仅排障时使用）
-./start_mapping.sh lidar quality --skip-lidar-check
+## 兼容脚本状态
 
-# 不启动 RViz（显卡渲染异常时）
-./start_mapping.sh lidar precision --no-rviz
+- `start_mapping.sh` -> `robot.sh mapping`
+- `start_navigation.sh` -> `robot.sh navigation`
+- `start_nav_fake.sh` -> `robot.sh navigation --fake-base`
+- `start_lidar.sh` -> `robot.sh sensor lidar`
+- `start_camera.sh` -> `robot.sh sensor camera`
+- `start_controller.sh` -> `robot.sh base`
+- `start_full_system.sh` -> `robot.sh system`
 
-# 雷达建图 + 真实底盘里程计
-./start_mapping.sh lidar quality --real-base
-```
+## 保留的运维工具
 
-3. 保存地图
-```bash
-./save_map.sh my_map
-```
+- `check_lidar_health.sh`
+- `check_mapping_pipeline.sh`
+- `check_system.sh`
+- `save_map.sh`
+- `keyboard_control.sh`
+- `stop_all.sh`
 
-4. 导航
-```bash
-./start_navigation.sh /home/robot/ros2_maps/my_map.yaml
-```
-
-5. 虚拟底盘导航联调（底盘未接入时）
-```bash
-./start_nav_fake.sh /home/robot/ros2_maps/my_map.yaml
-# 或
-./start_navigation.sh /home/robot/ros2_maps/my_map.yaml --fake-base
-```
-
-6. 建图链路验收
-```bash
-./check_mapping_pipeline.sh
-```
-
-## 注意
-
-- 不要同时启动多个雷达 launch，避免串口抢占导致 `Check Sum` 错误。
-- 先执行 `./check_lidar_health.sh`，通过后再做雷达建图。
-- 没有底盘里程计时，建图请使用 `base_mode:=none`（`start_mapping.sh` 已默认设置）。
-- 需要接入真实底盘里程计时，使用 `./start_mapping.sh lidar --real-base`。
-- 如果要接底盘，默认可直接用 `base_port:=auto`，脚本会优先找 CP2102/`cp210x` 串口。
-- `start_navigation.sh` 默认使用真实底盘；无底盘时请加 `--fake-base`。
+这些脚本仍可独立使用，同时也可以通过 `robot.sh` 间接调用。
