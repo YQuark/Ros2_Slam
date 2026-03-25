@@ -53,7 +53,7 @@ echo -e "${YELLOW}正在启动，请稍候...${NC}"
 echo ""
 
 # 启动摄像头（后台运行）
-"$SCRIPT_DIR/robot.sh" sensor camera &
+ros2 launch ydlidar_ros2_driver astra_pro.launch.py &
 CAMERA_PID=$!
 
 # 等待启动
@@ -89,4 +89,4 @@ wait $CAMERA_PID 2>/dev/null
 echo ""
 echo -e "${GREEN}可以正常运行摄像头了！${NC}"
 echo -e "${YELLOW}使用以下命令启动:${NC}"
-echo "  ./robot.sh sensor camera"
+echo "  ./start_camera.sh"

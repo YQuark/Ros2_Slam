@@ -97,7 +97,7 @@ if [ -f "${MAP_BASENAME}.yaml" ] && [ -f "${MAP_BASENAME}.pgm" ]; then
     ls -lh "${MAP_BASENAME}.yaml" "${MAP_BASENAME}.pgm"
     echo ""
     echo -e "${YELLOW}加载地图进行导航:${NC}"
-    echo "  /home/robot/ros2_ws/launch_scripts/robot.sh navigation ${MAP_BASENAME}.yaml --real-base"
+    echo "  ros2 launch robot_bringup system.launch.py mode:=navigation use_camera:=false use_lidar:=true base_mode:=real map_file:=${MAP_BASENAME}.yaml"
 else
     echo ""
     echo -e "${RED}✗ 未找到生成的地图文件(.yaml/.pgm)${NC}"
