@@ -25,12 +25,11 @@ LINK_VER = 0x01
 MSG_CMD_GET_STATUS = 0x02
 MSG_CMD_SET_DRIVE = 0x10
 MSG_CMD_SET_MODE = 0x11
+MSG_CMD_SET_IMU = 0x12
 MSG_ACK = 0x80
 MSG_NACK = 0x81
 
 FLAG_ACK_REQ = 0x01
-
-MODE_CLOSED_LOOP = 2
 
 
 def _wrap_angle(angle: float) -> float:
@@ -205,6 +204,14 @@ class STM32Bridge(Node):
         self.declare_parameter('status_hz', 5.0)
         self.declare_parameter('serial_open_retry_sec', 2.0)
         self.declare_parameter('status_timeout', 0.75)
+        self.declare_parameter('drive_ack', False)
+        self.declare_parameter('drive_keepalive_sec', 0.20)
+        self.declare_parameter('imu_enabled', True)
+        self.declare_parameter('startup_settle_sec', 0.20)
+        self.declare_parameter('startup_stop_retries', 3)
+        self.declare_parameter('use_status_yaw', False)
+        self.declare_parameter('odom_linear_deadzone', 0.01)
+        self.declare_parameter('odom_angular_deadzone', 0.03)
 
         self.port = str(self.get_parameter('port').value)
         self.baudrate = int(self.get_parameter('baudrate').value)
@@ -221,6 +228,14 @@ class STM32Bridge(Node):
         self.status_hz = float(self.get_parameter('status_hz').value)
         self.serial_open_retry_sec = float(self.get_parameter('serial_open_retry_sec').value)
         self.status_timeout = float(self.get_parameter('status_timeout').value)
+        self.drive_ack = bool(self.get_parameter('drive_ack').value)
+        self.drive_keepalive_sec = float(self.get_parameter('drive_keepalive_sec').value)
+        self.imu_enabled = bool(self.get_parameter('imu_enabled').value)
+        self.startup_settle_sec = float(self.get_parameter('startup_settle_sec').value)
+        self.startup_stop_retries = int(self.get_parameter('startup_stop_retries').value)
+        self.use_status_yaw = bool(self.get_parameter('use_status_yaw').value)
+        self.odom_linear_deadzone = float(self.get_parameter('odom_linear_deadzone').value)
+        self.odom_angular_deadzone = float(self.get_parameter('odom_angular_deadzone').value)
 
         self.serial = None
         self.connected_port = ''
@@ -228,10 +243,13 @@ class STM32Bridge(Node):
         self.seq = 0
         self.last_open_attempt = 0.0
         self.last_missing_port_log = 0.0
+        self.last_drive_tx_time = 0.0
+        self.last_drive_cmd = None
 
         self.last_cmd_time = self.get_clock().now()
         self.target_vx = 0.0
         self.target_wz = 0.0
+        self.has_seen_cmd_vel = False
 
         self.current_vx = 0.0
         self.current_wz = 0.0
@@ -280,6 +298,8 @@ class STM32Bridge(Node):
         self.serial = None
         self.connected_port = ''
         self.rx_buf.clear()
+        self.last_drive_cmd = None
+        self.last_drive_tx_time = 0.0
         if reason:
             self.get_logger().warn(reason if not port else f'{reason} ({port})')
 
@@ -306,11 +326,22 @@ class STM32Bridge(Node):
             return False
 
         try:
-            self.serial = serial.Serial(resolved_port, self.baudrate, timeout=0.0, write_timeout=0.2)
+            self.serial = self.open_serial_port(resolved_port)
             self.connected_port = resolved_port
             self.rx_buf.clear()
+            self.target_vx = 0.0
+            self.target_wz = 0.0
+            self.current_vx = 0.0
+            self.current_wz = 0.0
+            self.has_seen_cmd_vel = False
+            self.last_cmd_time = self.get_clock().now()
+            self.last_drive_cmd = None
+            self.last_drive_tx_time = 0.0
             self.get_logger().info(f'Opened STM32 serial {resolved_port}@{self.baudrate}')
-            self.send_set_mode(MODE_CLOSED_LOOP)
+            self.set_modem_lines_low()
+            self.reset_serial_buffers()
+            time.sleep(max(self.startup_settle_sec, 0.0))
+            self.send_set_imu(self.imu_enabled)
             self.write_frame(MSG_CMD_GET_STATUS, b'', ack_req=True)
             return True
         except Exception as e:
@@ -335,7 +366,67 @@ class STM32Bridge(Node):
             self.close_serial(f'Serial write failed: {e}')
             return False
 
+    def encode_drive_payload(self, vx: float, wz: float) -> bytes:
+        v_norm = max(-1.0, min(1.0, vx / max(self.max_linear, 1e-6)))
+        w_norm = max(-1.0, min(1.0, wz / max(self.max_angular, 1e-6)))
+
+        v_q15 = int(max(-32767, min(32767, round(v_norm * 32767.0))))
+        w_q15 = int(max(-32767, min(32767, round(w_norm * 32767.0))))
+        return struct.pack('<hh', v_q15, w_q15)
+
+    def open_serial_port(self, resolved_port: str):
+        ser = serial.Serial()
+        ser.port = resolved_port
+        ser.baudrate = self.baudrate
+        ser.timeout = 0.0
+        ser.write_timeout = 0.2
+        ser.rtscts = False
+        ser.dsrdtr = False
+        try:
+            ser.dtr = False
+        except Exception:
+            pass
+        try:
+            ser.rts = False
+        except Exception:
+            pass
+        ser.open()
+        try:
+            ser.dtr = False
+        except Exception:
+            pass
+        try:
+            ser.rts = False
+        except Exception:
+            pass
+        return ser
+
+    @staticmethod
+    def apply_deadzone(value: float, threshold: float) -> float:
+        if abs(value) < max(threshold, 0.0):
+            return 0.0
+        return value
+
+    def set_modem_lines_low(self) -> None:
+        if self.serial is None:
+            return
+        for attr in ('dtr', 'rts'):
+            try:
+                setattr(self.serial, attr, False)
+            except Exception:
+                pass
+
+    def reset_serial_buffers(self) -> None:
+        if self.serial is None:
+            return
+        for method_name in ('reset_input_buffer', 'reset_output_buffer'):
+            try:
+                getattr(self.serial, method_name)()
+            except Exception:
+                pass
+
     def on_cmd_vel(self, msg: Twist) -> None:
+        self.has_seen_cmd_vel = True
         self.target_vx = float(msg.linear.x)
         self.target_wz = float(msg.angular.z)
         self.last_cmd_time = self.get_clock().now()
@@ -346,7 +437,8 @@ class STM32Bridge(Node):
 
         now = self.get_clock().now()
         dt = (now - self.last_cmd_time).nanoseconds * 1e-9
-        if dt > self.cmd_timeout:
+        cmd_active = dt <= self.cmd_timeout
+        if not cmd_active:
             vx = 0.0
             wz = 0.0
         else:
@@ -356,15 +448,19 @@ class STM32Bridge(Node):
         self.current_vx = vx
         self.current_wz = wz
 
-        # 固件协议是归一化 [-1, 1]，这里按可配置上限做线性映射。
-        v_norm = max(-1.0, min(1.0, vx / max(self.max_linear, 1e-6)))
-        w_norm = max(-1.0, min(1.0, wz / max(self.max_angular, 1e-6)))
-
-        v_q15 = int(max(-32767, min(32767, round(v_norm * 32767.0))))
-        w_q15 = int(max(-32767, min(32767, round(w_norm * 32767.0))))
-
-        payload = struct.pack('<hh', v_q15, w_q15)
-        self.write_frame(MSG_CMD_SET_DRIVE, payload, ack_req=True)
+        payload = self.encode_drive_payload(vx, wz)
+        drive_cmd = struct.unpack('<hh', payload)
+        now_monotonic = time.monotonic()
+        should_send_drive = self.last_drive_cmd != drive_cmd
+        if cmd_active:
+            should_send_drive = (
+                should_send_drive
+                or (now_monotonic - self.last_drive_tx_time) >= max(self.drive_keepalive_sec, 0.05)
+            )
+        if self.has_seen_cmd_vel and should_send_drive:
+            if self.write_frame(MSG_CMD_SET_DRIVE, payload, ack_req=self.drive_ack):
+                self.last_drive_cmd = drive_cmd
+                self.last_drive_tx_time = now_monotonic
 
         self.publish_odom(now)
 
@@ -374,8 +470,8 @@ class STM32Bridge(Node):
         self.read_serial_frames()
         self.write_frame(MSG_CMD_GET_STATUS, b'', ack_req=True)
 
-    def send_set_mode(self, mode: int) -> None:
-        self.write_frame(MSG_CMD_SET_MODE, bytes([mode]), ack_req=True)
+    def send_set_imu(self, enabled: bool) -> None:
+        self.write_frame(MSG_CMD_SET_IMU, bytes([1 if enabled else 0]), ack_req=True)
 
     def read_serial_frames(self) -> None:
         if self.serial is None:
@@ -447,7 +543,7 @@ class STM32Bridge(Node):
             self.feedback_vx = (v_est_q15 / 32767.0) * self.max_linear
             self.feedback_wz = (w_est_q15 / 32767.0) * self.max_angular
             self.feedback_yaw = _wrap_angle(math.radians(yaw_est_x100 / 100.0))
-            self.feedback_yaw_available = True
+            self.feedback_yaw_available = self.use_status_yaw
             self.last_status_ts = self.get_clock().now()
             self.last_encoder_cps = (vel_l1, vel_l2, vel_r1, vel_r2)
             self.status_revision += 1
@@ -521,6 +617,9 @@ class STM32Bridge(Node):
             if 0.0 <= age <= self.status_timeout:
                 odom_vx = self.feedback_vx
                 odom_wz = self.feedback_wz
+
+        odom_vx = self.apply_deadzone(odom_vx, self.odom_linear_deadzone)
+        odom_wz = self.apply_deadzone(odom_wz, self.odom_angular_deadzone)
 
         yaw_mid = self.yaw + 0.5 * odom_wz * dt
         self.x += odom_vx * math.cos(yaw_mid) * dt

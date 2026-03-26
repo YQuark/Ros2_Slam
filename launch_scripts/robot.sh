@@ -95,7 +95,11 @@ resolve_base_port() {
     local detected
 
     if [ "$port" = "auto" ] && [ -x "$DETECT_BASE_PORT_SCRIPT" ]; then
-        detected="$("$DETECT_BASE_PORT_SCRIPT" 2>/dev/null || true)"
+        if [ -n "${ROBOT_BASE_PORT_HINT:-}" ]; then
+            detected="${ROBOT_BASE_PORT_HINT}"
+        else
+            detected="$("$DETECT_BASE_PORT_SCRIPT" --probe 2>/dev/null || true)"
+        fi
         if [ -n "$detected" ]; then
             printf '%s\n' "$detected"
             return 0
@@ -171,6 +175,7 @@ run_mapping() {
     local use_camera="false"
     local use_visual_odom="false"
     local use_base_arg="false"
+    local base_imu_enabled="true"
     local lidar_port=""
     local arg=""
 
@@ -249,6 +254,13 @@ run_mapping() {
     fi
     slam_params="$(choose_slam_params "$slam_profile")"
 
+    if [ "$base_mode" = "real" ]; then
+        base_port="$(resolve_base_port "$base_port")"
+        if [ "$base_port" != "auto" ]; then
+            export ROBOT_BASE_PORT_HINT="$base_port"
+        fi
+    fi
+
     if [ "$mapping_source" = "lidar" ]; then
         rviz_config="$DEFAULT_LIDAR_RVIZ"
         lidar_params="$DEFAULT_LIDAR_PARAMS"
@@ -261,14 +273,11 @@ run_mapping() {
             log_error "✗ 未找到雷达设备"
             exit 1
         fi
+        export ROBOT_LIDAR_PORT_HINT="$lidar_port"
         if [ "$skip_lidar_check" = false ] && [ -x "$LIDAR_HEALTH_SCRIPT" ]; then
             log_info "执行雷达数据健康检查..."
             "$LIDAR_HEALTH_SCRIPT" "$lidar_params"
         fi
-    fi
-
-    if [ "$base_mode" = "real" ]; then
-        base_port="$(resolve_base_port "$base_port")"
     fi
 
     if [ "$mapping_source" = "camera" ]; then
@@ -278,6 +287,10 @@ run_mapping() {
         else
             log_warn "提示: 未检测到 rtabmap_odom，回退到无视觉里程计模式"
         fi
+    fi
+
+    if [ "$mapping_source" = "lidar" ] && [ "$base_mode" = "real" ]; then
+        base_imu_enabled="false"
     fi
 
     log_info "系统组件:"
@@ -319,6 +332,7 @@ run_mapping() {
     log_info "底盘模式: ${base_mode}"
     if [ "$base_mode" = "real" ]; then
         log_info "底盘串口: ${base_port}"
+        log_info "底盘 IMU 参与控制: ${base_imu_enabled}"
     fi
     log_info "RViz 配置: ${rviz_config}"
     echo
@@ -330,6 +344,7 @@ run_mapping() {
         base_mode:=${base_mode} \
         use_base:=${use_base_arg} \
         base_port:=${base_port} \
+        base_imu_enabled:=${base_imu_enabled} \
         use_visual_odom:=${use_visual_odom} \
         use_rviz:=${use_rviz} \
         lidar_params_file:=${lidar_params:-$DEFAULT_LIDAR_PARAMS} \
@@ -405,6 +420,9 @@ run_navigation() {
 
     if [ "$base_mode" = "real" ]; then
         base_port="$(resolve_base_port "$base_port")"
+        if [ "$base_port" != "auto" ]; then
+            export ROBOT_BASE_PORT_HINT="$base_port"
+        fi
     fi
 
     lidar_params="$(prepare_lidar_params "$DEFAULT_LIDAR_PARAMS" "ydlidar_nav")"
@@ -413,6 +431,7 @@ run_navigation() {
         log_error "✗ 未找到雷达设备"
         exit 1
     fi
+    export ROBOT_LIDAR_PORT_HINT="$lidar_port"
 
     if [ "$skip_lidar_check" = false ] && [ -x "$LIDAR_HEALTH_SCRIPT" ]; then
         log_info "执行雷达数据健康检查..."

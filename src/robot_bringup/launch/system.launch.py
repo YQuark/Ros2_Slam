@@ -75,6 +75,7 @@ def _validate_and_compose(context):
             'max_linear': LaunchConfiguration('base_max_linear'),
             'max_angular': LaunchConfiguration('base_max_angular'),
             'publish_tf': LaunchConfiguration('base_publish_tf'),
+            'imu_enabled': LaunchConfiguration('base_imu_enabled'),
         }.items(),
     )
 
@@ -272,6 +273,7 @@ def generate_launch_description():
         DeclareLaunchArgument('base_max_linear', default_value='0.50'),
         DeclareLaunchArgument('base_max_angular', default_value='1.50'),
         DeclareLaunchArgument('base_publish_tf', default_value='true'),
+        DeclareLaunchArgument('base_imu_enabled', default_value='true'),
 
         DeclareLaunchArgument('visual_odom_rgb_topic', default_value='/camera/color/image_raw'),
         DeclareLaunchArgument('visual_odom_depth_topic', default_value='/camera/depth/image_raw'),

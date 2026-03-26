@@ -3,13 +3,24 @@
 set -euo pipefail
 
 emit_first=1
-if [ "${1:-}" = "--all" ]; then
-    emit_first=0
-fi
+active_probe=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --all)
+            emit_first=0
+            ;;
+        --probe)
+            active_probe=1
+            ;;
+    esac
+    shift
+done
+
+BASE_PORT_HINT="${ROBOT_BASE_PORT_HINT:-${BASE_PORT_HINT:-}}"
 
 declare -A SEEN=()
 RESULTS=()
-MATCHED=()
 
 add_port() {
     local candidate="$1"
@@ -32,6 +43,78 @@ add_port() {
 
     SEEN[$resolved]=1
     RESULTS+=("$resolved")
+}
+
+resolve_port() {
+    local candidate="$1"
+    readlink -f "$candidate" 2>/dev/null || printf '%s\n' "$candidate"
+}
+
+move_hint_to_end() {
+    local hint="$1"
+    local resolved_hint=""
+    local port=""
+    local filtered=()
+
+    [ -n "$hint" ] || return 0
+    resolved_hint="$(resolve_port "$hint")"
+
+    for port in "${RESULTS[@]}"; do
+        if [ "$port" != "$resolved_hint" ]; then
+            filtered+=("$port")
+        fi
+    done
+
+    for port in "${RESULTS[@]}"; do
+        if [ "$port" = "$resolved_hint" ]; then
+            filtered+=("$port")
+            RESULTS=("${filtered[@]}")
+            return 0
+        fi
+    done
+}
+
+order_results_by_path() {
+    local candidate=""
+    local resolved=""
+    local port=""
+    local found=0
+    local ordered=()
+
+    for candidate in /dev/serial/by-path/*; do
+        [ -e "$candidate" ] || continue
+        resolved="$(resolve_port "$candidate")"
+        for port in "${RESULTS[@]}"; do
+            if [ "$port" = "$resolved" ]; then
+                found=0
+                for candidate in "${ordered[@]}"; do
+                    if [ "$candidate" = "$resolved" ]; then
+                        found=1
+                        break
+                    fi
+                done
+                if [ "$found" -eq 0 ]; then
+                    ordered+=("$resolved")
+                fi
+                break
+            fi
+        done
+    done
+
+    for port in "${RESULTS[@]}"; do
+        found=0
+        for candidate in "${ordered[@]}"; do
+            if [ "$candidate" = "$port" ]; then
+                found=1
+                break
+            fi
+        done
+        if [ "$found" -eq 0 ]; then
+            ordered+=("$port")
+        fi
+    done
+
+    RESULTS=("${ordered[@]}")
 }
 
 for pattern in \
@@ -67,6 +150,9 @@ done
 if [ "${#RESULTS[@]}" -eq 0 ]; then
     exit 0
 fi
+
+order_results_by_path
+move_hint_to_end "$BASE_PORT_HINT"
 
 probe_base_port() {
     local port="$1"
@@ -163,21 +249,21 @@ def parse_frame(raw: bytes):
         return None
     return dec[2], dec[3], dec[4], payload
 
+
 try:
     ser = serial.Serial(port, 115200, timeout=0.2)
 except Exception:
     sys.exit(1)
 
 try:
-    # Give the MCU a moment in case opening the UART triggers a reset.
-    time.sleep(1.0)
+    time.sleep(0.25)
     ser.reset_input_buffer()
 
-    for seq in range(1, 4):
+    for seq in range(1, 3):
         ser.write(build_get_status(seq))
         ser.flush()
 
-        deadline = time.time() + 0.8
+        deadline = time.time() + 0.35
         buf = bytearray()
         while time.time() < deadline:
             chunk = ser.read(256)
@@ -200,7 +286,7 @@ try:
                         print(port)
                         raise SystemExit(0)
             else:
-                time.sleep(0.05)
+                time.sleep(0.03)
 except Exception:
     pass
 finally:
@@ -208,19 +294,19 @@ finally:
 PY
 }
 
-for port in "${RESULTS[@]}"; do
-    matched="$(probe_base_port "$port" 2>/dev/null || true)"
-    if [ -n "$matched" ]; then
-        MATCHED+=("$port")
-    fi
-done
-
-if [ "${#MATCHED[@]}" -gt 0 ]; then
-    RESULTS=("${MATCHED[@]}")
+if [ "$active_probe" -eq 1 ] && [ -z "$BASE_PORT_HINT" ] && [ "${#RESULTS[@]}" -gt 1 ]; then
+    matched=""
+    for port in "${RESULTS[@]}"; do
+        matched="$(probe_base_port "$port" 2>/dev/null || true)"
+        if [ -n "$matched" ]; then
+            move_hint_to_end "$matched"
+            break
+        fi
+    done
 fi
 
 if [ "$emit_first" -eq 1 ]; then
-    printf '%s\n' "${RESULTS[0]}"
+    printf '%s\n' "${RESULTS[${#RESULTS[@]}-1]}"
     exit 0
 fi
 

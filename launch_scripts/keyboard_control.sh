@@ -13,6 +13,7 @@ NC='\033[0m'
 # 获取脚本所在目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROS_WS="/home/robot/ros2_ws"
+WASD_TELEOP_SCRIPT="$SCRIPT_DIR/wasd_teleop.py"
 
 echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}    键盘控制模式${NC}"
@@ -26,33 +27,27 @@ source $ROS_WS/install/setup.bash
 echo -e "${GREEN}正在启动键盘控制...${NC}"
 echo ""
 echo -e "${YELLOW}操作说明:${NC}"
-echo "  i : 前进"
-echo "  o : 后退"
-echo "  j : 左转"
-echo "  l : 右转"
-echo "  k : 停止"
-echo "  q : 退出"
+echo "  w : 前进"
+echo "  s : 后退"
+echo "  a : 左转"
+echo "  d : 右转"
+echo "  x / 空格 : 停止"
+echo "  q / z : 增减线速度上限"
+echo "  e / c : 增减角速度"
+echo "  Ctrl+C : 退出"
 echo ""
 echo -e "${YELLOW}按任意键继续...${NC}"
 read
 
 echo ""
-echo -e "${GREEN}开始控制！（按q退出）${NC}"
+echo -e "${GREEN}开始控制！（按 Ctrl+C 退出）${NC}"
 echo ""
 
-# 检查是否安装了teleop_twist_keyboard
-if ros2 pkg list | grep -q "teleop_twist_keyboard"; then
-    # 使用teleop_twist_keyboard
-    ros2 run teleop_twist_keyboard teleop_twist_keyboard
+if [ -x "$WASD_TELEOP_SCRIPT" ]; then
+    python3 "$WASD_TELEOP_SCRIPT"
 else
-    echo -e "${YELLOW}未安装teleop_twist_keyboard，使用简化控制${NC}"
-    echo ""
-    echo "请手动控制："
-    echo "  前进: ros2 topic pub /cmd_vel geometry_msgs/Twist '{linear: {x: 0.2}, angular: {z: 0.0}}' --once"
-    echo "  停止: ros2 topic pub /cmd_vel geometry_msgs/Twist '{linear: {x: 0.0}, angular: {z: 0.0}}' --once"
-    echo ""
-    echo "建议安装teleop_twist_keyboard："
-    echo "  sudo apt install ros-foxy-teleop-twist-keyboard"
+    echo -e "${YELLOW}未找到 WASD 遥控脚本: $WASD_TELEOP_SCRIPT${NC}"
+    exit 1
 fi
 
 echo ""

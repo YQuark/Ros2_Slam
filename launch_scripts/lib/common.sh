@@ -34,11 +34,24 @@ log_error() {
 }
 
 setup_ros_env() {
+    local restore_nounset=0
+
+    case $- in
+        *u*)
+            restore_nounset=1
+            set +u
+            ;;
+    esac
+
     # shellcheck disable=SC1091
     source /opt/ros/foxy/setup.bash
     if [ -f "${ROS_WS}/install/setup.bash" ]; then
         # shellcheck disable=SC1091
         source "${ROS_WS}/install/setup.bash"
+    fi
+
+    if [ "$restore_nounset" -eq 1 ]; then
+        set -u
     fi
 }
 
