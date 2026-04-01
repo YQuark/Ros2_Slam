@@ -17,13 +17,16 @@ cd /home/robot/ros2_ws/launch_scripts
 ```bash
 ./robot.sh mapping camera
 ./robot.sh mapping lidar --real-base
+./robot.sh mapping lidar --real-base --ekf-base
+./robot.sh mapping lidar precision --real-base --ekf-base
 ./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base
+./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base --ekf-base
 ./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --fake-base
 ./robot.sh sensor lidar
 ./robot.sh sensor camera
 ./robot.sh base
-./robot.sh system
-./robot.sh check-lidar
+./robot.sh full
+./robot.sh check lidar
 ./robot.sh check mapping
 ./robot.sh save-map my_map
 ./robot.sh doctor
@@ -41,6 +44,18 @@ cd /home/robot/ros2_ws/launch_scripts
   历史兼容包装，内部直接转发到 `robot.sh`。
 - `check_*.sh`、`detect_*.sh`
   诊断与设备探测工具，供 `robot.sh` 和运维排障复用。
+
+## 当前推荐组合
+
+- 真实底盘雷达建图默认入口：`./robot.sh mapping lidar --real-base`
+- 需要底盘 EKF 融合时：`./robot.sh mapping lidar --real-base --ekf-base`
+- 精细雷达建图档：`./robot.sh mapping lidar precision --real-base --ekf-base`
+
+补充说明：
+
+- `--ekf-base` 会启用 `/odom + /imu/data -> /odometry/filtered` 的底盘融合链路。
+- `precision` 档位当前定义为在 `quality` 行为基础上保留更细的 `0.03m` 栅格分辨率，不再单独收紧一组激进门限。
+- 底盘口自动探测会优先对候选 CP210x 串口发送 `GET_STATUS` 进行活体探测，而不是只按 `/dev` 名称猜测。
 
 ## 兼容脚本状态
 

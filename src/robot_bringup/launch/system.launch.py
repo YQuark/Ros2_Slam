@@ -27,6 +27,7 @@ def _validate_and_compose(context):
     use_camera = LaunchConfiguration('use_camera')
     use_base_legacy = LaunchConfiguration('use_base').perform(context).lower() == 'true'
     base_mode = LaunchConfiguration('base_mode').perform(context).strip().lower()
+    base_fusion_mode = LaunchConfiguration('base_fusion_mode').perform(context).strip().lower()
     use_visual_odom = LaunchConfiguration('use_visual_odom')
     fallback_static_odom = LaunchConfiguration('fallback_static_odom').perform(context).lower() == 'true'
     map_file = LaunchConfiguration('map_file').perform(context)
@@ -39,6 +40,8 @@ def _validate_and_compose(context):
 
     if base_mode not in ('real', 'fake', 'none'):
         raise RuntimeError("Invalid 'base_mode'. Use 'real', 'fake' or 'none'.")
+    if base_fusion_mode not in ('none', 'ekf'):
+        raise RuntimeError("Invalid 'base_fusion_mode'. Use 'none' or 'ekf'.")
 
     # Backward compatibility: legacy use_base:=false disables real base by default.
     if base_mode == 'real' and not use_base_legacy:
@@ -47,6 +50,7 @@ def _validate_and_compose(context):
     real_base_enabled = base_mode == 'real'
     fake_base_enabled = base_mode == 'fake'
     no_base = base_mode == 'none'
+    use_base_ekf = real_base_enabled and base_fusion_mode == 'ekf'
 
     lidar_enabled = use_lidar.perform(context).lower() == 'true'
     camera_enabled = use_camera.perform(context).lower() == 'true'
@@ -59,6 +63,12 @@ def _validate_and_compose(context):
             'use_lidar': 'true' if lidar_enabled else 'false',
             'use_camera': 'true' if camera_enabled else 'false',
             'lidar_params_file': LaunchConfiguration('lidar_params_file'),
+            'lidar_tf_x': LaunchConfiguration('lidar_tf_x'),
+            'lidar_tf_y': LaunchConfiguration('lidar_tf_y'),
+            'lidar_tf_z': LaunchConfiguration('lidar_tf_z'),
+            'lidar_tf_roll': LaunchConfiguration('lidar_tf_roll'),
+            'lidar_tf_pitch': LaunchConfiguration('lidar_tf_pitch'),
+            'lidar_tf_yaw': LaunchConfiguration('lidar_tf_yaw'),
             'camera_enable_color': LaunchConfiguration('camera_enable_color'),
             'camera_enable_ir': LaunchConfiguration('camera_enable_ir'),
             'camera_use_uvc': LaunchConfiguration('camera_use_uvc'),
@@ -74,8 +84,18 @@ def _validate_and_compose(context):
             'baudrate': LaunchConfiguration('base_baudrate'),
             'max_linear': LaunchConfiguration('base_max_linear'),
             'max_angular': LaunchConfiguration('base_max_angular'),
-            'publish_tf': LaunchConfiguration('base_publish_tf'),
+            'publish_tf': 'false' if use_base_ekf else LaunchConfiguration('base_publish_tf').perform(context),
             'imu_enabled': LaunchConfiguration('base_imu_enabled'),
+            'publish_imu': 'true' if use_base_ekf else 'false',
+            'imu_topic': LaunchConfiguration('base_imu_topic'),
+            'imu_frame_id': LaunchConfiguration('base_imu_frame_id'),
+        }.items(),
+    )
+
+    ekf_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'base_ekf.launch.py')),
+        launch_arguments={
+            'ekf_params_file': LaunchConfiguration('base_ekf_params_file'),
         }.items(),
     )
 
@@ -97,6 +117,12 @@ def _validate_and_compose(context):
     actions = [sensors_launch]
     if real_base_enabled:
         actions.append(base_launch)
+        if use_base_ekf:
+            if not _package_exists('robot_localization'):
+                raise RuntimeError(
+                    "Missing package: robot_localization. Install it first, e.g. 'sudo apt install ros-foxy-robot-localization'."
+                )
+            actions.append(ekf_launch)
     if fake_base_enabled:
         actions.append(fake_base_node)
 
@@ -265,6 +291,12 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_ir_info_url', default_value=''),
 
         DeclareLaunchArgument('lidar_params_file', default_value=os.path.join(ydlidar_share, 'params', 'X2.yaml')),
+        DeclareLaunchArgument('lidar_tf_x', default_value='0.07'),
+        DeclareLaunchArgument('lidar_tf_y', default_value='0.0'),
+        DeclareLaunchArgument('lidar_tf_z', default_value='0.13'),
+        DeclareLaunchArgument('lidar_tf_roll', default_value='0.0'),
+        DeclareLaunchArgument('lidar_tf_pitch', default_value='0.0'),
+        DeclareLaunchArgument('lidar_tf_yaw', default_value='0.0'),
         DeclareLaunchArgument('slam_params_file', default_value=os.path.join(rb_share, 'config', 'slam_toolbox_mapping.yaml')),
         DeclareLaunchArgument('map_file', default_value=''),
 
@@ -274,6 +306,10 @@ def generate_launch_description():
         DeclareLaunchArgument('base_max_angular', default_value='1.50'),
         DeclareLaunchArgument('base_publish_tf', default_value='true'),
         DeclareLaunchArgument('base_imu_enabled', default_value='true'),
+        DeclareLaunchArgument('base_fusion_mode', default_value='none'),
+        DeclareLaunchArgument('base_imu_topic', default_value='/imu/data'),
+        DeclareLaunchArgument('base_imu_frame_id', default_value='base_link'),
+        DeclareLaunchArgument('base_ekf_params_file', default_value=os.path.join(rb_share, 'config', 'ekf_base.yaml')),
 
         DeclareLaunchArgument('visual_odom_rgb_topic', default_value='/camera/color/image_raw'),
         DeclareLaunchArgument('visual_odom_depth_topic', default_value='/camera/depth/image_raw'),

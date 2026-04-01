@@ -294,15 +294,20 @@ finally:
 PY
 }
 
-if [ "$active_probe" -eq 1 ] && [ -z "$BASE_PORT_HINT" ] && [ "${#RESULTS[@]}" -gt 1 ]; then
-    matched=""
+if [ "$active_probe" -eq 1 ]; then
+    MATCHED_RESULTS=()
     for port in "${RESULTS[@]}"; do
         matched="$(probe_base_port "$port" 2>/dev/null || true)"
         if [ -n "$matched" ]; then
-            move_hint_to_end "$matched"
-            break
+            MATCHED_RESULTS+=("$matched")
         fi
     done
+    RESULTS=("${MATCHED_RESULTS[@]}")
+    if [ "${#RESULTS[@]}" -eq 0 ]; then
+        exit 0
+    fi
+    order_results_by_path
+    move_hint_to_end "$BASE_PORT_HINT"
 fi
 
 if [ "$emit_first" -eq 1 ]; then

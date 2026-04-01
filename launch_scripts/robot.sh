@@ -72,13 +72,13 @@ EOF
 
 mapping_usage() {
     cat <<'EOF'
-用法: ./robot.sh mapping [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz] [--real-base|--fake-base] [--base-port PORT]
+用法: ./robot.sh mapping [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT]
 EOF
 }
 
 navigation_usage() {
     cat <<'EOF'
-用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--no-rviz] [--skip-lidar-check] [--base-port PORT]
+用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--no-rviz] [--skip-lidar-check] [--base-port PORT]
 EOF
 }
 
@@ -176,6 +176,7 @@ run_mapping() {
     local use_visual_odom="false"
     local use_base_arg="false"
     local base_imu_enabled="true"
+    local base_fusion_mode="none"
     local lidar_port=""
     local arg=""
 
@@ -218,6 +219,10 @@ run_mapping() {
             --fake-base)
                 base_mode="fake"
                 use_base_arg="true"
+                shift
+                ;;
+            --ekf-base)
+                base_fusion_mode="ekf"
                 shift
                 ;;
             --base-port)
@@ -333,6 +338,7 @@ run_mapping() {
     if [ "$base_mode" = "real" ]; then
         log_info "底盘串口: ${base_port}"
         log_info "底盘 IMU 参与控制: ${base_imu_enabled}"
+        log_info "底盘融合模式: ${base_fusion_mode}"
     fi
     log_info "RViz 配置: ${rviz_config}"
     echo
@@ -345,6 +351,7 @@ run_mapping() {
         use_base:=${use_base_arg} \
         base_port:=${base_port} \
         base_imu_enabled:=${base_imu_enabled} \
+        base_fusion_mode:=${base_fusion_mode} \
         use_visual_odom:=${use_visual_odom} \
         use_rviz:=${use_rviz} \
         lidar_params_file:=${lidar_params:-$DEFAULT_LIDAR_PARAMS} \
@@ -359,6 +366,7 @@ run_navigation() {
     local map_file="$DEFAULT_MAP"
     local base_mode="real"
     local base_port="${BASE_PORT:-auto}"
+    local base_fusion_mode="none"
     local use_rviz=true
     local skip_lidar_check=false
     local lidar_params=""
@@ -374,6 +382,10 @@ run_navigation() {
                 ;;
             --real-base)
                 base_mode="real"
+                shift
+                ;;
+            --ekf-base)
+                base_fusion_mode="ekf"
                 shift
                 ;;
             --no-rviz)
@@ -446,6 +458,7 @@ run_navigation() {
     log_info "底盘模式: ${base_mode}"
     if [ "$base_mode" = "real" ]; then
         log_info "底盘串口: ${base_port}"
+        log_info "底盘融合模式: ${base_fusion_mode}"
         if [ "$base_port" = "auto" ]; then
             log_warn "⚠ 未检测到底盘串口，桥接节点将以 auto 模式持续重试"
         fi
@@ -457,6 +470,7 @@ run_navigation() {
         use_camera:=false \
         use_lidar:=true \
         base_mode:=${base_mode} \
+        base_fusion_mode:=${base_fusion_mode} \
         use_base:=true \
         use_rviz:=${use_rviz} \
         map_file:=${map_file} \
