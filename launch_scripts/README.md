@@ -65,7 +65,7 @@ cd /home/robot/ros2_ws/launch_scripts
 - `start_lidar.sh` -> `robot.sh sensor lidar`
 - `start_camera.sh` -> `robot.sh sensor camera`
 - `start_controller.sh` -> `robot.sh base`
-- `start_full_system.sh` -> `robot.sh system`
+- `start_full_system.sh` -> `robot.sh full`
 
 ## 保留的运维工具
 

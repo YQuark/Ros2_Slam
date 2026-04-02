@@ -1,41 +1,60 @@
 # stm32_robot_bridge
 
-ROS2 bridge for the `YQuark/SLAM_ROBOT` serial protocol.
+`stm32_robot_bridge` 是当前工程的底盘串口桥接包，负责把上位机运动命令转换为下位机串口协议，并把下位机状态反馈转换成 ROS2 话题与 TF。
 
-## Features
-- Subscribe `cmd_vel` (`geometry_msgs/Twist`)
-- Send `CMD_SET_DRIVE (0x10)` to STM32 (`v/w` in Q15)
-- Send `CMD_SET_MODE (0x11)` to force closed-loop mode on startup
-- Poll `CMD_GET_STATUS (0x02)` for heartbeat and diagnostics
-- Publish `odom` and `odom -> base_link` TF
-- Auto-detect a CP2102 USB serial adapter when `port:=auto`
-- Retry serial open automatically when the adapter is not plugged yet
+## 包职责
 
-## Upper-layer interface contract (must keep stable)
-- Input: `/cmd_vel` (`geometry_msgs/Twist`)
-- Output: `/odom` (`nav_msgs/Odometry`) at >= 20 Hz (recommended)
-- TF: `odom -> base_link` continuous and timestamp-aligned with odom
-- Static TF expected by upper stack: `base_link -> laser_frame`
+- 订阅 `/cmd_vel`
+- 发送 `SET_DRIVE` 和 `SET_MODE`
+- 轮询 `GET_STATUS`
+- 发布 `/odom`
+- 按需发布 `/imu/data`
+- 在未启用 EKF 时发布 `odom -> base_link`
 
-### Pre-integration acceptance checklist
-- `/cmd_vel` timeout fallback to zero velocity works
-- `/odom` header/frame IDs remain fixed (`odom` / `base_link`)
-- `odom` timestamp monotonic, no large backward jumps
-- Speed limits consistent with launch params (`max_linear`, `max_angular`)
+## 在工程中的位置
 
-## Launch
+- 用户入口不直接调用本包，优先使用 `/home/robot/ros2_ws/launch_scripts/robot.sh`
+- 包级 launch 入口：`launch/stm32_bridge.launch.py`
+- 工程编排入口通过 `robot_bringup/launch/base.launch.py` 引入本包
+
+## 当前协议假设
+
+- 串口默认参数：`115200 8N1`
+- 默认工作模式要求下位机进入 `MODE_CLOSED_LOOP`
+- 状态包优先使用下位机返回的 `v_est / w_est`
+- IMU 仅作为航向辅助和 EKF 输入，不直接承担平移积分
+
+## 自动探测与启动行为
+
+- `port:=auto` 时会优先扫描 CP210x 候选串口
+- 候选串口会主动发送 `GET_STATUS` 进行协议级探测
+- 串口连通后会先下发闭环模式和零速同步，再进入正常轮询
+
+## 上层接口约定
+
+- 输入：`/cmd_vel` (`geometry_msgs/Twist`)
+- 输出：`/odom` (`nav_msgs/Odometry`)
+- 可选输出：`/imu/data` (`sensor_msgs/Imu`)
+- TF：`odom -> base_link`
+
+## 常用调试方式
+
+单独启动底盘桥接：
+
 ```bash
 source /opt/ros/foxy/setup.bash
-source ~/ros2_ws/install/setup.bash
+source /home/robot/ros2_ws/install/setup.bash
 ros2 launch stm32_robot_bridge stm32_bridge.launch.py port:=auto baudrate:=115200
 ```
 
-## Important note
-The current `SLAM_ROBOT` firmware binds `PC_Link_Init(&huart3)` to `USART3`, which is `115200 8N1`.
-For a CP2102 adapter, wire it to the STM32 `USART3` pins:
-- `CP2102 TX -> STM32 USART3_RX (PB11)`
-- `CP2102 RX -> STM32 USART3_TX (PB10)`
-- `GND -> GND`
+通过统一入口启动：
 
-The firmware `GET_STATUS` payload now includes normalized `v_est/w_est` feedback and four wheel encoder speeds.
-This bridge uses that feedback for odom integration when fresh status frames are available, and falls back to command integration only if status is stale.
+```bash
+cd /home/robot/ros2_ws/launch_scripts
+./robot.sh base
+```
+
+## 相关文档
+
+- [/home/robot/ros2_ws/docs/06-底盘与串口桥接.md](/home/robot/ros2_ws/docs/06-底盘与串口桥接.md)
+- [/home/robot/ros2_ws/src/robot_bringup/README.md](/home/robot/ros2_ws/src/robot_bringup/README.md)

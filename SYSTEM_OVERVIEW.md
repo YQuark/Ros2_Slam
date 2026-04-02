@@ -16,3 +16,9 @@
 2. 运维入口：`launch_scripts/robot.sh`
 
 如果你还在使用 `start_mapping.sh`、`start_navigation.sh` 等脚本，可以继续使用；它们现在只是兼容包装，不再承载主逻辑。
+
+当前仓库推荐按这条路径理解：
+
+1. 先看根目录 [README.md](./README.md) 了解目录分层
+2. 再看 [docs/02-系统架构.md](./docs/02-系统架构.md) 了解代码层级
+3. 最后按 [docs/01-快速开始.md](./docs/01-快速开始.md) 或 [launch_scripts/README.md](./launch_scripts/README.md) 启动

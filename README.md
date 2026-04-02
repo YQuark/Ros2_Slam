@@ -1,6 +1,6 @@
 # ROS2 机器人上位机工程
 
-本仓库负责把传感器接入、SLAM 建图、Nav2 导航、STM32 底盘桥接和可视化调试收敛成一套可维护、可复用、可扩展的 ROS2 工程体系。
+本仓库负责把传感器接入、SLAM 建图、Nav2 导航、STM32 底盘桥接、底盘 EKF 融合和可视化调试收敛成一套可维护、可复用、可扩展的 ROS2 工程体系。
 
 ## 能力矩阵
 
@@ -11,6 +11,7 @@
 | 真实底盘导航 | 已支持 | `Nav2 -> /cmd_vel -> stm32_robot_bridge -> STM32` |
 | 虚拟底盘联调 | 已支持 | `base_mode:=fake` |
 | 串口自动识别 | 已支持 | 自动区分底盘串口与雷达串口 |
+| 底盘 EKF 融合 | 已支持 | `/odom + /imu/data -> /odometry/filtered` |
 
 ## 统一入口
 
@@ -29,25 +30,38 @@ source /home/robot/ros2_ws/install/setup.bash
 ```bash
 cd /home/robot/ros2_ws/launch_scripts
 ./robot.sh mapping lidar --real-base
+./robot.sh mapping lidar --real-base --ekf-base
 ./robot.sh save-map my_map
 ./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base
 ```
 
-## 目录结构
+## 仓库分层
 
 ```text
 ros2_ws
-├── docs/                  # 中文文档体系
+├── docs/                  # 中文文档主入口，按任务组织
 ├── launch_scripts/        # 统一运维入口与诊断脚本
 ├── src/
 │   ├── robot_bringup      # launch / config / rviz 总编排
-│   ├── stm32_robot_bridge # 底盘桥接
+│   ├── stm32_robot_bridge # 串口协议桥接与 odom/imu 发布
+│   ├── third_party/       # vendored 依赖（robot_localization / geographic_msgs）
 │   ├── ydlidar_ros2_driver
 │   ├── ros2_astra_camera
 │   └── YDLidar-SDK
+├── build/                 # colcon 生成目录（忽略）
+├── install/               # colcon 安装目录（忽略）
+├── log/                   # colcon 构建日志（忽略）
 ├── README.md
 └── SYSTEM_OVERVIEW.md
 ```
+
+### 代码层级
+
+- 用户入口层：`launch_scripts/robot.sh`
+- 编排层：`src/robot_bringup/launch/system.launch.py`
+- 设备接入层：`stm32_robot_bridge`、雷达驱动、相机驱动
+- 算法层：`slam_toolbox`、`Nav2`、`robot_localization`
+- 参数与可视化层：`robot_bringup/config`、`robot_bringup/rviz`
 
 ## 文档导航
 
@@ -67,4 +81,5 @@ ros2_ws
 - 技术编排只保留一个核心入口：`src/robot_bringup/launch/system.launch.py`
 - 运维层只保留一个推荐 CLI：`launch_scripts/robot.sh`
 - 历史 `start_*.sh` 继续可用，但仅作为兼容包装
+- vendored 第三方依赖统一收口在 `src/third_party/`
 - 文档统一使用中文，并按用户路径与开发路径拆分

@@ -125,7 +125,7 @@ echo ""
 
 echo -e "${BLUE}8. 推荐下一步${NC}"
 echo "  • 统一入口帮助: ${SCRIPT_DIR}/robot.sh --help"
-echo "  • 雷达健康检查: ${SCRIPT_DIR}/robot.sh check-lidar"
+echo "  • 雷达健康检查: ${SCRIPT_DIR}/robot.sh check lidar"
 echo "  • 停止全部进程: ${SCRIPT_DIR}/robot.sh stop"
 echo ""
 
