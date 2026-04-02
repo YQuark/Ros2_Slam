@@ -20,6 +20,10 @@ def generate_launch_description():
             'max_linear': LaunchConfiguration('max_linear'),
             'max_angular': LaunchConfiguration('max_angular'),
             'publish_tf': LaunchConfiguration('publish_tf'),
+            'imu_enabled': LaunchConfiguration('imu_enabled'),
+            'publish_imu': LaunchConfiguration('publish_imu'),
+            'imu_topic': LaunchConfiguration('imu_topic'),
+            'imu_frame_id': LaunchConfiguration('imu_frame_id'),
         }.items(),
     )
 
@@ -29,5 +33,9 @@ def generate_launch_description():
         DeclareLaunchArgument('max_linear', default_value='0.50'),
         DeclareLaunchArgument('max_angular', default_value='1.50'),
         DeclareLaunchArgument('publish_tf', default_value='true'),
+        DeclareLaunchArgument('imu_enabled', default_value='true'),
+        DeclareLaunchArgument('publish_imu', default_value='false'),
+        DeclareLaunchArgument('imu_topic', default_value='/imu/data'),
+        DeclareLaunchArgument('imu_frame_id', default_value='base_link'),
         bridge_launch,
     ])

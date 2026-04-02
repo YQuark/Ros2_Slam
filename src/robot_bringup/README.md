@@ -1,45 +1,58 @@
 # robot_bringup
 
-Unified orchestration package for the robot upper stack.
+`robot_bringup` 是上位机的技术编排包，不负责运维入口聚合，只负责 launch、参数和可视化配置。
 
-## Main entry
+## 包职责
+
+- 编排建图模式：`mode:=mapping`
+- 编排导航模式：`mode:=navigation`
+- 统一传感器层：雷达、相机、深度转激光、视觉里程计
+- 统一底盘层：真实底盘、虚拟底盘、无底盘占位 TF
+- 可选底盘融合层：`/odom + /imu/data -> /odometry/filtered`
+- 统一可视化层：RViz 与地图点云兼容显示
+
+## 核心入口
+
 ```bash
 ros2 launch robot_bringup system.launch.py mode:=mapping
 ```
 
-## Modes
-- `mode:=mapping`: lidar + base + slam + rviz
-- `mode:=navigation`: lidar + base + localization + nav2 + rviz
+## 目录约定
 
-## Common args
-- `use_camera:=true|false`
-- `use_base:=true|false`
-- `base_mode:=real|fake|none` (recommended; legacy `use_base` kept for compatibility)
-- `use_rviz:=true|false`
-- `map_file:=/abs/path/map.yaml` (required for navigation)
-- `base_port:=auto`
-- `base_baudrate:=115200`
-- `base_max_linear:=0.50`
-- `base_max_angular:=1.50`
+- `launch/`
+  只放技术 launch，不放运维脚本。
+- `config/`
+  只放参数与设备配置。
+- `rviz/`
+  只放 RViz 视图模板。
+- `scripts/`
+  只放随包安装的 ROS 节点脚本。
 
-## Example
-```bash
-# mapping
-ros2 launch robot_bringup system.launch.py mode:=mapping use_camera:=false
+## 关键 launch
 
-# navigation
-ros2 launch robot_bringup system.launch.py \
-  mode:=navigation \
-  base_mode:=fake \
-  map_file:=/home/robot/ros2_maps/my_map.yaml
-```
+- `launch/system.launch.py`
+  总编排入口。
+- `launch/sensors.launch.py`
+  传感器层。
+- `launch/base.launch.py`
+  真实底盘桥接。
+- `launch/base_ekf.launch.py`
+  底盘 EKF 融合层。
+- `launch/slam.launch.py`
+  `slam_toolbox` 建图。
+- `launch/localization.launch.py`
+  定位。
+- `launch/nav2.launch.py`
+  `Nav2`。
 
-## Nav2 Control Chain
-- `nav2` publishes `/cmd_vel`
-- `stm32_robot_bridge` subscribes `/cmd_vel`
-- bridge sends drive commands to STM32 lower controller
-- lower controller feedback closes the `/odom` + `odom->base_link` loop
+## 使用原则
 
-## Note
-If navigation dependencies are missing, launch will fail fast with install hints.
-When `base_port:=auto`, the bridge prefers a CP2102/`cp210x` serial adapter and keeps retrying if it is not plugged yet.
+- 用户入口优先使用 `/home/robot/ros2_ws/launch_scripts/robot.sh`
+- 只有在二次开发或调试 launch 行为时，才直接调用本包 launch 文件
+- 兼容参数 `use_base` 仍保留，但新配置应优先使用 `base_mode:=real|fake|none`
+- 如果启用底盘融合，应优先使用 `base_fusion_mode:=ekf`
+
+## 当前默认约定
+
+- 雷达外参默认从 `base_link` 发布到 `laser_frame`：`x=0.07, y=0.0, z=0.13, roll=0, pitch=0, yaw=0`
+- `precision` 雷达建图档只保留更细的 `0.03m` 地图分辨率，其余匹配行为尽量贴近 `quality`

@@ -5,6 +5,8 @@ set -euo pipefail
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DETECT_BASE_PORT_SCRIPT="$SCRIPT_DIR/detect_base_port.sh"
 CONFIG_PORT="${1:-}"
+BASE_PORT_HINT="${ROBOT_BASE_PORT_HINT:-${BASE_PORT_HINT:-}}"
+LIDAR_PORT_HINT="${ROBOT_LIDAR_PORT_HINT:-${LIDAR_PORT_HINT:-}}"
 
 resolve_port() {
     local candidate="$1"
@@ -39,8 +41,8 @@ if [ "${#CANDIDATES[@]}" -eq 0 ]; then
     exit 0
 fi
 
-BASE_PORT=""
-if [ -x "$DETECT_BASE_PORT_SCRIPT" ]; then
+BASE_PORT="$BASE_PORT_HINT"
+if [ -z "$BASE_PORT" ] && [ -x "$DETECT_BASE_PORT_SCRIPT" ]; then
     BASE_PORT="$($DETECT_BASE_PORT_SCRIPT 2>/dev/null || true)"
 fi
 
@@ -61,6 +63,16 @@ if [ -n "$CONFIG_PORT" ]; then
     RESOLVED_CONFIG="$(resolve_port "$CONFIG_PORT")"
     for port in "${CANDIDATES[@]}"; do
         if [ "$port" = "$RESOLVED_CONFIG" ]; then
+            printf '%s\n' "$port"
+            exit 0
+        fi
+    done
+fi
+
+if [ -n "$LIDAR_PORT_HINT" ]; then
+    RESOLVED_HINT="$(resolve_port "$LIDAR_PORT_HINT")"
+    for port in "${CANDIDATES[@]}"; do
+        if [ "$port" = "$RESOLVED_HINT" ]; then
             printf '%s\n' "$port"
             exit 0
         fi
