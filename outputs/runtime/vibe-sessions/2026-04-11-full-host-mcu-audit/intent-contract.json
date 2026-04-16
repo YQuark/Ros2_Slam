@@ -1,0 +1,19 @@
+{
+  "goal": "全面审计上位机和下位机代码并输出详细 Word 审计说明",
+  "deliverable": "/mnt/d/document/projects/上位机与下位机代码全面审计说明.docx",
+  "constraints": [
+    "本地只做静态审计",
+    "禁止本地构建、运行、ROS topic/node/tf 检查和硬件程序",
+    "不写入 build/install/log"
+  ],
+  "acceptance_criteria": [
+    "覆盖 ROS2 上位机、STM32 下位机、ESP01S 下位机和跨端协议",
+    "列出主要风险、证据、影响和修复建议",
+    "明确远程验证要求"
+  ],
+  "non_goals": [
+    "不修改业务代码",
+    "不执行本地编译或运行",
+    "不声明运行验证通过"
+  ]
+}

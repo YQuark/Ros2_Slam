@@ -1,0 +1,18 @@
+{
+  "goal": "Consolidate text documentation that links upper-computer ROS2 changes with lower-computer STM32/ESP01S changes.",
+  "deliverable": [
+    "docs/host-mcu-integration-status.md",
+    "docs/README.md update",
+    "traceability artifacts for this documentation pass"
+  ],
+  "constraints": [
+    "No local build, ROS launch/run, topic/node/tf checks, or hardware access.",
+    "Do not rename legacy mojibake Chinese markdown filenames.",
+    "Do not claim remote verification."
+  ],
+  "acceptance": [
+    "Document covers serial ports, velocity scale, heading/IMU, odometry, control arbitration, and navigation fusion.",
+    "Document references upper and lower key files.",
+    "Document includes remote verification boundary and commands."
+  ]
+}

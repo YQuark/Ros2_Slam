@@ -1,0 +1,18 @@
+{
+  "run_id": "2026-04-09-heading-audit",
+  "stage": "skeleton_check",
+  "cwd": "/mnt/ros2_ws",
+  "repo_detected": true,
+  "mounted_workspace_constraints": true,
+  "local_build_allowed": false,
+  "key_packages": [
+    "robot_bringup",
+    "stm32_robot_bridge",
+    "ydlidar_ros2_driver",
+    "third_party/robot_localization"
+  ],
+  "notes": [
+    "工作树为脏状态，存在大量与本次任务无关的已修改文件，审计时不回退用户改动。",
+    "docs 目录存在编码异常的历史文件名，不影响本次新增治理文档。"
+  ]
+}

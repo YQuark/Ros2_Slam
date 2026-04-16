@@ -1,0 +1,12 @@
+{
+  "phase": "plan_execute",
+  "result": "added source-gated yaw-hold eligibility, source-gated straight-balance assist, IMU-yaw-rate straight correction, and conservative static side trim for observed left drift",
+  "files_changed": [
+    "/mnt/d/Document/Work/projects/Clion/Core/Inc/Drivers/robot_config.h",
+    "/mnt/d/Document/Work/projects/Clion/Core/Src/Drivers/robot_control.c",
+    "docs/requirements/2026-04-12-manual-yaw-hold-isolation.md",
+    "docs/plans/2026-04-12-manual-yaw-hold-isolation-execution-plan.md",
+    "docs/host-mcu-integration-status.md"
+  ],
+  "local_hardware_commands_run": false
+}

@@ -18,10 +18,30 @@ def generate_launch_description():
         package='ydlidar_ros2_driver',
         executable='ydlidar_ros2_driver_node',
         name='ydlidar_ros2_driver_node',
-        output='screen',
+        # The SDK can spam benign point-count warnings; keep them in ROS log files.
+        output='log',
         condition=IfCondition(LaunchConfiguration('use_lidar')),
         emulate_tty=True,
         parameters=[LaunchConfiguration('lidar_params_file')],
+        remappings=[
+            ('scan', LaunchConfiguration('lidar_raw_scan_topic')),
+        ],
+    )
+
+    scan_normalizer = Node(
+        package='robot_bringup',
+        executable='scan_normalizer.py',
+        name='scan_normalizer',
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('use_lidar')),
+        parameters=[{
+            'input_topic': LaunchConfiguration('lidar_raw_scan_topic'),
+            'output_topic': LaunchConfiguration('lidar_scan_topic'),
+            'output_size': LaunchConfiguration('lidar_scan_output_size'),
+            'angle_min': LaunchConfiguration('lidar_scan_angle_min'),
+            'angle_max': LaunchConfiguration('lidar_scan_angle_max'),
+            'status_log_interval_sec': LaunchConfiguration('lidar_scan_normalizer_log_interval_sec'),
+        }],
     )
 
     lidar_tf = Node(
@@ -58,6 +78,12 @@ def generate_launch_description():
         DeclareLaunchArgument('use_lidar', default_value='true'),
         DeclareLaunchArgument('use_camera', default_value='false'),
         DeclareLaunchArgument('lidar_params_file', default_value=os.path.join(ydlidar_share, 'params', 'X2.yaml')),
+        DeclareLaunchArgument('lidar_raw_scan_topic', default_value='/scan_raw'),
+        DeclareLaunchArgument('lidar_scan_topic', default_value='/scan'),
+        DeclareLaunchArgument('lidar_scan_output_size', default_value='425'),
+        DeclareLaunchArgument('lidar_scan_angle_min', default_value=str(-3.141592653589793)),
+        DeclareLaunchArgument('lidar_scan_angle_max', default_value=str(3.141592653589793)),
+        DeclareLaunchArgument('lidar_scan_normalizer_log_interval_sec', default_value='30.0'),
         DeclareLaunchArgument('lidar_tf_x', default_value='0.07'),
         DeclareLaunchArgument('lidar_tf_y', default_value='0.0'),
         DeclareLaunchArgument('lidar_tf_z', default_value='0.13'),
@@ -70,6 +96,7 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_color_info_url', default_value=''),
         DeclareLaunchArgument('camera_ir_info_url', default_value=''),
         lidar_node,
+        scan_normalizer,
         lidar_tf,
         camera_launch,
     ])

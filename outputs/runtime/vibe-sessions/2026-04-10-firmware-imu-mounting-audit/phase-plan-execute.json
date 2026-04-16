@@ -1,0 +1,16 @@
+{
+  "run_id": "2026-04-10-firmware-imu-mounting-audit",
+  "stage": "plan_execute",
+  "status": "completed",
+  "changes": [
+    {
+      "file": "/mnt/d/Document/Work/projects/Clion/Core/Inc/Drivers/robot_config.h",
+      "summary": "Added installation-aware static gravity thresholds for IMU accel calibration."
+    },
+    {
+      "file": "/mnt/d/Document/Work/projects/Clion/Core/Src/Drivers/mpu6050.c",
+      "summary": "Added DetectExpectedStaticGravity(), required it during accel calibration, and expanded calibration logs with body-frame average acceleration."
+    }
+  ],
+  "code_change_applied": true
+}

@@ -1,0 +1,25 @@
+{
+  "run_id": "2026-04-09-heading-audit",
+  "stage": "plan_execute",
+  "status": "completed",
+  "audited_targets": [
+    "src/stm32_robot_bridge/stm32_robot_bridge/bridge_node.py",
+    "src/robot_bringup/launch/system.launch.py",
+    "src/robot_bringup/config/ekf_base.yaml",
+    "launch_scripts/robot.sh",
+    "src/robot_bringup/config/nav2_params_fallback.yaml",
+    "https://github.com/YQuark/SLAM_ROBOT/blob/master/docs/serial_protocols.md",
+    "https://github.com/YQuark/SLAM_ROBOT/blob/master/Core/Src/Drivers/robot_control.c",
+    "https://github.com/YQuark/SLAM_ROBOT/blob/master/Core/Inc/Drivers/robot_config.h"
+  ],
+  "key_findings": [
+    "上位机桥接默认不采用 MCU yaw_est，而是持续积分 w_est 生成 /odom.pose 航向。",
+    "真实底盘雷达建图默认路径会关闭底盘 IMU，使建图阶段进一步失去可靠航向观测。",
+    "导航链会启动 localization + navigation，但仓库内缺少项目级 Nav2 参数，控制器和平滑策略未做机器人化配置。",
+    "底盘固件本身已经具备 slew limit、yaw hold、启动辅助等平滑控制能力，问题更偏向上位机链路和参数使用不一致。"
+  ],
+  "verification_status": {
+    "local_runtime_verification": "not_allowed",
+    "reason": "mounted_workspace_constraints"
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "goal": "Audit and correct manual-control arbitration and yaw-hold behavior for PC, PS2, and ESP01S command sources.",
+  "deliverable": "A documented lower-computer plan for preserving manual input authority while keeping closed-loop chassis control.",
+  "acceptance": [
+    "PC query traffic is not treated as motion control.",
+    "Non-zero manual input is not masked by host zero keepalive.",
+    "Yaw-hold behavior is considered separately for navigation and human control.",
+    "No local hardware verification claims are made."
+  ]
+}

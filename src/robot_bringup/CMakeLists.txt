@@ -6,12 +6,16 @@ find_package(ament_cmake REQUIRED)
 install(PROGRAMS
   scripts/map_to_pointcloud_viz.py
   scripts/fake_base_odom.py
+  scripts/auto_mapping_driver.py
+  scripts/frontier_explorer.py
+  scripts/scan_normalizer.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY
   launch
   config
+  behavior_trees
   rviz
   DESTINATION share/${PROJECT_NAME}
 )

@@ -1,0 +1,10 @@
+{
+  "goal": "Determine and fix whether upper odometry falls back to command velocity when STM32 status is stale.",
+  "deliverable": "Upper bridge odometry no longer integrates command velocity during stale feedback.",
+  "acceptance": [
+    "Fresh status uses MCU feedback velocity.",
+    "Stale status holds pose and publishes zero twist.",
+    "Stale status covariance is high.",
+    "No local ROS/hardware verification claims."
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "run_id": "2026-04-09-heading-audit",
+  "stage": "deep_interview",
+  "goal": "审计航向角、定位链和底盘控制链的代码问题",
+  "deliverable": "基于证据的问题清单、风险分级和远程验证建议",
+  "constraints": [
+    "仅静态分析",
+    "不在本地构建或运行",
+    "不操作 build/install/log"
+  ],
+  "acceptance_criteria": [
+    "说明 yaw 从 MCU 到 ROS2 的链路",
+    "说明定位链是否闭环",
+    "说明控制链是否缺少平滑和约束"
+  ],
+  "manual_spot_checks": [
+    "/odom 与 /imu/data 航向一致性",
+    "map->odom 稳定性",
+    "Nav2 控制平滑性"
+  ],
+  "completion_language_policy": "只完成静态审计，不宣称已验证通过",
+  "delivery_truth_contract": "代码审计与根因分析",
+  "non_goals": [
+    "不直接修复",
+    "不远程部署"
+  ],
+  "autonomy_mode": "interactive_governed",
+  "open_questions": [
+    "远程 Nav2 实际参数是否为默认配置",
+    "现场安装外参与代码是否完全一致"
+  ],
+  "inference_notes": [
+    "优先以底盘仓库协议文档作为上下位机接口契约真值。"
+  ]
+}

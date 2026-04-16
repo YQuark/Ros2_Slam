@@ -1,0 +1,14 @@
+{
+  "goal": "再次全面审计已大量修改的上位机和下位机代码",
+  "deliverable": "/mnt/d/document/projects/上位机与下位机代码全面审计说明.docx",
+  "constraints": [
+    "本地只做静态审计",
+    "不执行构建、运行、ROS topic/node/tf 检查或硬件程序",
+    "不写入 build/install/log"
+  ],
+  "acceptance": [
+    "报告反映当前代码状态",
+    "区分已改善项、新增风险和残留风险",
+    "保留远程验证命令"
+  ]
+}

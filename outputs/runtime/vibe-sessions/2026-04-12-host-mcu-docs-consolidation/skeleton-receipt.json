@@ -1,0 +1,11 @@
+{
+  "run_id": "2026-04-12-host-mcu-docs-consolidation",
+  "workspace": "/mnt/ros2_ws",
+  "mode": "mounted workspace; static documentation edits only",
+  "artifacts_reviewed": [
+    "docs/requirements",
+    "docs/plans",
+    "outputs/runtime/vibe-sessions",
+    "docs/README.md"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "run_id": "2026-04-11-full-host-mcu-reaudit",
+  "stage": "skeleton_check",
+  "cwd": "/mnt/ros2_ws",
+  "workspace_type": "remote_robot_smb_mount",
+  "local_execution_policy": "static_analysis_only",
+  "wps": {
+    "ping": "ok",
+    "writer": "not_running"
+  },
+  "result": "ready"
+}

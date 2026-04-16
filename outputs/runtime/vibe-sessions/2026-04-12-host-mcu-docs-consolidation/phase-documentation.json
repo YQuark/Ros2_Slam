@@ -1,0 +1,11 @@
+{
+  "phase": "plan_execute",
+  "result": "Added stable host-MCU integration status document and linked it from docs README.",
+  "files_changed": [
+    "docs/host-mcu-integration-status.md",
+    "docs/README.md",
+    "docs/requirements/2026-04-12-host-mcu-documentation-consolidation.md",
+    "docs/plans/2026-04-12-host-mcu-documentation-consolidation-execution-plan.md"
+  ],
+  "legacy_doc_note": "Existing Chinese markdown filenames appear as literal question marks in this mounted environment; they were not renamed."
+}

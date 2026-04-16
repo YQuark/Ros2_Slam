@@ -1,0 +1,6 @@
+{
+  "run_id": "2026-04-11-odom-stale-command-fallback",
+  "workspace": "/mnt/ros2_ws",
+  "constraint": "mounted robot workspace; local static analysis and edits only",
+  "target": "src/stm32_robot_bridge/stm32_robot_bridge/bridge_node.py"
+}

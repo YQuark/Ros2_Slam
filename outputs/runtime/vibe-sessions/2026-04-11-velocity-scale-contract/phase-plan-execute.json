@@ -1,0 +1,23 @@
+{
+  "run_id": "2026-04-11-velocity-scale-contract",
+  "stage": "plan_execute",
+  "status": "completed",
+  "changes": [
+    {
+      "file": "/mnt/ros2_ws/src/stm32_robot_bridge/stm32_robot_bridge/bridge_node.py",
+      "summary": "Changed default bridge velocity normalization scale to firmware-derived 1.204277 m/s and 19.268435 rad/s."
+    },
+    {
+      "file": "/mnt/ros2_ws/src/stm32_robot_bridge/launch/stm32_bridge.launch.py",
+      "summary": "Updated launch defaults for max_linear and max_angular."
+    },
+    {
+      "file": "/mnt/ros2_ws/src/robot_bringup/launch/base.launch.py",
+      "summary": "Updated base launch defaults for max_linear and max_angular."
+    },
+    {
+      "file": "/mnt/ros2_ws/src/robot_bringup/launch/system.launch.py",
+      "summary": "Updated system launch base_max_linear and base_max_angular defaults."
+    }
+  ]
+}

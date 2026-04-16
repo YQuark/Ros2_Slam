@@ -1,0 +1,6 @@
+{
+  "run_id": "2026-04-10-firmware-imu-mounting-audit",
+  "stage": "skeleton_check",
+  "status": "completed",
+  "scope": "firmware IMU mounting, accel validity, and yaw semantics audit"
+}

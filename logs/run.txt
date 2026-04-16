@@ -1,0 +1,276 @@
+robot@robot-Default-string:~/ros2_ws$ ./launch_scripts/robot.sh mapping lidar --real-base --ekf-base --auto-drive
+========================================
+    建图模式启动
+========================================
+
+执行雷达数据健康检查...
+========================================
+    雷达健康检查
+========================================
+
+启动 ydlidar 驱动进行采样...
+参数文件: /home/robot/ros2_ws/src/robot_bringup/config/ydlidar_X2_mapping.yaml
+雷达串口: /dev/ttyUSB0
+采样 /scan 频率（6s）...
+
+检查结果:
+  日志文件: /tmp/lidar_health_20260413_151143_350385_driver.log
+  频率文件: /tmp/lidar_health_20260413_151143_350385_scan_hz.log
+  CheckSum错误数: 0
+  /scan消息数: 57
+  /scan平均频率: 9.415 Hz
+  /scan点数档位: 4
+  点数统计: 423:10,424:31,425:15,426:1
+  点数跨度: 3 (423..426)
+提示: /scan 点数存在轻微正常波动（档位数=4, 跨度=3），不会阻止建图。
+
+✓ 通过: 雷达数据质量可用于建图
+系统组件:
+  • YDLIDAR X2 激光雷达
+  • STM32 底盘里程计 (/dev/ttyUSB1)
+  • SLAM Toolbox 建图引擎
+  • RViz2 可视化界面
+
+清理旧 ROS2 会话...
+正在启动统一建图系统...
+入口: robot_bringup/system.launch.py
+建图源: lidar
+参数档位: quality
+SLAM 参数: /home/robot/ros2_ws/src/robot_bringup/config/slam_toolbox_mapping.yaml
+雷达参数: /home/robot/ros2_ws/src/robot_bringup/config/ydlidar_X2_mapping.yaml
+雷达串口: /dev/ttyUSB0
+底盘模式: real
+底盘串口: /dev/ttyUSB1
+底盘 IMU 参与控制: false
+底盘融合模式: ekf
+自动建图巡航已启用: 请保持人工急停可用，不要让 PS2/ESP 同时抢控制
+自动探索: Nav2 frontier, 180.0s
+Nav2 建图参数: /home/robot/ros2_ws/src/robot_bringup/config/nav2_mapping_params.yaml
+RViz 配置: /home/robot/ros2_ws/src/robot_bringup/rviz/lidar_mapping.rviz
+
+[INFO] [launch]: All log files can be found below /home/robot/.ros/log/2026-04-13-15-11-58-683609-robot-Default-string-350570
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [launch.user]: [robot_bringup] mode=mapping, mapping_source=lidar, base_mode=real
+[INFO] [ydlidar_ros2_driver_node-1]: process started with pid [350572]
+[INFO] [scan_normalizer.py-2]: process started with pid [350574]
+[INFO] [static_transform_publisher-3]: process started with pid [350576]
+[INFO] [bridge_node-4]: process started with pid [350579]
+[INFO] [ekf_node-5]: process started with pid [350589]
+[INFO] [async_slam_toolbox_node-6]: process started with pid [350592]
+[INFO] [controller_server-7]: process started with pid [350599]
+[INFO] [planner_server-8]: process started with pid [350601]
+[INFO] [recoveries_server-9]: process started with pid [350603]
+[INFO] [bt_navigator-10]: process started with pid [350610]
+[INFO] [waypoint_follower-11]: process started with pid [350612]
+[INFO] [lifecycle_manager-12]: process started with pid [350614]
+[INFO] [frontier_explorer.py-13]: process started with pid [350616]
+[INFO] [map_to_pointcloud_viz.py-14]: process started with pid [350618]
+[INFO] [rviz2-15]: process started with pid [350621]
+[ydlidar_ros2_driver_node-1] [INFO] [1776064319.666673049] [ydlidar_ros2_driver_node]: [YDLIDAR INFO] Current ROS Driver Version: 1.0.1
+[ydlidar_ros2_driver_node-1] 
+[controller_server-7] [INFO] [1776064319.970928891] [controller_server]: 
+[controller_server-7] 	controller_server lifecycle node launched. 
+[controller_server-7] 	Waiting on external lifecycle transitions to activate
+[controller_server-7] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[controller_server-7] [INFO] [1776064320.010890833] [controller_server]: Creating controller server
+[static_transform_publisher-3] [INFO] [1776064320.050512716] [static_tf_pub_laser]: Spinning until killed publishing transform from 'base_link' to 'laser_frame'
+[lifecycle_manager-12] [INFO] [1776064320.101190371] [lifecycle_manager_navigation]: Creating
+[bt_navigator-10] [INFO] [1776064320.119937204] [bt_navigator]: 
+[bt_navigator-10] 	bt_navigator lifecycle node launched. 
+[bt_navigator-10] 	Waiting on external lifecycle transitions to activate
+[bt_navigator-10] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[bt_navigator-10] [INFO] [1776064320.123131388] [bt_navigator]: Creating
+[waypoint_follower-11] [INFO] [1776064320.150805090] [waypoint_follower]: 
+[waypoint_follower-11] 	waypoint_follower lifecycle node launched. 
+[waypoint_follower-11] 	Waiting on external lifecycle transitions to activate
+[waypoint_follower-11] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[waypoint_follower-11] [INFO] [1776064320.208608331] [waypoint_follower]: Creating
+[lifecycle_manager-12] [INFO] [1776064320.399896291] [lifecycle_manager_navigation]: Creating and initializing lifecycle service clients
+[controller_server-7] [INFO] [1776064320.499570940] [local_costmap.local_costmap]: 
+[controller_server-7] 	local_costmap lifecycle node launched. 
+[controller_server-7] 	Waiting on external lifecycle transitions to activate
+[controller_server-7] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[controller_server-7] [INFO] [1776064320.500226564] [local_costmap.local_costmap]: Creating Costmap
+[lifecycle_manager-12] [INFO] [1776064320.552512558] [lifecycle_manager_navigation]: Starting managed nodes bringup...
+[lifecycle_manager-12] [INFO] [1776064320.553809222] [lifecycle_manager_navigation]: Configuring controller_server
+[async_slam_toolbox_node-6] [INFO] [1776064320.661490298] [slam_toolbox]: Node using stack size 40000000
+[planner_server-8] [INFO] [1776064320.714483294] [planner_server]: 
+[planner_server-8] 	planner_server lifecycle node launched. 
+[planner_server-8] 	Waiting on external lifecycle transitions to activate
+[planner_server-8] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[planner_server-8] [INFO] [1776064320.716259930] [planner_server]: Creating
+[controller_server-7] [INFO] [1776064320.823153762] [controller_server]: Configuring controller interface
+[controller_server-7] [INFO] [1776064320.827783492] [controller_server]: Controller frequency set to 15.0000Hz
+[controller_server-7] [INFO] [1776064320.827873526] [local_costmap.local_costmap]: Configuring
+[recoveries_server-9] [INFO] [1776064320.901634916] [recoveries_server]: 
+[recoveries_server-9] 	recoveries_server lifecycle node launched. 
+[recoveries_server-9] 	Waiting on external lifecycle transitions to activate
+[recoveries_server-9] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[async_slam_toolbox_node-6] [INFO] [1776064320.925582068] [slam_toolbox]: Using solver plugin solver_plugins::CeresSolver
+[async_slam_toolbox_node-6] [INFO] [1776064320.928165273] [slam_toolbox]: CeresSolver: Using SCHUR_JACOBI preconditioner.
+[controller_server-7] [INFO] [1776064320.940576012] [local_costmap.local_costmap]: Using plugin "obstacle_layer"
+[controller_server-7] [INFO] [1776064321.028674747] [local_costmap.local_costmap]: Subscribed to Topics: scan
+[controller_server-7] [INFO] [1776064321.086274845] [local_costmap.local_costmap]: Initialized plugin "obstacle_layer"
+[controller_server-7] [INFO] [1776064321.086362893] [local_costmap.local_costmap]: Using plugin "inflation_layer"
+[controller_server-7] [INFO] [1776064321.121638277] [local_costmap.local_costmap]: Initialized plugin "inflation_layer"
+[controller_server-7] [INFO] [1776064321.295446078] [controller_server]: Created progress_checker : progress_checker of type nav2_controller::SimpleProgressChecker
+[controller_server-7] [INFO] [1776064321.301938954] [controller_server]: Created goal_checker : goal_checker of type nav2_controller::SimpleGoalChecker
+[planner_server-8] [INFO] [1776064321.332356412] [global_costmap.global_costmap]: 
+[planner_server-8] 	global_costmap lifecycle node launched. 
+[planner_server-8] 	Waiting on external lifecycle transitions to activate
+[planner_server-8] 	See https://design.ros2.org/articles/node_lifecycle.html for more information.
+[planner_server-8] [INFO] [1776064321.332963274] [global_costmap.global_costmap]: Creating Costmap
+[controller_server-7] [INFO] [1776064321.347958224] [controller_server]: Created controller : FollowPath of type dwb_core::DWBLocalPlanner
+[controller_server-7] [INFO] [1776064321.396605434] [controller_server]: Setting transform_tolerance to 0.300000
+[controller_server-7] [INFO] [1776064321.664934792] [controller_server]: Using critic "Oscillation" (dwb_critics::OscillationCritic)
+[controller_server-7] [INFO] [1776064321.675497257] [controller_server]: Critic plugin initialized
+[controller_server-7] [INFO] [1776064321.676872093] [controller_server]: Using critic "BaseObstacle" (dwb_critics::BaseObstacleCritic)
+[controller_server-7] [INFO] [1776064321.681417153] [controller_server]: Critic plugin initialized
+[controller_server-7] [INFO] [1776064321.682920232] [controller_server]: Using critic "GoalAlign" (dwb_critics::GoalAlignCritic)
+[controller_server-7] [INFO] [1776064321.688659091] [controller_server]: Critic plugin initialized
+[controller_server-7] [INFO] [1776064321.691816746] [controller_server]: Using critic "PathAlign" (dwb_critics::PathAlignCritic)
+[controller_server-7] [INFO] [1776064321.699629574] [controller_server]: Critic plugin initialized
+[controller_server-7] [INFO] [1776064321.700295371] [controller_server]: Using critic "PathDist" (dwb_critics::PathDistCritic)
+[controller_server-7] [INFO] [1776064321.700452183] [controller_server]: Critic plugin initialized
+[controller_server-7] [INFO] [1776064321.700525755] [controller_server]: Using critic "GoalDist" (dwb_critics::GoalDistCritic)
+[controller_server-7] [INFO] [1776064321.700627331] [controller_server]: Critic plugin initialized
+[controller_server-7] [INFO] [1776064321.700652305] [controller_server]: Controller Server has FollowPath  controllers available.
+[lifecycle_manager-12] [INFO] [1776064321.778485379] [lifecycle_manager_navigation]: Configuring planner_server
+[planner_server-8] [INFO] [1776064321.779181015] [planner_server]: Configuring
+[planner_server-8] [INFO] [1776064321.779229318] [global_costmap.global_costmap]: Configuring
+[planner_server-8] [INFO] [1776064321.804498513] [global_costmap.global_costmap]: Using plugin "static_layer"
+[planner_server-8] [INFO] [1776064321.840609270] [global_costmap.global_costmap]: Subscribing to the map topic (/map) with transient local durability
+[planner_server-8] [INFO] [1776064321.848912113] [global_costmap.global_costmap]: Subscribing to updates
+[planner_server-8] [INFO] [1776064321.859210624] [global_costmap.global_costmap]: Initialized plugin "static_layer"
+[planner_server-8] [INFO] [1776064321.859301984] [global_costmap.global_costmap]: Using plugin "obstacle_layer"
+[planner_server-8] [INFO] [1776064321.872118510] [global_costmap.global_costmap]: Subscribed to Topics: scan
+[planner_server-8] [INFO] [1776064321.912902126] [global_costmap.global_costmap]: Initialized plugin "obstacle_layer"
+[planner_server-8] [INFO] [1776064321.912969501] [global_costmap.global_costmap]: Using plugin "inflation_layer"
+[planner_server-8] [INFO] [1776064321.921414229] [global_costmap.global_costmap]: Initialized plugin "inflation_layer"
+[planner_server-8] [INFO] [1776064321.952691478] [planner_server]: Created global planner plugin GridBased of type nav2_navfn_planner/NavfnPlanner
+[planner_server-8] [INFO] [1776064321.953717578] [planner_server]: Configuring plugin GridBased of type NavfnPlanner
+[planner_server-8] [INFO] [1776064322.045016765] [planner_server]: Planner Server has GridBased  planners available.
+[lifecycle_manager-12] [INFO] [1776064322.103538542] [lifecycle_manager_navigation]: Configuring recoveries_server
+[recoveries_server-9] [INFO] [1776064322.104035883] [recoveries_server]: Configuring
+[recoveries_server-9] [INFO] [1776064322.151136702] [recoveries_server]: Creating recovery plugin spin of type nav2_recoveries/Spin
+[recoveries_server-9] [INFO] [1776064322.157947267] [recoveries_server]: Configuring spin
+[recoveries_server-9] [INFO] [1776064322.234885255] [recoveries_server]: Creating recovery plugin backup of type nav2_recoveries/BackUp
+[recoveries_server-9] [INFO] [1776064322.236479199] [recoveries_server]: Configuring backup
+[recoveries_server-9] [INFO] [1776064322.331374201] [recoveries_server]: Creating recovery plugin wait of type nav2_recoveries/Wait
+[recoveries_server-9] [INFO] [1776064322.333764561] [recoveries_server]: Configuring wait
+[lifecycle_manager-12] [INFO] [1776064322.396833637] [lifecycle_manager_navigation]: Configuring bt_navigator
+[bt_navigator-10] [INFO] [1776064322.397579294] [bt_navigator]: Configuring
+[bt_navigator-10] [INFO] [1776064322.653089504] [bt_navigator_rclcpp_node]: Waiting for "compute_path_to_pose" action server
+[bt_navigator-10] [INFO] [1776064322.654804354] [bt_navigator_rclcpp_node]: "ComputePathToPose" BtActionNode initialized
+[bt_navigator-10] [INFO] [1776064322.718398961] [bt_navigator_rclcpp_node]: Waiting for "follow_path" action server
+[bt_navigator-10] [INFO] [1776064322.720280670] [bt_navigator_rclcpp_node]: "FollowPath" BtActionNode initialized
+[lifecycle_manager-12] [INFO] [1776064322.735392021] [lifecycle_manager_navigation]: Configuring waypoint_follower
+[waypoint_follower-11] [INFO] [1776064322.736465391] [waypoint_follower]: Configuring
+[lifecycle_manager-12] [INFO] [1776064322.950288622] [lifecycle_manager_navigation]: Activating controller_server
+[controller_server-7] [INFO] [1776064322.951877866] [controller_server]: Activating
+[controller_server-7] [INFO] [1776064322.951958078] [local_costmap.local_costmap]: Activating
+[controller_server-7] [INFO] [1776064322.951974433] [local_costmap.local_costmap]: Checking transform
+[controller_server-7] [INFO] [1776064322.952027539] [local_costmap.local_costmap]: Timed out waiting for transform from base_link to odom to become available, tf error: Could not find a connection between 'odom' and 'base_link' because they are not part of the same tree.Tf has two or more unconnected trees.
+[controller_server-7] [INFO] [1776064323.452144579] [local_costmap.local_costmap]: Timed out waiting for transform from base_link to odom to become available, tf error: Could not find a connection between 'odom' and 'base_link' because they are not part of the same tree.Tf has two or more unconnected trees.
+[controller_server-7] [INFO] [1776064323.952106757] [local_costmap.local_costmap]: Timed out waiting for transform from base_link to odom to become available, tf error: Could not find a connection between 'odom' and 'base_link' because they are not part of the same tree.Tf has two or more unconnected trees.
+[map_to_pointcloud_viz.py-14] [INFO] [1776064324.188119262] [map_to_pointcloud_viz]: map_to_pointcloud_viz started: /map -> /map_points, threshold=50
+[rviz2-15] [INFO] [1776064324.367398230] [rviz2]: Stereo is NOT SUPPORTED
+[rviz2-15] [INFO] [1776064324.368669176] [rviz2]: OpenGl version: 3.1 (GLSL 1.4)
+[scan_normalizer.py-2] [WARN] [1776064324.429458716] [scan_normalizer]: scan_normalizer active: /scan_raw -> /scan, bins=425
+[async_slam_toolbox_node-6] [INFO] [1776064324.445817831] [slam_toolbox]: Message Filter dropping message: frame 'laser_frame' at time 1776064324.181 for reason 'Unknown'
+[controller_server-7] [INFO] [1776064324.452078028] [local_costmap.local_costmap]: Timed out waiting for transform from base_link to odom to become available, tf error: Could not find a connection between 'odom' and 'base_link' because they are not part of the same tree.Tf has two or more unconnected trees.
+[async_slam_toolbox_node-6] [INFO] [1776064324.509015302] [slam_toolbox]: Message Filter dropping message: frame 'laser_frame' at time 1776064324.290 for reason 'Unknown'
+[rviz2-15] [INFO] [1776064324.611051703] [rviz2]: Stereo is NOT SUPPORTED
+[async_slam_toolbox_node-6] [INFO] [1776064324.618644111] [slam_toolbox]: Message Filter dropping message: frame 'laser_frame' at time 1776064324.397 for reason 'Unknown'
+[frontier_explorer.py-13] [WARN] [1776064324.654749627] [frontier_explorer]: frontier_explorer active: map=/map action=/navigate_to_pose frames=map->base_link
+[async_slam_toolbox_node-6] [INFO] [1776064324.749270224] [slam_toolbox]: Message Filter dropping message: frame 'laser_frame' at time 1776064324.505 for reason 'Unknown'
+[async_slam_toolbox_node-6] [INFO] [1776064324.841566759] [slam_toolbox]: Message Filter dropping message: frame 'laser_frame' at time 1776064324.614 for reason 'Unknown'
+[controller_server-7] [INFO] [1776064324.952102201] [local_costmap.local_costmap]: Timed out waiting for transform from base_link to odom to become available, tf error: Could not find a connection between 'odom' and 'base_link' because they are not part of the same tree.Tf has two or more unconnected trees.
+[async_slam_toolbox_node-6] [INFO] [1776064324.957147748] [slam_toolbox]: Message Filter dropping message: frame 'laser_frame' at time 1776064324.722 for reason 'Unknown'
+[async_slam_toolbox_node-6] [INFO] [1776064325.050073756] [slam_toolbox]: Message Filter dropping message: frame 'laser_frame' at time 1776064324.830 for reason 'Unknown'
+[bridge_node-4] [INFO] [1776064325.075098884] [stm32_bridge]: Opened STM32 serial /dev/ttyUSB1@115200
+[frontier_explorer.py-13] [INFO] [1776064325.100086921] [frontier_explorer]: explorer_state state=startup_delay elapsed=0.5s map_age=none nav=unknown active=none blacklist=0 stats=[]
+[async_slam_toolbox_node-6] [INFO] [1776064325.170997635] [slam_toolbox]: Message Filter dropping message: frame 'laser_frame' at time 1776064324.939 for reason 'Unknown'
+[async_slam_toolbox_node-6] [INFO] [1776064325.265120224] [slam_toolbox]: Message Filter dropping message: frame 'laser_frame' at time 1776064325.047 for reason 'Unknown'
+[bridge_node-4] [INFO] [1776064325.339637956] [stm32_bridge]: STM32 bridge started with port=/dev/ttyUSB1 baudrate=115200
+[async_slam_toolbox_node-6] [INFO] [1776064325.381883558] [slam_toolbox]: Message Filter dropping message: frame 'laser_frame' at time 1776064325.162 for reason 'Unknown'
+[bridge_node-4] [INFO] [1776064325.407864393] [stm32_bridge]: status_summary source=wheel_cps mode=2 src=2 odom=(0.000m/s,0.00deg/s) status=(0.000m/s,0.00deg/s) wheels=(0.000m/s,0.00deg/s) enc_cps=(0,0,0,0) enc_fault=0x00
+[controller_server-7] [INFO] [1776064325.453913601] [local_costmap.local_costmap]: start
+[lifecycle_manager-12] [INFO] [1776064325.506280279] [lifecycle_manager_navigation]: Activating planner_server
+[planner_server-8] [INFO] [1776064325.507551835] [planner_server]: Activating
+[planner_server-8] [INFO] [1776064325.507605793] [global_costmap.global_costmap]: Activating
+[planner_server-8] [INFO] [1776064325.507622937] [global_costmap.global_costmap]: Checking transform
+[planner_server-8] [INFO] [1776064325.507760029] [global_costmap.global_costmap]: start
+[async_slam_toolbox_node-6] [INFO] [1776064325.522658778] [slam_toolbox]: Message Filter dropping message: frame 'laser_frame' at time 1776064325.263 for reason 'Unknown'
+[async_slam_toolbox_node-6] Registering sensor: [Custom Described Lidar]
+[planner_server-8] [INFO] [1776064325.558590236] [planner_server]: Activating plugin GridBased of type NavfnPlanner
+[lifecycle_manager-12] [INFO] [1776064325.560741837] [lifecycle_manager_navigation]: Activating recoveries_server
+[lifecycle_manager-12] [INFO] [1776064325.562455847] [lifecycle_manager_navigation]: Activating bt_navigator
+[recoveries_server-9] [INFO] [1776064325.561317607] [recoveries_server]: Activating
+[recoveries_server-9] [INFO] [1776064325.561379413] [recoveries_server]: Activating spin
+[recoveries_server-9] [INFO] [1776064325.561396443] [recoveries_server]: Activating backup
+[recoveries_server-9] [INFO] [1776064325.561407559] [recoveries_server]: Activating wait
+[bt_navigator-10] [INFO] [1776064325.562803551] [bt_navigator]: Activating
+[lifecycle_manager-12] [INFO] [1776064325.564411936] [lifecycle_manager_navigation]: Activating waypoint_follower
+[waypoint_follower-11] [INFO] [1776064325.565038958] [waypoint_follower]: Activating
+[lifecycle_manager-12] [INFO] [1776064325.566680886] [lifecycle_manager_navigation]: Managed nodes are active
+[planner_server-8] [INFO] [1776064325.665057199] [global_costmap.global_costmap]: StaticLayer: Resizing costmap to 30 X 40 at 0.050000 m/pix
+[rviz2-15] [INFO] [1776064325.883916953] [rviz2]: Trying to create a map of size 30 x 40 using 1 swatches
+[rviz2-15] [ERROR] [1776064325.903475698] [rviz2]: Vertex Program:rviz/glsl120/indexed_8bit_image.vert Fragment Program:rviz/glsl120/indexed_8bit_image.frag GLSL link result : 
+[rviz2-15] active samplers with a different type refer to the same texture image unit
+[frontier_explorer.py-13] [INFO] [1776064330.153638898] [frontier_explorer]: frontier_goal_send target=(0.33,0.36) distance=0.49 heading=47.9deg unknown=77 score=0.321
+[bt_navigator-10] [INFO] [1776064330.165690130] [bt_navigator]: Begin navigating from current location to (0.33, 0.36)
+[bt_navigator-10] [ERROR] [1776064330.185291153] [bt_navigator]: Action server failed while executing action callback: "send_goal failed"
+[bt_navigator-10] [WARN] [1776064330.185354745] [bt_navigator]: [navigate_to_pose] [ActionServer] Aborting handle.
+[frontier_explorer.py-13] [WARN] [1776064330.197401494] [frontier_explorer]: frontier_goal_failed status=6
+[frontier_explorer.py-13] [WARN] [1776064330.199852996] [frontier_explorer]: frontier_blacklist reason=status_6 target=(0.33,0.36) ttl=30.0s
+[frontier_explorer.py-13] [INFO] [1776064330.617049671] [frontier_explorer]: frontier_goal_send target=(0.55,0.75) distance=0.93 heading=53.7deg unknown=77 score=0.594
+[bt_navigator-10] [INFO] [1776064330.619764940] [bt_navigator]: Begin navigating from current location to (0.55, 0.75)
+[frontier_explorer.py-13] [INFO] [1776064333.612363675] [frontier_explorer]: explorer_state state=navigating elapsed=9.0s map_age=0.19s nav=active active=(0.55,0.75,0.93m,53.7deg) blacklist=1 stats=[approach_blocked=21,approach_unknown=7,blacklisted=18,blocked=23,candidates=118,clusters=7,free=436,frontier=238,small_clusters=4,too_close=58,too_far=0]
+[ERROR] [bt_navigator-10]: process has died [pid 350610, exit code -11, cmd '/opt/ros/foxy/lib/nav2_bt_navigator/bt_navigator --ros-args -r __node:=bt_navigator --params-file /tmp/tmphf25l2hn -r /tf:=tf -r /tf_static:=tf_static'].
+[bridge_node-4] [INFO] [1776064335.401297316] [stm32_bridge]: status_summary source=wheel_cps mode=2 src=2 odom=(0.000m/s,0.00deg/s) status=(0.000m/s,0.00deg/s) wheels=(0.000m/s,0.00deg/s) enc_cps=(0,0,0,0) enc_fault=0x00
+[frontier_explorer.py-13] [INFO] [1776064342.107069806] [frontier_explorer]: explorer_state state=navigating elapsed=17.5s map_age=0.19s nav=active active=(0.55,0.75,0.93m,53.7deg) blacklist=1 stats=[approach_blocked=21,approach_unknown=7,blacklisted=18,blocked=23,candidates=118,clusters=7,free=436,frontier=238,small_clusters=4,too_close=58,too_far=0]
+[bridge_node-4] [INFO] [1776064345.469781710] [stm32_bridge]: status_summary source=wheel_cps mode=2 src=2 odom=(0.000m/s,0.00deg/s) status=(0.000m/s,0.00deg/s) wheels=(0.000m/s,0.00deg/s) enc_cps=(0,0,0,0) enc_fault=0x00
+[planner_server-8] [INFO] [1776064346.923151959] [global_costmap.global_costmap]: StaticLayer: Resizing costmap to 30 X 40 at 0.050000 m/pix
+[frontier_explorer.py-13] [INFO] [1776064350.602814571] [frontier_explorer]: explorer_state state=navigating elapsed=26.0s map_age=0.18s nav=active active=(0.55,0.75,0.93m,53.7deg) blacklist=1 stats=[approach_blocked=21,approach_unknown=7,blacklisted=18,blocked=23,candidates=118,clusters=7,free=436,frontier=238,small_clusters=4,too_close=58,too_far=0]
+[planner_server-8] [INFO] [1776064352.681315693] [global_costmap.global_costmap]: StaticLayer: Resizing costmap to 30 X 40 at 0.050000 m/pix
+[scan_normalizer.py-2] [INFO] [1776064354.125593483] [scan_normalizer]: scan_normalizer_state count=281 input_size=424 output_size=425
+[bridge_node-4] [INFO] [1776064355.496587350] [stm32_bridge]: status_summary source=wheel_cps mode=2 src=2 odom=(0.000m/s,0.00deg/s) status=(0.000m/s,0.00deg/s) wheels=(0.000m/s,0.00deg/s) enc_cps=(0,0,0,0) enc_fault=0x00
+[frontier_explorer.py-13] [INFO] [1776064359.099926339] [frontier_explorer]: explorer_state state=waiting_nav2_action elapsed=34.5s map_age=0.18s nav=active active=(0.55,0.75,0.93m,53.7deg) blacklist=1 stats=[approach_blocked=21,approach_unknown=7,blacklisted=18,blocked=23,candidates=118,clusters=7,free=436,frontier=238,small_clusters=4,too_close=58,too_far=0]
+[bridge_node-4] [INFO] [1776064365.497155512] [stm32_bridge]: status_summary source=wheel_cps mode=2 src=2 odom=(0.000m/s,0.00deg/s) status=(0.000m/s,0.00deg/s) wheels=(0.000m/s,0.00deg/s) enc_cps=(0,0,0,0) enc_fault=0x00
+[frontier_explorer.py-13] [INFO] [1776064367.592813734] [frontier_explorer]: explorer_state state=waiting_nav2_action elapsed=43.0s map_age=0.16s nav=active active=(0.55,0.75,0.93m,53.7deg) blacklist=1 stats=[approach_blocked=21,approach_unknown=7,blacklisted=18,blocked=23,candidates=118,clusters=7,free=436,frontier=238,small_clusters=4,too_close=58,too_far=0]
+[bridge_node-4] [INFO] [1776064375.546633435] [stm32_bridge]: status_summary source=wheel_cps mode=2 src=2 odom=(0.000m/s,0.00deg/s) status=(0.000m/s,0.00deg/s) wheels=(0.000m/s,0.00deg/s) enc_cps=(0,0,0,0) enc_fault=0x00
+[frontier_explorer.py-13] [INFO] [1776064375.592863971] [frontier_explorer]: explorer_state state=waiting_nav2_action elapsed=51.0s map_age=0.18s nav=active active=(0.55,0.75,0.93m,53.7deg) blacklist=1 stats=[approach_blocked=21,approach_unknown=7,blacklisted=18,blocked=23,candidates=118,clusters=7,free=436,frontier=238,small_clusters=4,too_close=58,too_far=0]
+[frontier_explorer.py-13] [INFO] [1776064384.093517984] [frontier_explorer]: explorer_state state=waiting_nav2_action elapsed=59.5s map_age=0.18s nav=active active=(0.55,0.75,0.93m,53.7deg) blacklist=1 stats=[approach_blocked=21,approach_unknown=7,blacklisted=18,blocked=23,candidates=118,clusters=7,free=436,frontier=238,small_clusters=4,too_close=58,too_far=0]
+[scan_normalizer.py-2] [INFO] [1776064384.152943224] [scan_normalizer]: scan_normalizer_state count=567 input_size=425 output_size=425
+[bridge_node-4] [INFO] [1776064385.601992513] [stm32_bridge]: status_summary source=wheel_cps mode=2 src=2 odom=(0.000m/s,0.00deg/s) status=(0.000m/s,0.00deg/s) wheels=(0.000m/s,0.00deg/s) enc_cps=(0,0,0,0) enc_fault=0x00
+^C[WARNING] [launch]: user interrupted with ctrl-c (SIGINT)
+[ydlidar_ros2_driver_node-1] [INFO] [1776064387.111571782] [rclcpp]: signal_handler(signal_value=2)
+[ydlidar_ros2_driver_node-1] [INFO] [1776064387.125357734] [ydlidar_ros2_driver_node]: [YDLIDAR INFO] Now YDLIDAR is stopping .......
+[rviz2-15] [INFO] [1776064387.107888401] [rclcpp]: signal_handler(signal_value=2)
+[INFO] [recoveries_server-9]: process has finished cleanly [pid 350603]
+[INFO] [planner_server-8]: process has finished cleanly [pid 350601]
+[INFO] [controller_server-7]: process has finished cleanly [pid 350599]
+[INFO] [ekf_node-5]: process has finished cleanly [pid 350589]
+[INFO] [lifecycle_manager-12]: process has finished cleanly [pid 350614]
+[INFO] [static_transform_publisher-3]: process has finished cleanly [pid 350576]
+[INFO] [async_slam_toolbox_node-6]: process has finished cleanly [pid 350592]
+[frontier_explorer.py-13] [WARN] [1776064387.109999038] [frontier_explorer]: frontier_goal_cancel reason=shutdown
+[INFO] [waypoint_follower-11]: process has finished cleanly [pid 350612]
+[lifecycle_manager-12] [INFO] [1776064387.110371919] [rclcpp]: signal_handler(signal_value=2)
+[waypoint_follower-11] [INFO] [1776064387.110483790] [rclcpp]: signal_handler(signal_value=2)
+[recoveries_server-9] [INFO] [1776064387.110575063] [rclcpp]: signal_handler(signal_value=2)
+[planner_server-8] [INFO] [1776064387.110659133] [rclcpp]: signal_handler(signal_value=2)
+[controller_server-7] [INFO] [1776064387.110717006] [rclcpp]: signal_handler(signal_value=2)
+[async_slam_toolbox_node-6] [INFO] [1776064387.110778369] [rclcpp]: signal_handler(signal_value=2)
+[ekf_node-5] [INFO] [1776064387.110845344] [rclcpp]: signal_handler(signal_value=2)
+[static_transform_publisher-3] [INFO] [1776064387.122546263] [rclcpp]: signal_handler(signal_value=2)
+[lifecycle_manager-12] [INFO] [1776064387.148652725] [lifecycle_manager_navigation]: Destroying
+[waypoint_follower-11] [INFO] [1776064387.156613465] [waypoint_follower]: Destroying
+[frontier_explorer.py-13] [WARN] [1776064387.194182832] [frontier_explorer]: frontier_blacklist reason=shutdown target=(0.55,0.75) ttl=30.0s
+[INFO] [map_to_pointcloud_viz.py-14]: process has finished cleanly [pid 350618]
+[INFO] [bridge_node-4]: process has finished cleanly [pid 350579]
+[INFO] [scan_normalizer.py-2]: process has finished cleanly [pid 350574]
+[INFO] [frontier_explorer.py-13]: process has finished cleanly [pid 350616]
+[INFO] [ydlidar_ros2_driver_node-1]: process has finished cleanly [pid 350572]
+[ERROR] [rviz2-15]: process has died [pid 350621, exit code -11, cmd '/opt/ros/foxy/lib/rviz2/rviz2 -d /home/robot/ros2_ws/src/robot_bringup/rviz/lidar_mapping.rviz --ros-args -r __node:=rviz2']

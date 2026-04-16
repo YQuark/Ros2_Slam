@@ -1,0 +1,12 @@
+{
+  "goal": "Remove repeated absolute-heading correction from PS2 and ESP01S manual driving while preserving IMU yaw-rate straight-line assistance and closed-loop wheel speed control.",
+  "deliverable": "Source-gated yaw-hold and straight-balance activation in lower-computer firmware.",
+  "acceptance": [
+    "PC/navigation may use yaw hold by default.",
+    "PS2 and ESP01S do not use absolute yaw hold by default.",
+    "PS2 and ESP01S use gentle IMU-yaw-rate straight balance by default, with encoder fallback.",
+    "MODE_CLOSED_LOOP remains unchanged.",
+    "No PS2 protocol or ESP HTTP timing changes are included.",
+    "No local hardware verification claims."
+  ]
+}

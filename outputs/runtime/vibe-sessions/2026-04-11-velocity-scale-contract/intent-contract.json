@@ -1,0 +1,15 @@
+{
+  "goal": "Align host bridge velocity scale with firmware normalized Q15 semantics.",
+  "deliverable": "Host-side default scale updates without firmware protocol changes.",
+  "constraints": [
+    "Do not change protocol fields",
+    "Do not confuse protocol scale with navigation speed limits",
+    "Do not run ROS locally in mounted workspace"
+  ],
+  "acceptance_criteria": [
+    "Bridge encode and decode use firmware physical normalization scale",
+    "Launch defaults are consistent",
+    "Nav2 limits remain lower than protocol maximum"
+  ],
+  "autonomy_mode": "interactive_governed"
+}

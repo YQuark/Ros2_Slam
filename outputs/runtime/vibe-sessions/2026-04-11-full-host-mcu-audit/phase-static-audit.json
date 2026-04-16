@@ -1,0 +1,19 @@
+{
+  "stage": "plan_execute",
+  "audit_type": "static",
+  "scopes": {
+    "host": [
+      "src/stm32_robot_bridge",
+      "src/robot_bringup",
+      "launch_scripts",
+      "src/ydlidar_ros2_driver integration boundary"
+    ],
+    "mcu": [
+      "/mnt/d/Document/Work/projects/Clion/Core",
+      "/mnt/d/Document/Work/projects/Clion/ESP01S"
+    ]
+  },
+  "loc_estimate_for_primary_scope": 12374,
+  "major_findings": 12,
+  "remote_validation_required": true
+}

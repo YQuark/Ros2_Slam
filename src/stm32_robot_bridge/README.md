@@ -21,8 +21,15 @@
 
 - 串口默认参数：`115200 8N1`
 - 默认工作模式要求下位机进入 `MODE_CLOSED_LOOP`
-- 状态包优先使用下位机返回的 `v_est / w_est`
+- 状态包优先使用二进制 `GET_STATUS`
+- `/odom.twist` 默认使用状态包中的 `v_est / w_est`
+- 桥接默认速度归一化与当前 STM32 固件物理归一化保持一致：`max_linear=1.20m/s`、`max_angular=19.27rad/s`
+- 当前默认 `odom_angular_scale=1.0`，不再对最新固件的 `w_est` 做二次补偿
+- 四轮编码器 cps 路径仍可通过 `odom_feedback_source:=wheel_cps` 用于 A/B 对照和故障诊断
+- `use_status_yaw:=true` 时只在下位机 `imu_valid=1` 的状态帧中使用 `yaw_est`
 - IMU 仅作为航向辅助和 EKF 输入，不直接承担平移积分
+- `raw_accel_mg[3]` 只做 `/imu/data` 透传和健康检查，不做平移积分
+- 当前固件导出的 `yaw_est / gz / raw_accel` 已经映射到车体系，桥接不要再额外做一次安装旋转
 
 ## 自动探测与启动行为
 
@@ -45,6 +52,8 @@
 source /opt/ros/foxy/setup.bash
 source /home/robot/ros2_ws/install/setup.bash
 ros2 launch stm32_robot_bridge stm32_bridge.launch.py port:=auto baudrate:=115200
+ros2 launch stm32_robot_bridge stm32_bridge.launch.py port:=auto baudrate:=115200 use_status_yaw:=true
+ros2 launch stm32_robot_bridge stm32_bridge.launch.py port:=/dev/ttyUSB1 status_log_interval_sec:=1.0 cmd_log_interval_sec:=1.0
 ```
 
 通过统一入口启动：

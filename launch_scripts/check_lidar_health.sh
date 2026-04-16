@@ -22,6 +22,8 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DETECT_LIDAR_PORT_SCRIPT="$SCRIPT_DIR/detect_lidar_port.sh"
 MIN_SCAN_HZ=6.0
 CHECK_SECONDS=6
+MAX_RANGE_SIZE_SPAN=8
+MAX_RANGE_SIZE_REL_SPAN=0.03
 
 LOG_PREFIX="/tmp/lidar_health_$(date +%Y%m%d_%H%M%S)_$$"
 DRIVER_LOG="${LOG_PREFIX}_driver.log"
@@ -147,8 +149,17 @@ print(f"COUNT={count}")
 print(f"HZ={hz:.3f}")
 print(f"UNIQUE_RANGE_SIZE={len(state['len_hist'])}")
 if state["len_hist"]:
+    sizes = sorted(state["len_hist"])
+    min_size = sizes[0]
+    max_size = sizes[-1]
+    mean_size = sum(k * v for k, v in state["len_hist"].items()) / max(count, 1)
+    rel_span = ((max_size - min_size) / mean_size) if mean_size > 0 else 0.0
     parts = [f"{k}:{v}" for k, v in sorted(state["len_hist"].items())]
     print(f"RANGE_SIZE_STATS={','.join(parts)}")
+    print(f"RANGE_SIZE_MIN={min_size}")
+    print(f"RANGE_SIZE_MAX={max_size}")
+    print(f"RANGE_SIZE_SPAN={max_size - min_size}")
+    print(f"RANGE_SIZE_REL_SPAN={rel_span:.6f}")
 
 node.destroy_node()
 rclpy.shutdown()
@@ -166,6 +177,10 @@ SCAN_COUNT=$(awk -F= '/^COUNT=/{print $2}' "$HZ_LOG" 2>/dev/null | tail -n 1 | t
 AVG_SCAN_HZ=$(awk -F= '/^HZ=/{print $2}' "$HZ_LOG" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
 UNIQUE_RANGE_SIZE=$(awk -F= '/^UNIQUE_RANGE_SIZE=/{print $2}' "$HZ_LOG" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
 RANGE_SIZE_STATS=$(awk -F= '/^RANGE_SIZE_STATS=/{print $2}' "$HZ_LOG" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
+RANGE_SIZE_MIN=$(awk -F= '/^RANGE_SIZE_MIN=/{print $2}' "$HZ_LOG" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
+RANGE_SIZE_MAX=$(awk -F= '/^RANGE_SIZE_MAX=/{print $2}' "$HZ_LOG" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
+RANGE_SIZE_SPAN=$(awk -F= '/^RANGE_SIZE_SPAN=/{print $2}' "$HZ_LOG" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
+RANGE_SIZE_REL_SPAN=$(awk -F= '/^RANGE_SIZE_REL_SPAN=/{print $2}' "$HZ_LOG" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
 
 echo ""
 echo -e "${BLUE}检查结果:${NC}"
@@ -185,6 +200,9 @@ if [ -n "${UNIQUE_RANGE_SIZE:-}" ]; then
 fi
 if [ -n "${RANGE_SIZE_STATS:-}" ]; then
     echo "  点数统计: ${RANGE_SIZE_STATS}"
+fi
+if [ -n "${RANGE_SIZE_SPAN:-}" ]; then
+    echo "  点数跨度: ${RANGE_SIZE_SPAN} (${RANGE_SIZE_MIN:-?}..${RANGE_SIZE_MAX:-?})"
 fi
 
 if [ "$CHECKSUM_COUNT" -gt 0 ]; then
@@ -229,12 +247,24 @@ if [ -z "${UNIQUE_RANGE_SIZE:-}" ]; then
     exit 1
 fi
 
-if [ "${UNIQUE_RANGE_SIZE:-0}" -gt 1 ]; then
+if [ -z "${RANGE_SIZE_SPAN:-}" ] || [ -z "${RANGE_SIZE_REL_SPAN:-}" ]; then
     echo ""
-    echo -e "${RED}✗ 未通过: /scan 单帧点数不稳定（档位数=${UNIQUE_RANGE_SIZE}）${NC}"
-    echo -e "${YELLOW}当前统计: ${RANGE_SIZE_STATS}${NC}"
-    echo -e "${YELLOW}建议开启 fixed_resolution 以提升 slam_toolbox 稳定性${NC}"
+    echo -e "${RED}✗ 未通过: 未解析到 /scan 点数波动范围${NC}"
+    echo -e "${YELLOW}频率采样输出: $HZ_LOG${NC}"
+    tail -n 40 "$HZ_LOG" 2>/dev/null || true
     exit 1
+fi
+
+if ! awk "BEGIN {exit !(($RANGE_SIZE_SPAN <= $MAX_RANGE_SIZE_SPAN) || ($RANGE_SIZE_REL_SPAN <= $MAX_RANGE_SIZE_REL_SPAN))}"; then
+    echo ""
+    echo -e "${RED}✗ 未通过: /scan 单帧点数波动过大（跨度=${RANGE_SIZE_SPAN}, 相对跨度=${RANGE_SIZE_REL_SPAN}）${NC}"
+    echo -e "${YELLOW}当前统计: ${RANGE_SIZE_STATS}${NC}"
+    echo -e "${YELLOW}建议排查雷达转速、USB 串口稳定性和驱动参数；不要为了通过检查而裁剪有效扫描点。${NC}"
+    exit 1
+fi
+
+if [ "${UNIQUE_RANGE_SIZE:-0}" -gt 1 ]; then
+    echo -e "${YELLOW}提示: /scan 点数存在轻微正常波动（档位数=${UNIQUE_RANGE_SIZE}, 跨度=${RANGE_SIZE_SPAN}），不会阻止建图。${NC}"
 fi
 
 echo ""

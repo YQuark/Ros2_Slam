@@ -1,0 +1,18 @@
+{
+  "stage": "plan_execute",
+  "audit_type": "static_reaudit",
+  "major_changes_observed": [
+    "bridge defaults aligned to STM32 derived max linear/angular",
+    "odom no longer integrates cmd_vel when MCU status is stale",
+    "status payload parser supports 45-byte extended status",
+    "system launch defaults real base + EKF + ydlidar_X2_mapping.yaml",
+    "robot.sh now defaults base port to /dev/ttyUSB0"
+  ],
+  "remaining_major_risks": [
+    "SET_MODE ACK still does not prove actual mode transition",
+    "ESP01S HTTP control still unauthenticated",
+    "fixed /dev/ttyUSB0 base default bypasses active base-port probe",
+    "ydlidar invalid_range_is_inf is read but not applied to unfilled scan bins"
+  ],
+  "remote_validation_required": true
+}

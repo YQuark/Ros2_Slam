@@ -1,0 +1,7 @@
+{
+  "phase": "plan_execute",
+  "result": "updated publish_odom to remove command-velocity fallback and mark stale odometry with high covariance",
+  "files_changed": [
+    "src/stm32_robot_bridge/stm32_robot_bridge/bridge_node.py"
+  ]
+}

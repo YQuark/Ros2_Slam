@@ -18,6 +18,7 @@ while [ $# -gt 0 ]; do
 done
 
 BASE_PORT_HINT="${ROBOT_BASE_PORT_HINT:-${BASE_PORT_HINT:-}}"
+LIDAR_PORT_HINT="${ROBOT_LIDAR_PORT_HINT:-${LIDAR_PORT_HINT:-}}"
 
 declare -A SEEN=()
 RESULTS=()
@@ -153,6 +154,19 @@ fi
 
 order_results_by_path
 move_hint_to_end "$BASE_PORT_HINT"
+
+if [ -n "$LIDAR_PORT_HINT" ]; then
+    RESOLVED_LIDAR_HINT="$(resolve_port "$LIDAR_PORT_HINT")"
+    FILTERED_RESULTS=()
+    for port in "${RESULTS[@]}"; do
+        if [ "$port" != "$RESOLVED_LIDAR_HINT" ]; then
+            FILTERED_RESULTS+=("$port")
+        fi
+    done
+    if [ "${#FILTERED_RESULTS[@]}" -gt 0 ]; then
+        RESULTS=("${FILTERED_RESULTS[@]}")
+    fi
+fi
 
 probe_base_port() {
     local port="$1"
@@ -308,6 +322,18 @@ if [ "$active_probe" -eq 1 ]; then
     fi
     order_results_by_path
     move_hint_to_end "$BASE_PORT_HINT"
+    if [ -n "$LIDAR_PORT_HINT" ]; then
+        RESOLVED_LIDAR_HINT="$(resolve_port "$LIDAR_PORT_HINT")"
+        FILTERED_RESULTS=()
+        for port in "${RESULTS[@]}"; do
+            if [ "$port" != "$RESOLVED_LIDAR_HINT" ]; then
+                FILTERED_RESULTS+=("$port")
+            fi
+        done
+        if [ "${#FILTERED_RESULTS[@]}" -gt 0 ]; then
+            RESULTS=("${FILTERED_RESULTS[@]}")
+        fi
+    fi
 fi
 
 if [ "$emit_first" -eq 1 ]; then

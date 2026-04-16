@@ -1,0 +1,17 @@
+{
+  "run_id": "2026-04-10-firmware-imu-mounting-audit",
+  "stage": "audit_summary",
+  "status": "completed",
+  "findings": [
+    "Firmware exports raw body-frame acceleration in GET_STATUS and TEL, not de-gravitated linear acceleration.",
+    "Current host-side /imu/data.linear_acceleration therefore reflects raw accelerometer specific-force semantics.",
+    "Existing mapping body_z <- sensor_x is not disproven by the user's mounting description and measured static data.",
+    "imu_accel_valid had been gated by norm checks but not by an installation-aware static gravity direction check."
+  ],
+  "evidence_files": [
+    "/mnt/d/Document/Work/projects/Clion/Core/Src/Drivers/mpu6050.c",
+    "/mnt/d/Document/Work/projects/Clion/Core/Src/Drivers/link_proto.c",
+    "/mnt/d/Document/Work/projects/Clion/Core/Src/Drivers/pc_link.c",
+    "/mnt/d/Document/Work/projects/Clion/docs/serial_protocols.md"
+  ]
+}

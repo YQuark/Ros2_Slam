@@ -10,7 +10,6 @@ source "${SCRIPT_DIR}/lib/common.sh"
 
 LIDAR_HEALTH_SCRIPT="${SCRIPT_DIR}/check_lidar_health.sh"
 DETECT_BASE_PORT_SCRIPT="${SCRIPT_DIR}/detect_base_port.sh"
-DETECT_LIDAR_PORT_SCRIPT="${SCRIPT_DIR}/detect_lidar_port.sh"
 STOP_ALL_SCRIPT="${SCRIPT_DIR}/stop_all.sh"
 SAVE_MAP_SCRIPT="${SCRIPT_DIR}/save_map.sh"
 CHECK_SYSTEM_SCRIPT="${SCRIPT_DIR}/check_system.sh"
@@ -21,6 +20,7 @@ DEFAULT_MAP="/home/robot/ros2_maps/latest.yaml"
 DEFAULT_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping.yaml"
 PRECISION_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping_lidar_precision.yaml"
 FAST_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping_fast.yaml"
+DEFAULT_NAV2_MAPPING_PARAMS="${ROS_WS}/src/robot_bringup/config/nav2_mapping_params.yaml"
 DEFAULT_LIDAR_PARAMS="${ROS_WS}/src/robot_bringup/config/ydlidar_X2_mapping.yaml"
 DEFAULT_LIDAR_FALLBACK_PARAMS="${ROS_WS}/src/ydlidar_ros2_driver/params/X2.yaml"
 DEFAULT_LIDAR_RVIZ="${ROS_WS}/src/robot_bringup/rviz/lidar_mapping.rviz"
@@ -72,13 +72,17 @@ EOF
 
 mapping_usage() {
     cat <<'EOF'
-用法: ./robot.sh mapping [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT]
+用法: ./robot.sh mapping [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT] [--auto-drive] [--auto-drive-duration SEC]
+
+说明:
+  --auto-drive 使用 Nav2 + frontier_explorer 自动选择未知边界目标，不再直接发布 /cmd_vel。
+  可用 AUTO_MAPPING_GOAL_CLEARANCE_RADIUS / AUTO_MAPPING_GOAL_UNKNOWN_CLEARANCE_RADIUS 临时放宽或收紧贴墙距离。
 EOF
 }
 
 navigation_usage() {
     cat <<'EOF'
-用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--no-rviz] [--skip-lidar-check] [--base-port PORT]
+用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--base-use-status-yaw] [--no-rviz] [--skip-lidar-check] [--base-port PORT]
 EOF
 }
 
@@ -109,24 +113,66 @@ resolve_base_port() {
     printf '%s\n' "$port"
 }
 
-prepare_lidar_params() {
-    local params_file="$1"
-    local tmp_prefix="$2"
-    local configured_port=""
-    local detected_port=""
-    local tmp_file=""
+resolve_base_port_avoiding_lidar() {
+    local mode_label="$1"
+    local requested_base_port="$2"
+    local lidar_port="$3"
+    local base_port_explicit="$4"
+    local resolved_base=""
+    local resolved_lidar=""
+    local resolved_base_port=""
 
-    configured_port="$(get_yaml_key_value "$params_file" "port" || true)"
-    if [ -x "$DETECT_LIDAR_PORT_SCRIPT" ]; then
-        detected_port="$("$DETECT_LIDAR_PORT_SCRIPT" "$configured_port" 2>/dev/null || true)"
+    if [ -z "$lidar_port" ]; then
+        resolve_base_port "$requested_base_port"
+        return 0
     fi
 
-    if [ -n "$detected_port" ] && [ "$detected_port" != "$configured_port" ]; then
-        tmp_file="$(mktemp "/tmp/${tmp_prefix}_XXXX.yaml")"
-        render_yaml_key_value "$params_file" "port" "$detected_port" "$tmp_file"
-        register_tmp_file "$tmp_file"
-        printf '%s\n' "$tmp_file"
-        return 0
+    resolved_lidar="$(resolve_port "$lidar_port")"
+
+    if [ "$requested_base_port" != "auto" ]; then
+        resolved_base="$(resolve_port "$requested_base_port")"
+        if [ "$resolved_base" = "$resolved_lidar" ]; then
+            if [ "$base_port_explicit" = true ]; then
+                log_error "✗ 底盘串口和雷达串口相同: ${requested_base_port}"
+                log_error "  雷达已经占用 ${lidar_port}，请用 --base-port 指定另一个 STM32 串口，或交换 USB 后重试。"
+                exit 1
+            fi
+            log_warn "检测到默认底盘串口 ${requested_base_port} 与雷达串口 ${lidar_port} 冲突，改为主动探测底盘并排除雷达口" >&2
+            requested_base_port="auto"
+        fi
+    fi
+
+    resolved_base_port="$(resolve_base_port "$requested_base_port")"
+    if [ "$resolved_base_port" = "auto" ]; then
+        log_error "✗ 未能探测到可用的 STM32 底盘串口"
+        log_error "  ${mode_label} 已确认雷达占用 ${lidar_port}，不能让底盘继续以 auto 模式冒险抢占雷达口。"
+        log_error "  请确认 STM32 已连接并能响应 GET_STATUS，或用 --base-port 指定非雷达串口。"
+        exit 1
+    fi
+    if [ ! -e "$resolved_base_port" ]; then
+        log_error "✗ 底盘串口不存在: ${resolved_base_port}"
+        log_error "  请确认 STM32 已接入并能响应 GET_STATUS，或用 --base-port 指定实际底盘串口。"
+        exit 1
+    fi
+
+    resolved_base="$(resolve_port "$resolved_base_port")"
+    if [ "$resolved_base" = "$resolved_lidar" ]; then
+        log_error "✗ 底盘串口和雷达串口仍然相同: ${resolved_base_port}"
+        log_error "  请确认 STM32 已连接，并不要让底盘和雷达共用同一个 /dev/ttyUSB*。"
+        exit 1
+    fi
+
+    printf '%s\n' "$resolved_base_port"
+}
+
+prepare_lidar_params() {
+    local params_file="$1"
+    local configured_port=""
+
+    configured_port="$(get_yaml_key_value "$params_file" "port" || true)"
+    if [ -z "$configured_port" ]; then
+        log_error "✗ 雷达参数文件缺少 port: ${params_file}"
+        exit 1
     fi
 
     printf '%s\n' "$params_file"
@@ -152,6 +198,10 @@ choose_slam_params() {
     esac
 }
 
+deg_to_rad() {
+    awk -v deg="$1" 'BEGIN { printf "%.12f\n", deg * atan2(0, -1) / 180.0 }'
+}
+
 stop_existing_sessions() {
     if [ -x "$STOP_ALL_SCRIPT" ]; then
         log_info "清理旧 ROS2 会话..."
@@ -166,7 +216,7 @@ run_mapping() {
     local skip_lidar_check=false
     local use_rviz=true
     local base_mode="none"
-    local base_port="${BASE_PORT:-auto}"
+    local base_port="${BASE_PORT:-/dev/ttyUSB1}"
     local has_source=false
     local has_profile=false
     local slam_params=""
@@ -175,9 +225,41 @@ run_mapping() {
     local use_camera="false"
     local use_visual_odom="false"
     local use_base_arg="false"
-    local base_imu_enabled="true"
+    local base_imu_enabled="${BASE_IMU_ENABLED:-true}"
     local base_fusion_mode="none"
+    local base_use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
+    local base_status_yaw_mode="${BASE_STATUS_YAW_MODE:-relative}"
+    local base_status_yaw_jump_reject_deg="${BASE_STATUS_YAW_JUMP_REJECT_DEG:-25.0}"
+    local base_max_linear="${BASE_MAX_LINEAR:-1.20}"
+    local base_max_angular="${BASE_MAX_ANGULAR:-19.27}"
+    local base_odom_feedback_source="${BASE_ODOM_FEEDBACK_SOURCE:-status_twist}"
+    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
+    local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
+    local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
+    local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-0.0}"
+    local base_cmd_log_interval_sec="${BASE_CMD_LOG_INTERVAL_SEC:-0.0}"
+    local auto_mapping_drive="false"
+    local auto_mapping_nav2_params="${AUTO_MAPPING_NAV2_PARAMS:-$DEFAULT_NAV2_MAPPING_PARAMS}"
+    local auto_mapping_max_duration_sec="${AUTO_MAPPING_MAX_DURATION_SEC:-180.0}"
+    local auto_mapping_frontier_min_distance="${AUTO_MAPPING_FRONTIER_MIN_DISTANCE:-0.70}"
+    local auto_mapping_frontier_max_distance="${AUTO_MAPPING_FRONTIER_MAX_DISTANCE:-2.5}"
+    local auto_mapping_min_frontier_cluster_cells="${AUTO_MAPPING_MIN_FRONTIER_CLUSTER_CELLS:-10}"
+    local auto_mapping_goal_approach_offset="${AUTO_MAPPING_GOAL_APPROACH_OFFSET:-0.55}"
+    local auto_mapping_goal_approach_max_offset="${AUTO_MAPPING_GOAL_APPROACH_MAX_OFFSET:-0.90}"
+    local auto_mapping_goal_approach_step="${AUTO_MAPPING_GOAL_APPROACH_STEP:-0.05}"
+    local auto_mapping_goal_clearance_radius="${AUTO_MAPPING_GOAL_CLEARANCE_RADIUS:-0.38}"
+    local auto_mapping_goal_unknown_clearance_radius="${AUTO_MAPPING_GOAL_UNKNOWN_CLEARANCE_RADIUS:-0.35}"
+    local auto_mapping_linear_speed="${AUTO_MAPPING_LINEAR_SPEED:-0.10}"
+    local auto_mapping_turn_speed="${AUTO_MAPPING_TURN_SPEED:-1.65}"
+    local auto_mapping_emergency_stop_distance="${AUTO_MAPPING_EMERGENCY_STOP_DISTANCE:-0.25}"
+    local auto_mapping_front_stop_distance="${AUTO_MAPPING_FRONT_STOP_DISTANCE:-0.40}"
+    local auto_mapping_front_resume_distance="${AUTO_MAPPING_FRONT_RESUME_DISTANCE:-0.48}"
+    local auto_mapping_front_slow_distance="${AUTO_MAPPING_FRONT_SLOW_DISTANCE:-0.80}"
+    local auto_mapping_side_emergency_stop_distance="${AUTO_MAPPING_SIDE_EMERGENCY_STOP_DISTANCE:-0.12}"
+    local auto_mapping_side_stop_distance="${AUTO_MAPPING_SIDE_STOP_DISTANCE:-0.10}"
+    local auto_mapping_side_resume_distance="${AUTO_MAPPING_SIDE_RESUME_DISTANCE:-0.18}"
     local lidar_port=""
+    local base_port_explicit=false
     local arg=""
 
     while [ $# -gt 0 ]; do
@@ -232,6 +314,20 @@ run_mapping() {
                     exit 1
                 fi
                 base_port="$2"
+                base_port_explicit=true
+                shift 2
+                ;;
+            --auto-drive)
+                auto_mapping_drive="true"
+                shift
+                ;;
+            --auto-drive-duration)
+                if [ $# -lt 2 ]; then
+                    log_error "✗ --auto-drive-duration 需要秒数"
+                    mapping_usage
+                    exit 1
+                fi
+                auto_mapping_max_duration_sec="$2"
                 shift 2
                 ;;
             -h|--help)
@@ -259,13 +355,6 @@ run_mapping() {
     fi
     slam_params="$(choose_slam_params "$slam_profile")"
 
-    if [ "$base_mode" = "real" ]; then
-        base_port="$(resolve_base_port "$base_port")"
-        if [ "$base_port" != "auto" ]; then
-            export ROBOT_BASE_PORT_HINT="$base_port"
-        fi
-    fi
-
     if [ "$mapping_source" = "lidar" ]; then
         rviz_config="$DEFAULT_LIDAR_RVIZ"
         lidar_params="$DEFAULT_LIDAR_PARAMS"
@@ -285,6 +374,11 @@ run_mapping() {
         fi
     fi
 
+    if [ "$base_mode" = "real" ]; then
+        base_port="$(resolve_base_port_avoiding_lidar "建图模式" "$base_port" "$lidar_port" "$base_port_explicit")"
+        export ROBOT_BASE_PORT_HINT="$base_port"
+    fi
+
     if [ "$mapping_source" = "camera" ]; then
         use_camera="true"
         if ros2 pkg list 2>/dev/null | grep -qx "rtabmap_odom"; then
@@ -295,7 +389,22 @@ run_mapping() {
     fi
 
     if [ "$mapping_source" = "lidar" ] && [ "$base_mode" = "real" ]; then
-        base_imu_enabled="false"
+        base_imu_enabled="${BASE_IMU_ENABLED:-true}"
+        base_use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
+        base_max_linear="${BASE_MAX_LINEAR:-1.20}"
+        base_max_angular="${BASE_MAX_ANGULAR:-19.27}"
+        base_odom_feedback_source="${BASE_ODOM_FEEDBACK_SOURCE:-status_twist}"
+        base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
+        if [ "${BASE_STATUS_LOG_INTERVAL_SEC:-}" = "" ]; then
+            base_status_log_interval_sec="5.0"
+        fi
+    fi
+
+    if [ "$auto_mapping_drive" = "true" ] && [ "${BASE_STATUS_LOG_INTERVAL_SEC:-}" = "" ]; then
+        base_status_log_interval_sec="10.0"
+    fi
+    if [ "$auto_mapping_drive" = "true" ] && [ "${BASE_CMD_LOG_INTERVAL_SEC:-}" = "" ]; then
+        base_cmd_log_interval_sec="5.0"
     fi
 
     log_info "系统组件:"
@@ -340,6 +449,12 @@ run_mapping() {
         log_info "底盘 IMU 参与控制: ${base_imu_enabled}"
         log_info "底盘融合模式: ${base_fusion_mode}"
     fi
+    if [ "$auto_mapping_drive" = "true" ]; then
+        log_warn "自动建图巡航已启用: 请保持人工急停可用，不要让 PS2/ESP 同时抢控制"
+        log_info "自动探索: Nav2 frontier, ${auto_mapping_max_duration_sec}s"
+        log_info "frontier 安全点: dist=${auto_mapping_frontier_min_distance}-${auto_mapping_frontier_max_distance}m approach=${auto_mapping_goal_approach_offset}-${auto_mapping_goal_approach_max_offset}m clear=${auto_mapping_goal_clearance_radius}m unknown_clear=${auto_mapping_goal_unknown_clearance_radius}m"
+        log_info "Nav2 建图参数: ${auto_mapping_nav2_params}"
+    fi
     log_info "RViz 配置: ${rviz_config}"
     echo
 
@@ -350,8 +465,39 @@ run_mapping() {
         base_mode:=${base_mode} \
         use_base:=${use_base_arg} \
         base_port:=${base_port} \
+        base_max_linear:=${base_max_linear} \
+        base_max_angular:=${base_max_angular} \
         base_imu_enabled:=${base_imu_enabled} \
         base_fusion_mode:=${base_fusion_mode} \
+        base_use_status_yaw:=${base_use_status_yaw} \
+        base_status_yaw_mode:=${base_status_yaw_mode} \
+        base_status_yaw_jump_reject_deg:=${base_status_yaw_jump_reject_deg} \
+        base_odom_feedback_source:=${base_odom_feedback_source} \
+        base_wheel_track_width:=${base_wheel_track_width} \
+        base_odom_angular_scale:=${base_odom_angular_scale} \
+        base_odom_angular_sign:=${base_odom_angular_sign} \
+        base_status_log_interval_sec:=${base_status_log_interval_sec} \
+        base_cmd_log_interval_sec:=${base_cmd_log_interval_sec} \
+        auto_mapping_drive:=${auto_mapping_drive} \
+        auto_mapping_nav2_params_file:=${auto_mapping_nav2_params} \
+        auto_mapping_max_duration_sec:=${auto_mapping_max_duration_sec} \
+        auto_mapping_frontier_min_distance:=${auto_mapping_frontier_min_distance} \
+        auto_mapping_frontier_max_distance:=${auto_mapping_frontier_max_distance} \
+        auto_mapping_min_frontier_cluster_cells:=${auto_mapping_min_frontier_cluster_cells} \
+        auto_mapping_goal_approach_offset:=${auto_mapping_goal_approach_offset} \
+        auto_mapping_goal_approach_max_offset:=${auto_mapping_goal_approach_max_offset} \
+        auto_mapping_goal_approach_step:=${auto_mapping_goal_approach_step} \
+        auto_mapping_goal_clearance_radius:=${auto_mapping_goal_clearance_radius} \
+        auto_mapping_goal_unknown_clearance_radius:=${auto_mapping_goal_unknown_clearance_radius} \
+        auto_mapping_linear_speed:=${auto_mapping_linear_speed} \
+        auto_mapping_turn_speed:=${auto_mapping_turn_speed} \
+        auto_mapping_emergency_stop_distance:=${auto_mapping_emergency_stop_distance} \
+        auto_mapping_front_stop_distance:=${auto_mapping_front_stop_distance} \
+        auto_mapping_front_resume_distance:=${auto_mapping_front_resume_distance} \
+        auto_mapping_front_slow_distance:=${auto_mapping_front_slow_distance} \
+        auto_mapping_side_emergency_stop_distance:=${auto_mapping_side_emergency_stop_distance} \
+        auto_mapping_side_stop_distance:=${auto_mapping_side_stop_distance} \
+        auto_mapping_side_resume_distance:=${auto_mapping_side_resume_distance} \
         use_visual_odom:=${use_visual_odom} \
         use_rviz:=${use_rviz} \
         lidar_params_file:=${lidar_params:-$DEFAULT_LIDAR_PARAMS} \
@@ -365,12 +511,23 @@ run_mapping() {
 run_navigation() {
     local map_file="$DEFAULT_MAP"
     local base_mode="real"
-    local base_port="${BASE_PORT:-auto}"
-    local base_fusion_mode="none"
+    local base_port="${BASE_PORT:-/dev/ttyUSB1}"
+    local base_imu_enabled="true"
+    local base_fusion_mode="ekf"
+    local base_use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
+    local base_status_yaw_mode="${BASE_STATUS_YAW_MODE:-relative}"
+    local base_status_yaw_jump_reject_deg="${BASE_STATUS_YAW_JUMP_REJECT_DEG:-25.0}"
+    local base_odom_feedback_source="${BASE_ODOM_FEEDBACK_SOURCE:-status_twist}"
+    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
+    local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
+    local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
+    local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-0.0}"
     local use_rviz=true
     local skip_lidar_check=false
     local lidar_params=""
     local lidar_port=""
+    local lidar_tf_yaw="${LIDAR_TF_YAW:-0.0}"
+    local base_port_explicit=false
     local arg=""
 
     while [ $# -gt 0 ]; do
@@ -388,6 +545,10 @@ run_navigation() {
                 base_fusion_mode="ekf"
                 shift
                 ;;
+            --base-use-status-yaw)
+                base_use_status_yaw="true"
+                shift
+                ;;
             --no-rviz)
                 use_rviz=false
                 shift
@@ -403,6 +564,25 @@ run_navigation() {
                     exit 1
                 fi
                 base_port="$2"
+                base_port_explicit=true
+                shift 2
+                ;;
+            --lidar-yaw-rad)
+                if [ $# -lt 2 ]; then
+                    log_error "✗ --lidar-yaw-rad 需要一个弧度值"
+                    navigation_usage
+                    exit 1
+                fi
+                lidar_tf_yaw="$2"
+                shift 2
+                ;;
+            --lidar-yaw-deg)
+                if [ $# -lt 2 ]; then
+                    log_error "✗ --lidar-yaw-deg 需要一个角度值"
+                    navigation_usage
+                    exit 1
+                fi
+                lidar_tf_yaw="$(deg_to_rad "$2")"
                 shift 2
                 ;;
             -h|--help)
@@ -430,13 +610,6 @@ run_navigation() {
         exit 1
     fi
 
-    if [ "$base_mode" = "real" ]; then
-        base_port="$(resolve_base_port "$base_port")"
-        if [ "$base_port" != "auto" ]; then
-            export ROBOT_BASE_PORT_HINT="$base_port"
-        fi
-    fi
-
     lidar_params="$(prepare_lidar_params "$DEFAULT_LIDAR_PARAMS" "ydlidar_nav")"
     lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
     if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
@@ -444,6 +617,11 @@ run_navigation() {
         exit 1
     fi
     export ROBOT_LIDAR_PORT_HINT="$lidar_port"
+
+    if [ "$base_mode" = "real" ]; then
+        base_port="$(resolve_base_port_avoiding_lidar "导航模式" "$base_port" "$lidar_port" "$base_port_explicit")"
+        export ROBOT_BASE_PORT_HINT="$base_port"
+    fi
 
     if [ "$skip_lidar_check" = false ] && [ -x "$LIDAR_HEALTH_SCRIPT" ]; then
         log_info "执行雷达数据健康检查..."
@@ -455,10 +633,13 @@ run_navigation() {
     log_success "正在启动统一导航系统..."
     log_info "地图文件: ${map_file}"
     log_info "雷达串口: ${lidar_port}"
+    log_info "雷达 yaw 外参(rad): ${lidar_tf_yaw}"
     log_info "底盘模式: ${base_mode}"
     if [ "$base_mode" = "real" ]; then
         log_info "底盘串口: ${base_port}"
+        log_info "底盘 IMU 参与控制: ${base_imu_enabled}"
         log_info "底盘融合模式: ${base_fusion_mode}"
+        log_info "底盘航向来源: $( [ "$base_use_status_yaw" = "true" ] && printf '下位机 yaw_est' || printf '桥接积分 w_est' )"
         if [ "$base_port" = "auto" ]; then
             log_warn "⚠ 未检测到底盘串口，桥接节点将以 auto 模式持续重试"
         fi
@@ -476,6 +657,16 @@ run_navigation() {
         map_file:=${map_file} \
         base_port:=${base_port} \
         base_baudrate:=115200 \
+        base_imu_enabled:=${base_imu_enabled} \
+        base_use_status_yaw:=${base_use_status_yaw} \
+        base_status_yaw_mode:=${base_status_yaw_mode} \
+        base_status_yaw_jump_reject_deg:=${base_status_yaw_jump_reject_deg} \
+        base_odom_feedback_source:=${base_odom_feedback_source} \
+        base_wheel_track_width:=${base_wheel_track_width} \
+        base_odom_angular_scale:=${base_odom_angular_scale} \
+        base_odom_angular_sign:=${base_odom_angular_sign} \
+        base_status_log_interval_sec:=${base_status_log_interval_sec} \
+        lidar_tf_yaw:=${lidar_tf_yaw} \
         lidar_params_file:=${lidar_params}
 }
 
@@ -526,7 +717,14 @@ run_sensor() {
 }
 
 run_base() {
-    local base_port="${BASE_PORT:-auto}"
+    local base_port="${BASE_PORT:-/dev/ttyUSB1}"
+    local use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
+    local status_yaw_mode="${BASE_STATUS_YAW_MODE:-relative}"
+    local status_yaw_jump_reject_deg="${BASE_STATUS_YAW_JUMP_REJECT_DEG:-25.0}"
+    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
+    local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
+    local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
+    local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-0.0}"
 
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -538,8 +736,12 @@ run_base() {
                 base_port="$2"
                 shift 2
                 ;;
+            --use-status-yaw|--base-use-status-yaw)
+                use_status_yaw="true"
+                shift
+                ;;
             -h|--help)
-                echo "用法: ./robot.sh base [--port /dev/ttyUSB0]"
+                echo "用法: ./robot.sh base [--port /dev/ttyUSB1] [--use-status-yaw]"
                 exit 0
                 ;;
             *)
@@ -558,17 +760,33 @@ run_base() {
     else
         log_info "底盘串口: ${base_port}"
     fi
+    log_info "底盘航向来源: $( [ "$use_status_yaw" = "true" ] && printf '下位机 yaw_est' || printf '桥接积分 w_est' )"
     ros2 launch stm32_robot_bridge stm32_bridge.launch.py \
         port:=${base_port} \
-        baudrate:=115200
+        baudrate:=115200 \
+        use_status_yaw:=${use_status_yaw} \
+        status_yaw_mode:=${status_yaw_mode} \
+        status_yaw_jump_reject_deg:=${status_yaw_jump_reject_deg} \
+        wheel_track_width:=${base_wheel_track_width} \
+        odom_angular_scale:=${base_odom_angular_scale} \
+        odom_angular_sign:=${base_odom_angular_sign} \
+        status_log_interval_sec:=${base_status_log_interval_sec}
 }
 
 run_system() {
-    local base_port="${BASE_PORT:-auto}"
+    local base_port="${BASE_PORT:-/dev/ttyUSB1}"
     local use_rviz=true
     local skip_lidar_check=false
     local lidar_params=""
     local lidar_port=""
+    local lidar_tf_yaw="${LIDAR_TF_YAW:-0.0}"
+    local base_port_explicit=false
+    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
+    local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
+    local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
+    local base_status_yaw_mode="${BASE_STATUS_YAW_MODE:-relative}"
+    local base_status_yaw_jump_reject_deg="${BASE_STATUS_YAW_JUMP_REJECT_DEG:-25.0}"
+    local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-0.0}"
 
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -578,6 +796,7 @@ run_system() {
                     exit 1
                 fi
                 base_port="$2"
+                base_port_explicit=true
                 shift 2
                 ;;
             --skip-lidar-check)
@@ -587,6 +806,22 @@ run_system() {
             --no-rviz)
                 use_rviz=false
                 shift
+                ;;
+            --lidar-yaw-rad)
+                if [ $# -lt 2 ]; then
+                    log_error "✗ --lidar-yaw-rad 需要一个弧度值"
+                    exit 1
+                fi
+                lidar_tf_yaw="$2"
+                shift 2
+                ;;
+            --lidar-yaw-deg)
+                if [ $# -lt 2 ]; then
+                    log_error "✗ --lidar-yaw-deg 需要一个角度值"
+                    exit 1
+                fi
+                lidar_tf_yaw="$(deg_to_rad "$2")"
+                shift 2
                 ;;
             -h|--help)
                 echo "用法: ./robot.sh system [--base-port PORT] [--skip-lidar-check] [--no-rviz]"
@@ -603,13 +838,15 @@ run_system() {
     setup_ros_env
     print_header "完整系统启动"
 
-    base_port="$(resolve_base_port "$base_port")"
     lidar_params="$(prepare_lidar_params "$DEFAULT_LIDAR_PARAMS" "ydlidar_system")"
     lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
     if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
         log_error "✗ 未找到雷达设备"
         exit 1
     fi
+    export ROBOT_LIDAR_PORT_HINT="$lidar_port"
+    base_port="$(resolve_base_port_avoiding_lidar "完整系统" "$base_port" "$lidar_port" "$base_port_explicit")"
+    export ROBOT_BASE_PORT_HINT="$base_port"
     if [ "$skip_lidar_check" = false ] && [ -x "$LIDAR_HEALTH_SCRIPT" ]; then
         log_info "执行雷达数据健康检查..."
         "$LIDAR_HEALTH_SCRIPT" "$lidar_params"
@@ -619,6 +856,7 @@ run_system() {
 
     log_info "系统组件:"
     echo "  • YDLIDAR X2 激光雷达 (${lidar_port})"
+    echo "  • 雷达 yaw 外参(rad): ${lidar_tf_yaw}"
     echo "  • Astra Pro 深度相机"
     echo "  • STM32 串口桥接 (${base_port})"
     echo "  • SLAM Toolbox"
@@ -637,6 +875,13 @@ run_system() {
         use_rviz:=${use_rviz} \
         base_port:=${base_port} \
         base_baudrate:=115200 \
+        base_wheel_track_width:=${base_wheel_track_width} \
+        base_odom_angular_scale:=${base_odom_angular_scale} \
+        base_odom_angular_sign:=${base_odom_angular_sign} \
+        base_status_yaw_mode:=${base_status_yaw_mode} \
+        base_status_yaw_jump_reject_deg:=${base_status_yaw_jump_reject_deg} \
+        base_status_log_interval_sec:=${base_status_log_interval_sec} \
+        lidar_tf_yaw:=${lidar_tf_yaw} \
         lidar_params_file:=${lidar_params}
 }
 

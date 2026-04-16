@@ -1,0 +1,19 @@
+{
+  "run_id": "2026-04-11-host-mcu-audit",
+  "stage": "skeleton_check",
+  "workspace": "/mnt/ros2_ws",
+  "host_mcu_path": "/mnt/d/Document/Work/projects/Clion",
+  "mode": "static_audit_only",
+  "local_execution_blocked": [
+    "colcon build",
+    "cmake",
+    "make",
+    "ninja",
+    "ros2 launch",
+    "ros2 run",
+    "ros2 topic/node/tf checks",
+    "hardware programs"
+  ],
+  "dirty_worktree_observed": true,
+  "notes": "Existing worktree has many unrelated modified/untracked files. No existing changes were reverted."
+}

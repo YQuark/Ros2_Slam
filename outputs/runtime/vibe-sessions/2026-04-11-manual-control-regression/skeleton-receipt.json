@@ -1,0 +1,6 @@
+{
+  "run_id": "2026-04-11-manual-control-regression",
+  "workspace": "/mnt/ros2_ws",
+  "constraint": "mounted robot workspace; local static analysis and edits only",
+  "target": "/mnt/d/Document/Work/projects/Clion lower-computer control path"
+}

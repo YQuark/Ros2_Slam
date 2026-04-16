@@ -1,0 +1,14 @@
+{
+  "run_id": "2026-04-10-firmware-imu-mounting-audit",
+  "stage": "phase_cleanup",
+  "status": "completed",
+  "artifacts_retained": [
+    "/mnt/ros2_ws/docs/requirements/2026-04-10-firmware-imu-mounting-and-accel-validity.md",
+    "/mnt/ros2_ws/docs/plans/2026-04-10-firmware-imu-mounting-and-accel-validity-execution-plan.md",
+    "/mnt/ros2_ws/outputs/runtime/vibe-sessions/2026-04-10-firmware-imu-mounting-audit/skeleton-receipt.json",
+    "/mnt/ros2_ws/outputs/runtime/vibe-sessions/2026-04-10-firmware-imu-mounting-audit/intent-contract.json",
+    "/mnt/ros2_ws/outputs/runtime/vibe-sessions/2026-04-10-firmware-imu-mounting-audit/phase-audit-summary.json"
+  ],
+  "temp_files_removed": [],
+  "delivery_truth": "firmware_calibration_semantics_updated"
+}

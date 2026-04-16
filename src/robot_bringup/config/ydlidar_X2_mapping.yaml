@@ -8,8 +8,9 @@ ydlidar_ros2_driver_node:
     device_type: 0
     sample_rate: 4
     abnormal_check_count: 4
-    # Keep scan point count stable for slam_toolbox to avoid scan-size jitter warnings.
-    fixed_resolution: true
+    # X2 reports 422..424 points normally; fixed resolution can spam SDK warnings
+    # when the real point count slightly exceeds the SDK's fixed bucket.
+    fixed_resolution: false
     reversion: false
     inverted: false
     auto_reconnect: true

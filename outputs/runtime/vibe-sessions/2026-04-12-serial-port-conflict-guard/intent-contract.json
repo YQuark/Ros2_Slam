@@ -1,0 +1,14 @@
+{
+  "goal": "Prevent lidar and STM32 base from opening the same serial device during mapping/navigation launches.",
+  "deliverable": "robot.sh serial conflict guard plus traceable requirement and plan artifacts.",
+  "constraints": [
+    "Do not run ROS or hardware commands locally.",
+    "Do not rename packages, topics, nodes, or frames.",
+    "Do not modify device parameters beyond safe launch-time conflict resolution."
+  ],
+  "acceptance": [
+    "Real base launch fails fast if base and lidar resolve to the same device.",
+    "Default base port conflict triggers active base detection excluding the lidar port.",
+    "Mapping, navigation, and full system use the same guard."
+  ]
+}

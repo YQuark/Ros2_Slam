@@ -1,0 +1,8 @@
+{
+  "goal": "Allow normal YDLIDAR X2 scan point-count jitter while still rejecting unhealthy scan streams.",
+  "acceptance": [
+    "422..424 point counts pass as mild jitter.",
+    "Large point-count span still fails.",
+    "fixed_resolution remains disabled to avoid clipping useful scan points."
+  ]
+}

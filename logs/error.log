@@ -1,0 +1,5 @@
+[2026-04-11 19:34:54] [ERROR] [RESPONSE] getOpenDocuments - FAILED (1470ms) | {"service":"wps-mcp","success":false,"duration":1470}
+[2026-04-11 19:35:14] [ERROR] [RESPONSE] getAppInfo - FAILED (1451ms) | {"service":"wps-mcp","success":false,"duration":1451}
+[2026-04-11 19:35:17] [ERROR] [RESPONSE] getActiveDocument - FAILED (1424ms) | {"service":"wps-mcp","success":false,"duration":1424}
+[2026-04-11 19:38:34] [ERROR] [RESPONSE] getOpenDocuments - FAILED (1398ms) | {"service":"wps-mcp","success":false,"duration":1398}
+[2026-04-11 21:56:40] [ERROR] [RESPONSE] getOpenDocuments - FAILED (1227ms) | {"service":"wps-mcp","success":false,"duration":1227}

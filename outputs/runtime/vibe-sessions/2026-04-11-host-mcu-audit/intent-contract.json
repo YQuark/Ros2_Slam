@@ -1,0 +1,22 @@
+{
+  "run_id": "2026-04-11-host-mcu-audit",
+  "stage": "deep_interview",
+  "goal": "Audit upper-computer ROS2 code and lower-computer STM32/ESP01S code.",
+  "deliverable": "Static audit findings with file and line references plus remote validation commands.",
+  "constraints": [
+    "Do not build or run locally in /mnt/ros2_ws.",
+    "Do not inspect live ROS topics, nodes, TF, or hardware locally.",
+    "Do not modify functional code in this audit pass."
+  ],
+  "acceptance_criteria": [
+    "Findings prioritized by risk.",
+    "Cross-layer protocol and unit contract reviewed.",
+    "Remote validation template included."
+  ],
+  "non_goals": [
+    "No local build verification.",
+    "No hardware test.",
+    "No package/topic/node rename."
+  ],
+  "autonomy_mode": "proceed_with_reasonable_assumptions"
+}

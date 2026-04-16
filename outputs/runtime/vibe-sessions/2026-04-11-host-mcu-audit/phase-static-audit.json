@@ -1,0 +1,22 @@
+{
+  "run_id": "2026-04-11-host-mcu-audit",
+  "stage": "plan_execute",
+  "phase": "static_audit",
+  "files_reviewed": [
+    "src/stm32_robot_bridge/stm32_robot_bridge/bridge_node.py",
+    "src/stm32_robot_bridge/launch/stm32_bridge.launch.py",
+    "src/robot_bringup/launch/base.launch.py",
+    "src/robot_bringup/launch/system.launch.py",
+    "src/robot_bringup/config/ekf_base.yaml",
+    "src/robot_bringup/config/ydlidar_X2_mapping.yaml",
+    "/mnt/d/Document/Work/projects/Clion/Core/Inc/Drivers/robot_config.h",
+    "/mnt/d/Document/Work/projects/Clion/Core/Src/Drivers/link_proto.c",
+    "/mnt/d/Document/Work/projects/Clion/Core/Src/Drivers/pc_link.c",
+    "/mnt/d/Document/Work/projects/Clion/Core/Src/Drivers/esp_link.c",
+    "/mnt/d/Document/Work/projects/Clion/Core/Src/Drivers/robot_control.c",
+    "/mnt/d/Document/Work/projects/Clion/Core/Src/usart.c",
+    "/mnt/d/Document/Work/projects/Clion/ESP01S/ESP01S/ESP01S.ino"
+  ],
+  "local_build_or_run_executed": false,
+  "result": "Static audit completed; remote validation still required."
+}

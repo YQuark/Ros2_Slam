@@ -1,0 +1,11 @@
+{
+  "goal": "Fix ESP01S long-press manual-control stutter scientifically without disabling closed-loop chassis control.",
+  "deliverable": "ESP01S timing and browser command-contract changes that prevent held commands from being interrupted by idle-stop or incorrect turn semantics.",
+  "acceptance": [
+    "Duplicate held HTTP commands refresh the manual-control watchdog.",
+    "ESP UART command refresh remains below STM32 command timeout.",
+    "Closed-loop turns send pure angular velocity commands.",
+    "Open-loop turns keep raw differential wheel semantics.",
+    "No local hardware verification claims."
+  ]
+}

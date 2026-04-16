@@ -1,0 +1,19 @@
+{
+  "goal": "Audit firmware IMU mounting assumptions and accel validity semantics under a vertically mounted MPU6050 on a horizontal mainboard.",
+  "deliverable": "Evidence-backed firmware audit with minimal code change only if root cause is proven.",
+  "constraints": [
+    "Do not guess axis remaps without evidence",
+    "Do not change host protocol format",
+    "Do not claim verification in the mounted workspace"
+  ],
+  "acceptance_criteria": [
+    "Differentiate raw body-frame acceleration from de-gravitated linear acceleration",
+    "Differentiate heading usability from acceleration usability",
+    "Restrict firmware edits to deterministic IMU issues only"
+  ],
+  "autonomy_mode": "interactive_governed",
+  "inferred_assumptions": [
+    "The host currently receives raw body-frame acceleration via firmware status",
+    "Existing vertical-axis-to-sensor-X mapping is not disproven by current evidence"
+  ]
+}

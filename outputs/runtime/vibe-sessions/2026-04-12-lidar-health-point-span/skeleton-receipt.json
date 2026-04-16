@@ -1,0 +1,6 @@
+{
+  "run_id": "2026-04-12-lidar-health-point-span",
+  "workspace": "/mnt/ros2_ws",
+  "scope": "launch_scripts/check_lidar_health.sh",
+  "local_execution_policy": "edit_and_static_analysis_only"
+}
