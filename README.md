@@ -32,7 +32,7 @@ cd /home/robot/ros2_ws/launch_scripts
 ./robot.sh mapping lidar --real-base
 ./robot.sh mapping lidar --real-base --ekf-base
 ./robot.sh save-map my_map
-./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base
+./robot.sh navigation --real-base --ekf-base
 ```
 
 ## 仓库分层

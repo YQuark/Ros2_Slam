@@ -12,6 +12,9 @@ NC='\033[0m'
 # 获取脚本所在目录
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 ROS_WS="/home/robot/ros2_ws"
+PAD_MAP_SCRIPT="$SCRIPT_DIR/pad_nav_map.py"
+MAP_PADDING_METERS="${MAP_PADDING_METERS:-1.0}"
+MAP_PADDING_VALUE="${MAP_PADDING_VALUE:-205}"
 
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}    保存SLAM地图${NC}"
@@ -26,6 +29,7 @@ source $ROS_WS/install/setup.bash
 MAP_NAME=${1:-robot_map_$(date +%Y%m%d_%H%M%S)}
 MAP_DIR="$HOME/ros2_maps"
 MAP_BASENAME="$MAP_DIR/$MAP_NAME"
+LATEST_BASENAME="$MAP_DIR/latest"
 
 # 创建地图保存目录
 mkdir -p "$MAP_DIR"
@@ -90,14 +94,47 @@ if [ -f "${MAP_BASENAME}.yaml" ] && [ -f "${MAP_BASENAME}.pgm" ]; then
         echo -e "${RED}✗ 地图文件存在但大小为0，判定保存失败${NC}"
         exit 1
     fi
+
+    if [ -f "$PAD_MAP_SCRIPT" ]; then
+        echo ""
+        echo -e "${YELLOW}为 Nav2 规划添加地图边界缓冲 (${MAP_PADDING_METERS}m)...${NC}"
+        if ! python3 "$PAD_MAP_SCRIPT" "${MAP_BASENAME}.yaml" \
+            --padding-m "$MAP_PADDING_METERS" \
+            --unknown-value "$MAP_PADDING_VALUE"; then
+            echo -e "${RED}✗ 地图边界缓冲处理失败${NC}"
+            exit 1
+        fi
+    fi
+
+    if [ "$MAP_NAME" != "latest" ]; then
+        rm -f "${LATEST_BASENAME}.yaml" "${LATEST_BASENAME}.pgm"
+        ln -s "$(basename "${MAP_BASENAME}.yaml")" "${LATEST_BASENAME}.yaml"
+        ln -s "$(basename "${MAP_BASENAME}.pgm")" "${LATEST_BASENAME}.pgm"
+    fi
+
     echo ""
     echo -e "${GREEN}✓ 地图保存成功！${NC}"
     echo ""
     echo -e "${YELLOW}地图文件:${NC}"
-    ls -lh "${MAP_BASENAME}.yaml" "${MAP_BASENAME}.pgm"
+    if [ "$MAP_NAME" != "latest" ]; then
+        ls -lh "${MAP_BASENAME}.yaml" "${MAP_BASENAME}.pgm" "${LATEST_BASENAME}.yaml" "${LATEST_BASENAME}.pgm"
+    else
+        ls -lh "${MAP_BASENAME}.yaml" "${MAP_BASENAME}.pgm"
+    fi
     echo ""
     echo -e "${YELLOW}加载地图进行导航:${NC}"
-    echo "  ros2 launch robot_bringup system.launch.py mode:=navigation use_camera:=false use_lidar:=true base_mode:=real map_file:=${MAP_BASENAME}.yaml"
+    echo "  cd $SCRIPT_DIR"
+    echo "  ./robot.sh navigation ${MAP_BASENAME}.yaml --real-base --ekf-base"
+    echo ""
+    if [ "$MAP_NAME" != "latest" ]; then
+        echo -e "${YELLOW}默认地图别名已更新:${NC}"
+        echo "  ${LATEST_BASENAME}.yaml -> ${MAP_NAME}.yaml"
+        echo "  以后也可以直接运行: ./robot.sh navigation --real-base --ekf-base"
+        echo ""
+    fi
+    echo -e "${YELLOW}RViz 操作:${NC}"
+    echo "  1. 用 2D Pose Estimate 在地图上设置机器人当前实际位置和朝向"
+    echo "  2. 雷达点云与地图墙体重合后，用 2D Goal Pose 点目标位置"
 else
     echo ""
     echo -e "${RED}✗ 未找到生成的地图文件(.yaml/.pgm)${NC}"

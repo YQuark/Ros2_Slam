@@ -52,7 +52,10 @@ def _validate_and_compose(context):
     auto_mapping_nav2_params_file = LaunchConfiguration('auto_mapping_nav2_params_file').perform(context)
     base_status_log_interval_sec = LaunchConfiguration('base_status_log_interval_sec').perform(context)
     base_cmd_log_interval_sec = LaunchConfiguration('base_cmd_log_interval_sec').perform(context)
+    base_cmd_timeout = LaunchConfiguration('base_cmd_timeout').perform(context)
+    base_drive_keepalive_sec = LaunchConfiguration('base_drive_keepalive_sec').perform(context)
     base_port_value = LaunchConfiguration('base_port').perform(context).strip()
+    nav2_start = LaunchConfiguration('nav2_start').perform(context).lower() == 'true'
 
     if mode not in ('mapping', 'navigation'):
         raise RuntimeError("Invalid 'mode'. Use 'mapping' or 'navigation'.")
@@ -137,6 +140,8 @@ def _validate_and_compose(context):
             'baudrate': LaunchConfiguration('base_baudrate'),
             'max_linear': LaunchConfiguration('base_max_linear'),
             'max_angular': LaunchConfiguration('base_max_angular'),
+            'cmd_timeout': base_cmd_timeout,
+            'drive_keepalive_sec': base_drive_keepalive_sec,
             'publish_tf': 'false' if use_base_ekf else LaunchConfiguration('base_publish_tf').perform(context),
             'imu_enabled': LaunchConfiguration('base_imu_enabled'),
             'publish_imu': 'true' if use_base_ekf else 'false',
@@ -366,17 +371,18 @@ def _validate_and_compose(context):
                 }.items(),
             )
         )
-        actions.append(
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'nav2.launch.py')),
-                launch_arguments={
-                    'use_sim_time': LaunchConfiguration('use_sim_time'),
-                    'params_file': LaunchConfiguration('nav2_params_file'),
-                    'default_bt_xml_filename': LaunchConfiguration('nav2_bt_xml_file'),
-                    'autostart': LaunchConfiguration('nav2_autostart'),
-                }.items(),
+        if nav2_start:
+            actions.append(
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'nav2.launch.py')),
+                    launch_arguments={
+                        'use_sim_time': LaunchConfiguration('use_sim_time'),
+                        'params_file': LaunchConfiguration('nav2_params_file'),
+                        'default_bt_xml_filename': LaunchConfiguration('nav2_bt_xml_file'),
+                        'autostart': LaunchConfiguration('nav2_autostart'),
+                    }.items(),
+                )
             )
-        )
 
     actions.append(viz_launch)
     return actions
@@ -472,6 +478,8 @@ def generate_launch_description():
         DeclareLaunchArgument('base_baudrate', default_value='115200'),
         DeclareLaunchArgument('base_max_linear', default_value='1.20'),
         DeclareLaunchArgument('base_max_angular', default_value='19.27'),
+        DeclareLaunchArgument('base_cmd_timeout', default_value='0.30'),
+        DeclareLaunchArgument('base_drive_keepalive_sec', default_value='0.20'),
         DeclareLaunchArgument('base_publish_tf', default_value='true'),
         DeclareLaunchArgument('base_imu_enabled', default_value='true'),
         DeclareLaunchArgument('base_fusion_mode', default_value='none'),
@@ -503,6 +511,7 @@ def generate_launch_description():
         DeclareLaunchArgument('nav2_params_file', default_value=default_nav2_params),
         DeclareLaunchArgument('nav2_bt_xml_file', default_value=os.path.join(rb_share, 'behavior_trees', 'mapping_navigate_to_pose.xml')),
         DeclareLaunchArgument('nav2_autostart', default_value='true'),
+        DeclareLaunchArgument('nav2_start', default_value='true'),
 
         DeclareLaunchArgument('rviz_config', default_value=os.path.join(rb_share, 'rviz', 'system.rviz')),
 

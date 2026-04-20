@@ -15,6 +15,7 @@ SAVE_MAP_SCRIPT="${SCRIPT_DIR}/save_map.sh"
 CHECK_SYSTEM_SCRIPT="${SCRIPT_DIR}/check_system.sh"
 CHECK_MAPPING_SCRIPT="${SCRIPT_DIR}/check_mapping_pipeline.sh"
 KEYBOARD_CONTROL_SCRIPT="${SCRIPT_DIR}/keyboard_control.sh"
+BASE_TEST_SCRIPT="${SCRIPT_DIR}/test_base_cmd.sh"
 
 DEFAULT_MAP="/home/robot/ros2_maps/latest.yaml"
 DEFAULT_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping.yaml"
@@ -53,6 +54,7 @@ main_usage() {
   navigation    启动导航
   sensor        启动单一传感器
   base          启动 STM32 底盘桥接
+  base-test     只测试上位机 /cmd_vel 控制底盘
   full          启动全量观测系统（雷达 + 相机 + 底盘 + 建图）
   check         执行健康检查（lidar 或 mapping）
   save-map      保存当前地图
@@ -63,7 +65,10 @@ main_usage() {
 
 示例:
   ./robot.sh mapping lidar --real-base
+  ./robot.sh save-map my_map
+  ./robot.sh navigation --real-base --ekf-base
   ./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base
+  ./robot.sh base-test --rotate-only
   ./robot.sh sensor lidar
   ./robot.sh check lidar
   ./robot.sh doctor
@@ -82,7 +87,13 @@ EOF
 
 navigation_usage() {
     cat <<'EOF'
-用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--base-use-status-yaw] [--no-rviz] [--skip-lidar-check] [--base-port PORT]
+用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--base-use-status-yaw] [--no-rviz] [--skip-lidar-check] [--base-port PORT] [--localization-only|--nav2-only]
+
+说明:
+  map.yaml 省略时默认使用 /home/robot/ros2_maps/latest.yaml。
+  RViz 中先用 2D Pose Estimate 设置当前位置，再用 2D Goal Pose 点目标导航。
+  --localization-only 只启动雷达、底盘、AMCL 和 RViz，先完成初始定位。
+  --nav2-only         在初始定位完成后，单独启动 Nav2 规划和控制节点。
 EOF
 }
 
@@ -521,13 +532,20 @@ run_navigation() {
     local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
     local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
-    local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-0.0}"
+    local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-1.0}"
+    local base_cmd_log_interval_sec="${BASE_CMD_LOG_INTERVAL_SEC:-1.0}"
+    local base_cmd_timeout="${BASE_CMD_TIMEOUT:-1.0}"
+    local base_drive_keepalive_sec="${BASE_DRIVE_KEEPALIVE_SEC:-0.10}"
     local use_rviz=true
     local skip_lidar_check=false
     local lidar_params=""
     local lidar_port=""
     local lidar_tf_yaw="${LIDAR_TF_YAW:-0.0}"
     local base_port_explicit=false
+    local localization_only=false
+    local nav2_only=false
+    local nav2_params_file="${ROS_WS}/src/robot_bringup/config/nav2_params_robot.yaml"
+    local nav2_bt_xml_file="${ROS_WS}/src/robot_bringup/behavior_trees/mapping_navigate_to_pose.xml"
     local arg=""
 
     while [ $# -gt 0 ]; do
@@ -555,6 +573,14 @@ run_navigation() {
                 ;;
             --skip-lidar-check)
                 skip_lidar_check=true
+                shift
+                ;;
+            --localization-only)
+                localization_only=true
+                shift
+                ;;
+            --nav2-only)
+                nav2_only=true
                 shift
                 ;;
             --base-port)
@@ -603,6 +629,26 @@ run_navigation() {
 
     ensure_workspace_built
     setup_ros_env
+    if [ "$localization_only" = true ] && [ "$nav2_only" = true ]; then
+        log_error "✗ --localization-only 和 --nav2-only 不能同时使用"
+        navigation_usage
+        exit 1
+    fi
+
+    if [ "$nav2_only" = true ]; then
+        print_header "Nav2 规划控制启动"
+        log_info "前提: 已经另一个终端运行 ./robot.sh navigation --localization-only"
+        log_info "前提: RViz 已用 2D Pose Estimate 完成初始定位，并且 map->base_link TF 可用"
+        log_info "Nav2 参数: ${nav2_params_file}"
+        echo
+        ros2 launch robot_bringup nav2.launch.py \
+            use_sim_time:=false \
+            params_file:=${nav2_params_file} \
+            default_bt_xml_filename:=${nav2_bt_xml_file} \
+            autostart:=true
+        return
+    fi
+
     print_header "导航模式启动"
 
     if [ ! -f "$map_file" ]; then
@@ -630,7 +676,11 @@ run_navigation() {
 
     stop_existing_sessions
 
-    log_success "正在启动统一导航系统..."
+    if [ "$localization_only" = true ]; then
+        log_success "正在启动定位阶段（雷达 + 底盘 + AMCL + RViz，不启动 Nav2）..."
+    else
+        log_success "正在启动统一导航系统..."
+    fi
     log_info "地图文件: ${map_file}"
     log_info "雷达串口: ${lidar_port}"
     log_info "雷达 yaw 外参(rad): ${lidar_tf_yaw}"
@@ -640,6 +690,7 @@ run_navigation() {
         log_info "底盘 IMU 参与控制: ${base_imu_enabled}"
         log_info "底盘融合模式: ${base_fusion_mode}"
         log_info "底盘航向来源: $( [ "$base_use_status_yaw" = "true" ] && printf '下位机 yaw_est' || printf '桥接积分 w_est' )"
+        log_info "底盘命令保活: timeout=${base_cmd_timeout}s keepalive=${base_drive_keepalive_sec}s"
         if [ "$base_port" = "auto" ]; then
             log_warn "⚠ 未检测到底盘串口，桥接节点将以 auto 模式持续重试"
         fi
@@ -666,8 +717,12 @@ run_navigation() {
         base_odom_angular_scale:=${base_odom_angular_scale} \
         base_odom_angular_sign:=${base_odom_angular_sign} \
         base_status_log_interval_sec:=${base_status_log_interval_sec} \
+        base_cmd_log_interval_sec:=${base_cmd_log_interval_sec} \
+        base_cmd_timeout:=${base_cmd_timeout} \
+        base_drive_keepalive_sec:=${base_drive_keepalive_sec} \
         lidar_tf_yaw:=${lidar_tf_yaw} \
-        lidar_params_file:=${lidar_params}
+        lidar_params_file:=${lidar_params} \
+        nav2_start:=$( [ "$localization_only" = true ] && printf 'false' || printf 'true' )
 }
 
 run_sensor() {
@@ -931,6 +986,9 @@ case "$COMMAND" in
         ;;
     base|bridge)
         run_base "$@"
+        ;;
+    base-test|test-base)
+        run_passthrough_script "$BASE_TEST_SCRIPT" "$@"
         ;;
     full|system)
         run_system "$@"
