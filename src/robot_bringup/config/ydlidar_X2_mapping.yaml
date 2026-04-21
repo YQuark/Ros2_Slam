@@ -12,7 +12,7 @@ ydlidar_ros2_driver_node:
     # when the real point count slightly exceeds the SDK's fixed bucket.
     fixed_resolution: false
     reversion: false
-    inverted: false
+    inverted: true
     auto_reconnect: true
     isSingleChannel: true
     intensity_bit: 0

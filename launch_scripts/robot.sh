@@ -78,11 +78,12 @@ EOF
 
 mapping_usage() {
     cat <<'EOF'
-用法: ./robot.sh mapping [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT] [--auto-drive] [--auto-drive-duration SEC]
+用法: ./robot.sh mapping [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--auto-drive] [--auto-drive-duration SEC]
 
 说明:
   --auto-drive 使用 Nav2 + frontier_explorer 自动选择未知边界目标，不再直接发布 /cmd_vel。
   可用 AUTO_MAPPING_GOAL_CLEARANCE_RADIUS / AUTO_MAPPING_GOAL_UNKNOWN_CLEARANCE_RADIUS 临时放宽或收紧贴墙距离。
+  lidar 源建图时可用 --lidar-reversion / --lidar-inverted / --lidar-yaw-* 做运行时覆盖。
 EOF
 }
 
@@ -299,6 +300,9 @@ run_mapping() {
     local auto_mapping_side_emergency_stop_distance="${AUTO_MAPPING_SIDE_EMERGENCY_STOP_DISTANCE:-0.12}"
     local auto_mapping_side_stop_distance="${AUTO_MAPPING_SIDE_STOP_DISTANCE:-0.10}"
     local auto_mapping_side_resume_distance="${AUTO_MAPPING_SIDE_RESUME_DISTANCE:-0.18}"
+    local lidar_tf_yaw="${LIDAR_TF_YAW:-$DEFAULT_LIDAR_TF_YAW_RAD}"
+    local lidar_reversion_override=""
+    local lidar_inverted_override=""
     local lidar_port=""
     local base_port_explicit=false
     local arg=""
@@ -358,6 +362,40 @@ run_mapping() {
                 base_port_explicit=true
                 shift 2
                 ;;
+            --lidar-yaw-rad)
+                if [ $# -lt 2 ]; then
+                    log_error "✗ --lidar-yaw-rad 需要一个弧度值"
+                    mapping_usage
+                    exit 1
+                fi
+                lidar_tf_yaw="$2"
+                shift 2
+                ;;
+            --lidar-yaw-deg)
+                if [ $# -lt 2 ]; then
+                    log_error "✗ --lidar-yaw-deg 需要一个角度值"
+                    mapping_usage
+                    exit 1
+                fi
+                lidar_tf_yaw="$(deg_to_rad "$2")"
+                shift 2
+                ;;
+            --lidar-reversion)
+                lidar_reversion_override="true"
+                shift
+                ;;
+            --no-lidar-reversion)
+                lidar_reversion_override="false"
+                shift
+                ;;
+            --lidar-inverted)
+                lidar_inverted_override="true"
+                shift
+                ;;
+            --no-lidar-inverted)
+                lidar_inverted_override="false"
+                shift
+                ;;
             --auto-drive)
                 auto_mapping_drive="true"
                 shift
@@ -403,6 +441,7 @@ run_mapping() {
             lidar_params="$DEFAULT_LIDAR_FALLBACK_PARAMS"
         fi
         lidar_params="$(prepare_lidar_params "$lidar_params" "ydlidar_mapping")"
+        lidar_params="$(prepare_lidar_params_with_runtime_overrides "$lidar_params" "$lidar_reversion_override" "$lidar_inverted_override")"
         lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
         if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
             log_error "✗ 未找到雷达设备"
@@ -483,6 +522,13 @@ run_mapping() {
     if [ "$mapping_source" = "lidar" ]; then
         log_info "雷达参数: ${lidar_params}"
         log_info "雷达串口: ${lidar_port}"
+        log_info "雷达 yaw 外参(rad): ${lidar_tf_yaw}"
+        if [ -n "$lidar_reversion_override" ]; then
+            log_info "雷达 reversion 覆写: ${lidar_reversion_override}"
+        fi
+        if [ -n "$lidar_inverted_override" ]; then
+            log_info "雷达 inverted 覆写: ${lidar_inverted_override}"
+        fi
     fi
     log_info "底盘模式: ${base_mode}"
     if [ "$base_mode" = "real" ]; then
@@ -541,6 +587,7 @@ run_mapping() {
         auto_mapping_side_resume_distance:=${auto_mapping_side_resume_distance} \
         use_visual_odom:=${use_visual_odom} \
         use_rviz:=${use_rviz} \
+        lidar_tf_yaw:=${lidar_tf_yaw} \
         lidar_params_file:=${lidar_params:-$DEFAULT_LIDAR_PARAMS} \
         rviz_config:=${rviz_config} \
         camera_use_uvc:=true \
@@ -826,13 +873,18 @@ run_sensor() {
     case "$sensor" in
         lidar)
             print_header "激光雷达传感器启动"
-            lidar_params="$(prepare_lidar_params "$DEFAULT_LIDAR_FALLBACK_PARAMS" "ydlidar_sensor")"
+            lidar_params="$DEFAULT_LIDAR_PARAMS"
+            if [ ! -f "$lidar_params" ]; then
+                lidar_params="$DEFAULT_LIDAR_FALLBACK_PARAMS"
+            fi
+            lidar_params="$(prepare_lidar_params "$lidar_params" "ydlidar_sensor")"
             lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
             if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
                 log_error "✗ 未找到雷达设备"
                 exit 1
             fi
             log_info "雷达串口: ${lidar_port}"
+            log_info "雷达参数: ${lidar_params}"
             ros2 launch robot_bringup sensors.launch.py \
                 use_lidar:=true \
                 use_camera:=false \
