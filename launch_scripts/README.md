@@ -19,12 +19,15 @@ cd /home/robot/ros2_ws/launch_scripts
 ./robot.sh mapping lidar --real-base
 ./robot.sh mapping lidar --real-base --ekf-base
 ./robot.sh mapping lidar precision --real-base --ekf-base
+./robot.sh mapping lidar --real-base --lidar-inverted
+./robot.sh mapping lidar --real-base --lidar-yaw-deg -90
 ./robot.sh save-map my_map
 ./robot.sh navigation --real-base --ekf-base
 ./robot.sh navigation --real-base --ekf-base --localization-only
 ./robot.sh navigation --nav2-only
 ./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base
 ./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base --ekf-base
+./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base --lidar-inverted
 ./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --fake-base
 ./robot.sh sensor lidar
 ./robot.sh sensor camera
@@ -56,6 +59,7 @@ cd /home/robot/ros2_ws/launch_scripts
 - 保存地图：建图进程保持运行，另开终端执行 `./robot.sh save-map my_map`
 - 使用最近保存的地图导航：`./robot.sh navigation --real-base --ekf-base`
 - 如果 Nav2 在初始定位前启动后报 `send_goal failed`：先运行 `./robot.sh navigation --real-base --ekf-base --localization-only`，完成 `2D Pose Estimate` 后再运行 `./robot.sh navigation --nav2-only`
+- 需要临时修正激光链时：`mapping` 和 `navigation` 都支持 `--lidar-reversion`、`--lidar-inverted`、`--lidar-yaw-rad/deg`
 
 补充说明：
 
@@ -65,6 +69,7 @@ cd /home/robot/ros2_ws/launch_scripts
 - `save-map` 成功后会更新 `~/ros2_maps/latest.yaml` 和 `~/ros2_maps/latest.pgm`，因此导航可以省略地图路径。
 - `save-map` 会给地图四周添加默认 `1.0m` unknown 边界缓冲，减少小地图贴边规划时的 `worldToMap failed`。
 - RViz 中先用 `2D Pose Estimate` 设置机器人当前位置，再用 `2D Goal Pose` 点目标导航。
+- `./robot.sh sensor lidar` 现在默认优先使用 `src/robot_bringup/config/ydlidar_X2_mapping.yaml`，便于直接验证当前建图雷达参数。
 
 ## 兼容脚本状态
 

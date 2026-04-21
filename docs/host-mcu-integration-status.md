@@ -6,13 +6,14 @@
 
 ## 结论摘要
 
-当前已静态修正的系统级问题集中在五条链路：
+当前已静态修正的系统级问题集中在六条链路：
 
-- 串口资源：固定默认底盘 `/dev/ttyUSB0`、雷达 `/dev/ttyUSB1`，并让底盘自动探测排除雷达串口，避免 YDLIDAR 与 STM32 同抢一个口。
+- 串口资源：固定默认底盘 `/dev/ttyUSB1`、雷达 `/dev/ttyUSB0`，并让底盘自动探测排除雷达串口，避免 YDLIDAR 与 STM32 同抢一个口。
 - 速度尺度：上位机 `max_linear/max_angular` 已按下位机 `MAX_CPS`、轮半径、编码器计数和轮距计算，保持 Q15 命令与反馈尺度一致。
 - 航向来源：上位机默认使用 STM32 `yaw_est` 作为 `/odom` 航向来源，不再长期依赖桥接层自行积分角速度。
 - 里程计安全：STM32 状态过期时，上位机 `/odom` 不再回退到 `/cmd_vel` 命令速度，而是保持位姿、速度置零并提高协方差。
 - IMU 加速度：下位机在静止校准时加入体坐标重力方向检查；上位机按有效、原始可观测、无效三种语义发布不同协方差。
+- 激光手性：`/scan` 相对 `base_link` 的左右镜像修复收口到雷达参数 `inverted: true`，并允许在 `robot.sh` 里做运行时覆盖。
 
 所有运行结论仍需在远程机器人环境验证。当前本地目录为 SMB 挂载，只允许静态阅读和编辑。
 
@@ -42,10 +43,10 @@
 
 当前默认约定：
 
-- STM32 底盘：`/dev/ttyUSB0`
-- YDLIDAR X2：`/dev/ttyUSB1`
-- `system.launch.py` 默认 `base_port:=/dev/ttyUSB0`
-- `ydlidar_X2_mapping.yaml` 默认 `port: /dev/ttyUSB1`
+- STM32 底盘：`/dev/ttyUSB1`
+- YDLIDAR X2：`/dev/ttyUSB0`
+- `system.launch.py` 默认 `base_port:=/dev/ttyUSB1`
+- `ydlidar_X2_mapping.yaml` 默认 `port: /dev/ttyUSB0`
 - `bridge_node.py` 支持 `excluded_ports`，`system.launch.py` 会把雷达串口传给底盘桥接，避免自动探测误选雷达。
 
 排查原则：
@@ -53,6 +54,21 @@
 - 不再仅凭 CP2102 设备名判断底盘串口。
 - 若必须自动探测，底盘探测必须排除已知雷达串口。
 - 现场如改线，优先改 launch 参数或 YAML，不要让两个节点同时打开同一串口。
+
+## 激光手性与外参契约
+
+当前默认约定：
+
+- `src/robot_bringup/config/ydlidar_X2_mapping.yaml` 使用 `inverted: true`
+- `reversion` 保持 `false`
+- `base_link -> laser_frame` 默认 `yaw=-1.570796326795 rad`
+- `./robot.sh mapping` 和 `./robot.sh navigation` 支持 `--lidar-reversion`、`--lidar-inverted`、`--lidar-yaw-rad/deg` 运行时覆盖
+
+排查原则：
+
+- 在 RViz 中 `Fixed Frame=base_link` 且只看 `LaserScan` 时，左右镜像优先判定为激光坐标链问题。
+- `BASE_USE_STATUS_YAW`、`BASE_ODOM_FEEDBACK_SOURCE`、`BASE_ODOM_ANGULAR_SIGN` 属于 odom 链，不是修正 scan 左右镜像的首选入口。
+- 如果历史地图是在错误 scan 手性下建立，地图应废弃并重建。
 
 ## 速度尺度契约
 
@@ -181,4 +197,4 @@ ros2 topic echo /scan
 - Nav2 参数需在真实场地根据底盘响应和雷达质量继续调低或调平滑。
 - ESP01S 长按卡顿已做静态时序修正，仍需烧录 ESP01S 后实机确认 `/health.loop_max_gap_ms`、`uart_tx_timeouts` 和长按手感。
 - PS2/ESP01S 人工遥控不再默认叠加绝对航向保持，但启用 IMU 实际偏航率优先的直行扶正，编码器偏航率仅作 fallback；针对固定左偏加入 `STRAIGHT_SIDE_TRIM=0.04` 静态补偿。闭环轮速控制仍保留，需刷入 STM32 后实机确认。
-- 雷达串口固定为 `/dev/ttyUSB1` 依赖当前插线顺序；长期建议使用 udev 规则生成稳定别名。
+- 雷达串口固定为 `/dev/ttyUSB0` 依赖当前插线顺序；长期建议使用 udev 规则生成稳定别名。

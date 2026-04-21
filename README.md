@@ -12,6 +12,7 @@
 | 虚拟底盘联调 | 已支持 | `base_mode:=fake` |
 | 串口自动识别 | 已支持 | 自动区分底盘串口与雷达串口 |
 | 底盘 EKF 融合 | 已支持 | `/odom + /imu/data -> /odometry/filtered` |
+| 激光运行时覆写 | 已支持 | `mapping` / `navigation` 支持 `--lidar-reversion`、`--lidar-inverted`、`--lidar-yaw-*` |
 
 ## 统一入口
 
@@ -29,11 +30,19 @@ source /home/robot/ros2_ws/install/setup.bash
 
 ```bash
 cd /home/robot/ros2_ws/launch_scripts
+./robot.sh sensor lidar
 ./robot.sh mapping lidar --real-base
 ./robot.sh mapping lidar --real-base --ekf-base
 ./robot.sh save-map my_map
 ./robot.sh navigation --real-base --ekf-base
 ```
+
+当前默认串口与雷达配置:
+
+- 底盘默认串口: `/dev/ttyUSB1`
+- 雷达默认串口: `/dev/ttyUSB0`
+- 雷达建图参数: `src/robot_bringup/config/ydlidar_X2_mapping.yaml`
+- 当前默认修复方向: `inverted: true`
 
 ## 仓库分层
 
@@ -71,6 +80,7 @@ ros2_ws
 - [硬件接线与设备识别](./docs/03-硬件接线与设备识别.md)
 - [建图指南](./docs/04-建图指南.md)
 - [建图测试流程](./docs/05-建图测试流程.md)
+- [导航拆解调试](./docs/05-导航拆解调试.md)
 - [底盘与串口桥接](./docs/06-底盘与串口桥接.md)
 - [运维与排障](./docs/07-运维与排障.md)
 - [开发与二次复用](./docs/08-开发与二次复用.md)
