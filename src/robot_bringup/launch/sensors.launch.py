@@ -4,7 +4,7 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -53,9 +53,9 @@ def generate_launch_description():
             LaunchConfiguration('lidar_tf_x'),
             LaunchConfiguration('lidar_tf_y'),
             LaunchConfiguration('lidar_tf_z'),
-            LaunchConfiguration('lidar_tf_roll'),
-            LaunchConfiguration('lidar_tf_pitch'),
             LaunchConfiguration('lidar_tf_yaw'),
+            LaunchConfiguration('lidar_tf_pitch'),
+            LaunchConfiguration('lidar_tf_roll'),
             'base_link',
             'laser_frame',
         ],
@@ -89,12 +89,33 @@ def generate_launch_description():
         DeclareLaunchArgument('lidar_tf_z', default_value='0.13'),
         DeclareLaunchArgument('lidar_tf_roll', default_value='0.0'),
         DeclareLaunchArgument('lidar_tf_pitch', default_value='0.0'),
-        DeclareLaunchArgument('lidar_tf_yaw', default_value='0.0'),
+        DeclareLaunchArgument(
+            'lidar_tf_yaw',
+            default_value='-1.570796326795',
+            description='base_link -> laser_frame yaw in radians; override at runtime with lidar_tf_yaw:=<value>',
+        ),
         DeclareLaunchArgument('camera_enable_color', default_value='true'),
         DeclareLaunchArgument('camera_enable_ir', default_value='false'),
         DeclareLaunchArgument('camera_use_uvc', default_value='true'),
         DeclareLaunchArgument('camera_color_info_url', default_value=''),
         DeclareLaunchArgument('camera_ir_info_url', default_value=''),
+        LogInfo(
+            condition=IfCondition(LaunchConfiguration('use_lidar')),
+            msg=[
+                '[robot_bringup] lidar TF base_link -> laser_frame: ',
+                'x=', LaunchConfiguration('lidar_tf_x'),
+                ', y=', LaunchConfiguration('lidar_tf_y'),
+                ', z=', LaunchConfiguration('lidar_tf_z'),
+                ', yaw=', LaunchConfiguration('lidar_tf_yaw'),
+                ' rad',
+            ],
+        ),
+        LogInfo(
+            condition=IfCondition(LaunchConfiguration('use_lidar')),
+            msg=[
+                '[robot_bringup] lidar_tf_yaw is the runtime value. Override with lidar_tf_yaw:=<rad> when calibrating.',
+            ],
+        ),
         lidar_node,
         scan_normalizer,
         lidar_tf,
