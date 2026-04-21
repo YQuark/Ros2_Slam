@@ -20,7 +20,7 @@ cd /home/robot/ros2_ws/launch_scripts
 ./robot.sh mapping lidar --real-base --ekf-base
 ./robot.sh mapping lidar precision --real-base --ekf-base
 ./robot.sh mapping lidar --real-base --lidar-inverted
-./robot.sh mapping lidar --real-base --lidar-yaw-deg -90
+./robot.sh mapping lidar --real-base --lidar-yaw-deg 90
 ./robot.sh save-map my_map
 ./robot.sh navigation --real-base --ekf-base
 ./robot.sh navigation --real-base --ekf-base --localization-only

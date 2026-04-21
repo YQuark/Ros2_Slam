@@ -61,7 +61,7 @@
 
 - `src/robot_bringup/config/ydlidar_X2_mapping.yaml` 使用 `inverted: true`
 - `reversion` 保持 `false`
-- `base_link -> laser_frame` 默认 `yaw=-1.570796326795 rad`
+- `base_link -> laser_frame` 默认 `yaw=1.570796326795 rad`
 - `./robot.sh mapping` 和 `./robot.sh navigation` 支持 `--lidar-reversion`、`--lidar-inverted`、`--lidar-yaw-rad/deg` 运行时覆盖
 
 排查原则：

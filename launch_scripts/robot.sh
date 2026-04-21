@@ -27,7 +27,7 @@ DEFAULT_LIDAR_FALLBACK_PARAMS="${ROS_WS}/src/ydlidar_ros2_driver/params/X2.yaml"
 DEFAULT_LIDAR_RVIZ="${ROS_WS}/src/robot_bringup/rviz/lidar_mapping.rviz"
 DEFAULT_SYSTEM_RVIZ="${ROS_WS}/src/robot_bringup/rviz/system.rviz"
 DEFAULT_CAMERA_INFO_URL="file://${ROS_WS}/src/robot_bringup/config/camera_info/rgb_Astra_Orbbec.yaml"
-DEFAULT_LIDAR_TF_YAW_RAD="-1.570796326795"
+DEFAULT_LIDAR_TF_YAW_RAD="1.570796326795"
 
 TMP_FILES=()
 

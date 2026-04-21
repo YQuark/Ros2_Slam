@@ -91,7 +91,7 @@ def generate_launch_description():
         DeclareLaunchArgument('lidar_tf_pitch', default_value='0.0'),
         DeclareLaunchArgument(
             'lidar_tf_yaw',
-            default_value='-1.570796326795',
+            default_value='1.570796326795',
             description='base_link -> laser_frame yaw in radians; override at runtime with lidar_tf_yaw:=<value>',
         ),
         DeclareLaunchArgument('camera_enable_color', default_value='true'),

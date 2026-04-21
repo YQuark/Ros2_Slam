@@ -91,7 +91,8 @@ main() {
      ./robot.sh navigation --localization-only --lidar-reversion
      ./robot.sh navigation --localization-only --lidar-inverted
   2. 只有在驱动方向正常后，再试:
-     ./robot.sh navigation --localization-only --lidar-yaw-deg 180
+     ./robot.sh navigation --localization-only --lidar-yaw-deg 90
+     ./robot.sh navigation --localization-only --lidar-yaw-deg -90
   3. 运动中 scan 不贴 map 时，再试:
      ./robot.sh navigation --localization-only --no-base-status-yaw
      ./robot.sh navigation --localization-only --base-odom-source wheel_cps

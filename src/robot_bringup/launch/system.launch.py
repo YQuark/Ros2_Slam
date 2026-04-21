@@ -424,7 +424,7 @@ def generate_launch_description():
         DeclareLaunchArgument('lidar_tf_z', default_value='0.13'),
         DeclareLaunchArgument('lidar_tf_roll', default_value='0.0'),
         DeclareLaunchArgument('lidar_tf_pitch', default_value='0.0'),
-        DeclareLaunchArgument('lidar_tf_yaw', default_value='-1.570796326795'),
+        DeclareLaunchArgument('lidar_tf_yaw', default_value='1.570796326795'),
         DeclareLaunchArgument('slam_params_file', default_value=os.path.join(rb_share, 'config', 'slam_toolbox_mapping.yaml')),
         DeclareLaunchArgument('map_file', default_value=''),
 
