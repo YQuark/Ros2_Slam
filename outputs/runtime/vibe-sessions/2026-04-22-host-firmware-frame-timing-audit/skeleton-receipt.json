@@ -1,0 +1,13 @@
+{
+  "run_id": "2026-04-22-host-firmware-frame-timing-audit",
+  "stage": "skeleton_check",
+  "cwd": "/mnt/d/Document/Work/projects",
+  "primary_workspace": "/mnt/d/Document/Work/projects/Ros2_Slam",
+  "related_workspace": "/mnt/d/Document/Work/projects/Clion",
+  "audit_mode": "static_only",
+  "repositories": [
+    "Ros2_Slam",
+    "Clion"
+  ],
+  "result": "ready"
+}

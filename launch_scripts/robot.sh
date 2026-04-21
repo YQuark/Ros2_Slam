@@ -22,6 +22,7 @@ DEFAULT_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping.yam
 PRECISION_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping_lidar_precision.yaml"
 FAST_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping_fast.yaml"
 DEFAULT_NAV2_MAPPING_PARAMS="${ROS_WS}/src/robot_bringup/config/nav2_mapping_params.yaml"
+DEFAULT_NAV2_BT_XML="${ROS_WS}/src/robot_bringup/behavior_trees/navigate_to_pose_recovery.xml"
 DEFAULT_LIDAR_PARAMS="${ROS_WS}/src/robot_bringup/config/ydlidar_X2_mapping.yaml"
 DEFAULT_LIDAR_FALLBACK_PARAMS="${ROS_WS}/src/ydlidar_ros2_driver/params/X2.yaml"
 DEFAULT_LIDAR_RVIZ="${ROS_WS}/src/robot_bringup/rviz/lidar_mapping.rviz"
@@ -94,8 +95,9 @@ navigation_usage() {
 说明:
   map.yaml 省略时默认使用 /home/robot/ros2_maps/latest.yaml。
   RViz 中先用 2D Pose Estimate 设置当前位置，再用 2D Goal Pose 点目标导航。
+  默认正式流程是单阶段 navigation；只有定位未就绪或现场异常时，才回退到下面两个模式。
   --localization-only 只启动雷达、底盘、AMCL 和 RViz，先完成初始定位。
-  --nav2-only         在初始定位完成后，单独启动 Nav2 规划和控制节点。
+  --nav2-only         在初始定位完成后，单独启动 Nav2 规划和控制节点；会先检查 AMCL 是否就绪。
   若 2D Pose Estimate 箭头与点云朝向不一致，优先测试 --lidar-reversion / --lidar-inverted，再考虑 lidar_tf_yaw。
   若运动时 scan 不贴 map，优先测试 --no-base-status-yaw 或 --base-odom-source wheel_cps。
 EOF
@@ -184,6 +186,11 @@ prepare_lidar_params() {
     local params_file="$1"
     local configured_port=""
 
+    if [ -z "$params_file" ] || [ ! -f "$params_file" ]; then
+        log_error "✗ 雷达参数文件不存在: ${params_file:-<empty>}"
+        exit 1
+    fi
+
     configured_port="$(get_yaml_key_value "$params_file" "port" || true)"
     if [ -z "$configured_port" ]; then
         log_error "✗ 雷达参数文件缺少 port: ${params_file}"
@@ -220,6 +227,32 @@ prepare_lidar_params_with_runtime_overrides() {
     printf '%s\n' "$tmp_file"
 }
 
+resolve_default_lidar_params() {
+    if [ -f "$DEFAULT_LIDAR_PARAMS" ]; then
+        printf '%s\n' "$DEFAULT_LIDAR_PARAMS"
+        return 0
+    fi
+    if [ -f "$DEFAULT_LIDAR_FALLBACK_PARAMS" ]; then
+        printf '%s\n' "$DEFAULT_LIDAR_FALLBACK_PARAMS"
+        return 0
+    fi
+
+    log_error "✗ 未找到默认雷达参数文件"
+    log_error "  已检查: ${DEFAULT_LIDAR_PARAMS}"
+    log_error "  已检查: ${DEFAULT_LIDAR_FALLBACK_PARAMS}"
+    exit 1
+}
+
+require_existing_file() {
+    local file_path="$1"
+    local label="$2"
+
+    if [ -z "$file_path" ] || [ ! -f "$file_path" ]; then
+        log_error "✗ ${label}不存在: ${file_path:-<empty>}"
+        exit 1
+    fi
+}
+
 choose_slam_params() {
     local profile="$1"
 
@@ -250,6 +283,46 @@ stop_existing_sessions() {
         "$STOP_ALL_SCRIPT" >/dev/null 2>&1 || true
         sleep 1
     fi
+}
+
+ensure_localization_ready_for_nav2() {
+    local amcl_pose_status=0
+
+    if ! ros2_node_exists "/map_server"; then
+        log_error "✗ 未检测到 /map_server。请先运行 ./robot.sh navigation --localization-only"
+        exit 1
+    fi
+    if ! ros2_node_exists "/amcl"; then
+        log_error "✗ 未检测到 /amcl。请先运行 ./robot.sh navigation --localization-only"
+        exit 1
+    fi
+    if ! ros2_lifecycle_is_active "/map_server"; then
+        log_error "✗ /map_server 当前不在 active 状态，不能直接启动 --nav2-only"
+        exit 1
+    fi
+    if ! ros2_lifecycle_is_active "/amcl"; then
+        log_error "✗ /amcl 当前不在 active 状态，不能直接启动 --nav2-only"
+        exit 1
+    fi
+
+    if ros2_wait_for_topic_message "/amcl_pose" 8; then
+        amcl_pose_status=0
+    else
+        amcl_pose_status=$?
+    fi
+
+    case "$amcl_pose_status" in
+        0)
+            log_success "检测到 /amcl_pose，定位链已就绪。"
+            ;;
+        2)
+            log_warn "⚠ 系统缺少 timeout，跳过 /amcl_pose 消息等待；继续按节点状态启动 Nav2。"
+            ;;
+        *)
+            log_error "✗ 8 秒内未收到 /amcl_pose。请先在 RViz 执行 2D Pose Estimate 并确认定位稳定。"
+            exit 1
+            ;;
+    esac
 }
 
 run_mapping() {
@@ -433,14 +506,12 @@ run_mapping() {
         fi
     fi
     slam_params="$(choose_slam_params "$slam_profile")"
+    require_existing_file "$slam_params" "SLAM 参数文件"
 
     if [ "$mapping_source" = "lidar" ]; then
         rviz_config="$DEFAULT_LIDAR_RVIZ"
-        lidar_params="$DEFAULT_LIDAR_PARAMS"
-        if [ ! -f "$lidar_params" ]; then
-            lidar_params="$DEFAULT_LIDAR_FALLBACK_PARAMS"
-        fi
-        lidar_params="$(prepare_lidar_params "$lidar_params" "ydlidar_mapping")"
+        lidar_params="$(resolve_default_lidar_params)"
+        lidar_params="$(prepare_lidar_params "$lidar_params")"
         lidar_params="$(prepare_lidar_params_with_runtime_overrides "$lidar_params" "$lidar_reversion_override" "$lidar_inverted_override")"
         lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
         if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
@@ -485,6 +556,12 @@ run_mapping() {
     fi
     if [ "$auto_mapping_drive" = "true" ] && [ "${BASE_CMD_LOG_INTERVAL_SEC:-}" = "" ]; then
         base_cmd_log_interval_sec="5.0"
+    fi
+    if [ "$auto_mapping_drive" = "true" ]; then
+        require_existing_file "$auto_mapping_nav2_params" "自动建图 Nav2 参数文件"
+    fi
+    if [ "$use_rviz" = true ]; then
+        require_existing_file "$rviz_config" "RViz 配置文件"
     fi
 
     log_info "系统组件:"
@@ -600,7 +677,7 @@ run_navigation() {
     local map_file="$DEFAULT_MAP"
     local base_mode="real"
     local base_port="${BASE_PORT:-/dev/ttyUSB1}"
-    local base_imu_enabled="true"
+    local base_imu_enabled="${BASE_IMU_ENABLED:-true}"
     local base_fusion_mode="none"
     local base_use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
     local base_status_yaw_mode="${BASE_STATUS_YAW_MODE:-relative}"
@@ -609,14 +686,15 @@ run_navigation() {
     local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
     local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
-    local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-1.0}"
-    local base_cmd_log_interval_sec="${BASE_CMD_LOG_INTERVAL_SEC:-1.0}"
-    local base_cmd_timeout="${BASE_CMD_TIMEOUT:-1.0}"
+    local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-5.0}"
+    local base_cmd_log_interval_sec="${BASE_CMD_LOG_INTERVAL_SEC:-0.0}"
+    local base_cmd_timeout="${BASE_CMD_TIMEOUT:-0.25}"
     local base_drive_keepalive_sec="${BASE_DRIVE_KEEPALIVE_SEC:-0.10}"
     local use_rviz=true
     local skip_lidar_check=false
     local lidar_params=""
     local lidar_port=""
+    local rviz_config="$DEFAULT_SYSTEM_RVIZ"
     local lidar_tf_yaw="${LIDAR_TF_YAW:-$DEFAULT_LIDAR_TF_YAW_RAD}"
     local lidar_reversion_override=""
     local lidar_inverted_override=""
@@ -624,7 +702,8 @@ run_navigation() {
     local localization_only=false
     local nav2_only=false
     local nav2_params_file="${ROS_WS}/src/robot_bringup/config/nav2_params_robot.yaml"
-    local nav2_bt_xml_file="${ROS_WS}/src/robot_bringup/behavior_trees/mapping_navigate_to_pose.xml"
+    local nav2_bt_xml_file="${DEFAULT_NAV2_BT_XML}"
+    local map_file_explicit=false
     local arg=""
 
     while [ $# -gt 0 ]; do
@@ -738,7 +817,13 @@ run_navigation() {
                     navigation_usage
                     exit 1
                 fi
+                if [ "$map_file_explicit" = true ]; then
+                    log_error "✗ 重复指定地图文件: $arg"
+                    navigation_usage
+                    exit 1
+                fi
                 map_file="$arg"
+                map_file_explicit=true
                 shift
                 ;;
         esac
@@ -754,10 +839,14 @@ run_navigation() {
 
     if [ "$nav2_only" = true ]; then
         print_header "Nav2 规划控制启动"
+        require_existing_file "$nav2_params_file" "Nav2 参数文件"
+        require_existing_file "$nav2_bt_xml_file" "Nav2 行为树文件"
         log_info "前提: 已经另一个终端运行 ./robot.sh navigation --localization-only"
         log_info "前提: RViz 已用 2D Pose Estimate 完成初始定位，并且 map->base_link TF 可用"
         log_info "Nav2 参数: ${nav2_params_file}"
+        log_info "Nav2 BT: ${nav2_bt_xml_file}"
         echo
+        ensure_localization_ready_for_nav2
         ros2 launch robot_bringup nav2.launch.py \
             use_sim_time:=false \
             params_file:=${nav2_params_file} \
@@ -768,12 +857,15 @@ run_navigation() {
 
     print_header "导航模式启动"
 
-    if [ ! -f "$map_file" ]; then
-        log_error "✗ 地图文件不存在: $map_file"
-        exit 1
+    require_existing_file "$map_file" "地图文件"
+    require_existing_file "$nav2_params_file" "Nav2 参数文件"
+    require_existing_file "$nav2_bt_xml_file" "Nav2 行为树文件"
+    if [ "$use_rviz" = true ]; then
+        require_existing_file "$rviz_config" "RViz 配置文件"
     fi
 
-    lidar_params="$(prepare_lidar_params "$DEFAULT_LIDAR_PARAMS" "ydlidar_nav")"
+    lidar_params="$(resolve_default_lidar_params)"
+    lidar_params="$(prepare_lidar_params "$lidar_params")"
     lidar_params="$(prepare_lidar_params_with_runtime_overrides "$lidar_params" "$lidar_reversion_override" "$lidar_inverted_override")"
     lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
     if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
@@ -807,6 +899,7 @@ run_navigation() {
     log_info "雷达参数: ${lidar_params}"
     log_info "雷达串口: ${lidar_port}"
     log_info "雷达 yaw 外参(rad): ${lidar_tf_yaw}"
+    log_info "Nav2 BT: ${nav2_bt_xml_file}"
     if [ -n "$lidar_reversion_override" ]; then
         log_info "雷达 reversion 覆写: ${lidar_reversion_override}"
     fi
@@ -853,6 +946,8 @@ run_navigation() {
         base_drive_keepalive_sec:=${base_drive_keepalive_sec} \
         lidar_tf_yaw:=${lidar_tf_yaw} \
         lidar_params_file:=${lidar_params} \
+        nav2_bt_xml_file:=${nav2_bt_xml_file} \
+        rviz_config:=${rviz_config} \
         nav2_start:=$( [ "$localization_only" = true ] && printf 'false' || printf 'true' )
 }
 
@@ -873,11 +968,8 @@ run_sensor() {
     case "$sensor" in
         lidar)
             print_header "激光雷达传感器启动"
-            lidar_params="$DEFAULT_LIDAR_PARAMS"
-            if [ ! -f "$lidar_params" ]; then
-                lidar_params="$DEFAULT_LIDAR_FALLBACK_PARAMS"
-            fi
-            lidar_params="$(prepare_lidar_params "$lidar_params" "ydlidar_sensor")"
+            lidar_params="$(resolve_default_lidar_params)"
+            lidar_params="$(prepare_lidar_params "$lidar_params")"
             lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
             if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
                 log_error "✗ 未找到雷达设备"
@@ -910,6 +1002,8 @@ run_sensor() {
 run_base() {
     local base_port="${BASE_PORT:-/dev/ttyUSB1}"
     local use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
+    local base_imu_enabled="${BASE_IMU_ENABLED:-true}"
+    local base_odom_feedback_source="${BASE_ODOM_FEEDBACK_SOURCE:-status_twist}"
     local status_yaw_mode="${BASE_STATUS_YAW_MODE:-relative}"
     local status_yaw_jump_reject_deg="${BASE_STATUS_YAW_JUMP_REJECT_DEG:-25.0}"
     local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
@@ -951,13 +1045,17 @@ run_base() {
     else
         log_info "底盘串口: ${base_port}"
     fi
+    log_info "底盘 IMU 参与控制: ${base_imu_enabled}"
     log_info "底盘航向来源: $( [ "$use_status_yaw" = "true" ] && printf '下位机 yaw_est' || printf '桥接积分 w_est' )"
+    log_info "底盘速度来源: ${base_odom_feedback_source}"
     ros2 launch stm32_robot_bridge stm32_bridge.launch.py \
         port:=${base_port} \
         baudrate:=115200 \
+        imu_enabled:=${base_imu_enabled} \
         use_status_yaw:=${use_status_yaw} \
         status_yaw_mode:=${status_yaw_mode} \
         status_yaw_jump_reject_deg:=${status_yaw_jump_reject_deg} \
+        odom_feedback_source:=${base_odom_feedback_source} \
         wheel_track_width:=${base_wheel_track_width} \
         odom_angular_scale:=${base_odom_angular_scale} \
         odom_angular_sign:=${base_odom_angular_sign} \
@@ -975,9 +1073,13 @@ run_system() {
     local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
     local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
+    local base_imu_enabled="${BASE_IMU_ENABLED:-true}"
+    local base_use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
     local base_status_yaw_mode="${BASE_STATUS_YAW_MODE:-relative}"
     local base_status_yaw_jump_reject_deg="${BASE_STATUS_YAW_JUMP_REJECT_DEG:-25.0}"
+    local base_odom_feedback_source="${BASE_ODOM_FEEDBACK_SOURCE:-status_twist}"
     local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-0.0}"
+    local rviz_config="$DEFAULT_SYSTEM_RVIZ"
 
     while [ $# -gt 0 ]; do
         case "$1" in
@@ -1028,8 +1130,12 @@ run_system() {
     ensure_workspace_built
     setup_ros_env
     print_header "完整系统启动"
+    if [ "$use_rviz" = true ]; then
+        require_existing_file "$rviz_config" "RViz 配置文件"
+    fi
 
-    lidar_params="$(prepare_lidar_params "$DEFAULT_LIDAR_PARAMS" "ydlidar_system")"
+    lidar_params="$(resolve_default_lidar_params)"
+    lidar_params="$(prepare_lidar_params "$lidar_params")"
     lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
     if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
         log_error "✗ 未找到雷达设备"
@@ -1050,6 +1156,9 @@ run_system() {
     echo "  • 雷达 yaw 外参(rad): ${lidar_tf_yaw}"
     echo "  • Astra Pro 深度相机"
     echo "  • STM32 串口桥接 (${base_port})"
+    echo "  • 底盘 IMU 参与控制: ${base_imu_enabled}"
+    echo "  • 底盘航向来源: $( [ "$base_use_status_yaw" = "true" ] && printf '下位机 yaw_est' || printf '桥接积分 w_est' )"
+    echo "  • 底盘速度来源: ${base_odom_feedback_source}"
     echo "  • SLAM Toolbox"
     if [ "$use_rviz" = true ]; then
         echo "  • RViz2"
@@ -1066,14 +1175,18 @@ run_system() {
         use_rviz:=${use_rviz} \
         base_port:=${base_port} \
         base_baudrate:=115200 \
+        base_imu_enabled:=${base_imu_enabled} \
+        base_use_status_yaw:=${base_use_status_yaw} \
         base_wheel_track_width:=${base_wheel_track_width} \
+        base_odom_feedback_source:=${base_odom_feedback_source} \
         base_odom_angular_scale:=${base_odom_angular_scale} \
         base_odom_angular_sign:=${base_odom_angular_sign} \
         base_status_yaw_mode:=${base_status_yaw_mode} \
         base_status_yaw_jump_reject_deg:=${base_status_yaw_jump_reject_deg} \
         base_status_log_interval_sec:=${base_status_log_interval_sec} \
         lidar_tf_yaw:=${lidar_tf_yaw} \
-        lidar_params_file:=${lidar_params}
+        lidar_params_file:=${lidar_params} \
+        rviz_config:=${rviz_config}
 }
 
 run_passthrough_script() {

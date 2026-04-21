@@ -82,3 +82,24 @@ render_yaml_key_value() {
 
     sed -E "s|^([[:space:]]*${key}:).*|\\1 ${value}|" "$src" > "$dst"
 }
+
+ros2_node_exists() {
+    local node_name="$1"
+    ros2 node list 2>/dev/null | grep -Fxq "$node_name"
+}
+
+ros2_lifecycle_is_active() {
+    local node_name="$1"
+    ros2 lifecycle get "$node_name" 2>/dev/null | grep -qi "active"
+}
+
+ros2_wait_for_topic_message() {
+    local topic_name="$1"
+    local timeout_sec="${2:-5}"
+
+    if ! command -v timeout >/dev/null 2>&1; then
+        return 2
+    fi
+
+    timeout "${timeout_sec}s" ros2 topic echo --once "$topic_name" >/dev/null 2>&1
+}

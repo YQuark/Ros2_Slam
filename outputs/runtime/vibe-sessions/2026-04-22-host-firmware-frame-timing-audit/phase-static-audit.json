@@ -1,0 +1,65 @@
+{
+  "session_id": "2026-04-22-host-firmware-frame-timing-audit",
+  "status": "completed",
+  "scope": [
+    "Ros2_Slam host-side bridge timing and launch defaults",
+    "Clion firmware control loop, timeout, and transport timing",
+    "Cross-repo documentation alignment for timing and heading defaults"
+  ],
+  "static_findings": [
+    {
+      "severity": "resolved",
+      "title": "Host cmd_timeout exceeded MCU timeout window after keepalive refresh",
+      "before": {
+        "host_cmd_timeout_s": 0.35,
+        "host_control_hz": 20.0,
+        "host_drive_keepalive_s": 0.10,
+        "mcu_cmd_timeout_ms": 300
+      },
+      "after": {
+        "host_cmd_timeout_s": 0.25,
+        "host_control_hz": 20.0,
+        "host_drive_keepalive_s": 0.10,
+        "mcu_cmd_timeout_ms": 300
+      },
+      "evidence": [
+        "Ros2_Slam/src/stm32_robot_bridge/stm32_robot_bridge/bridge_node.py",
+        "Clion/Core/Inc/Drivers/robot_config.h",
+        "Clion/Core/Src/Drivers/robot_control.c"
+      ],
+      "rationale": "At 20 Hz the host loop runs every 50 ms. With 0.25 s cmd_timeout and 0.10 s keepalive, the bridge emits an explicit zero command no later than the 300 ms MCU timeout window instead of extending it."
+    },
+    {
+      "severity": "resolved",
+      "title": "Firmware protocol document still claimed use_status_yaw=false as current host default",
+      "evidence": [
+        "Clion/docs/serial_protocols.md",
+        "Ros2_Slam/src/stm32_robot_bridge/stm32_robot_bridge/bridge_node.py",
+        "Ros2_Slam/launch_scripts/robot.sh"
+      ],
+      "rationale": "The actual host default has already been use_status_yaw=true. Documentation was updated to match code."
+    }
+  ],
+  "timing_alignment": {
+    "host_control_hz": 20.0,
+    "host_status_hz": 20.0,
+    "host_cmd_timeout_s": 0.25,
+    "host_drive_keepalive_s": 0.10,
+    "mcu_ctrl_period_ms": 20,
+    "mcu_cmd_timeout_ms": 300,
+    "mcu_link_active_timeout_ms": 1200,
+    "esp_control_refresh_ms": 100,
+    "esp_drive_send_period_ms": 40,
+    "pc_stream_hz_default": 20
+  },
+  "static_verification": [
+    "bash -n launch_scripts/robot.sh launch_scripts/save_map.sh launch_scripts/start_mapping.sh launch_scripts/start_navigation.sh launch_scripts/start_nav_fake.sh launch_scripts/stop_all.sh launch_scripts/lib/common.sh",
+    "python3 -m py_compile src/stm32_robot_bridge/stm32_robot_bridge/bridge_node.py src/stm32_robot_bridge/launch/stm32_bridge.launch.py src/robot_bringup/launch/base.launch.py src/robot_bringup/launch/system.launch.py src/robot_bringup/scripts/fake_base_odom.py",
+    "git -C Ros2_Slam diff --check",
+    "rg scan for stale timing and use_status_yaw defaults across Ros2_Slam and Clion"
+  ],
+  "residual_risks": [
+    "Static audit cannot prove real serial jitter, ACK loss bursts, or navigation runtime behavior under repeated goal cancellation.",
+    "Real robot validation is still required for cmd_vel to odom closure, repeated navigation, and narrow-space planning behavior."
+  ]
+}

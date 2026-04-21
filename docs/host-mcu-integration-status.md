@@ -1,6 +1,6 @@
 # 上位机与下位机关联状态总览
 
-日期：2026-04-12
+日期：2026-04-22
 
 本文档是当前 ROS2 上位机与 STM32/ESP01S 下位机联调状态的稳定入口。旧的中文专题文档在当前 SMB/终端环境中存在文件名编码显示异常，因此后续排查优先从本文档进入，再回溯到 `docs/requirements/`、`docs/plans/` 和 `outputs/runtime/vibe-sessions/`。
 
@@ -45,6 +45,10 @@
 
 - STM32 底盘：`/dev/ttyUSB1`
 - YDLIDAR X2：`/dev/ttyUSB0`
+- 用户侧正式入口：`./robot.sh`
+- `start_*.sh` 仅保留兼容转发，不再维护独立启动逻辑
+- 标准导航流程：`./robot.sh navigation ...`
+- `--localization-only` / `--nav2-only` 只作为定位未就绪时的回退流程
 - `system.launch.py` 默认 `base_port:=/dev/ttyUSB1`
 - `ydlidar_X2_mapping.yaml` 默认 `port: /dev/ttyUSB0`
 - `bridge_node.py` 支持 `excluded_ports`，`system.launch.py` 会把雷达串口传给底盘桥接，避免自动探测误选雷达。

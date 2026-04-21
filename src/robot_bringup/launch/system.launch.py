@@ -478,8 +478,8 @@ def generate_launch_description():
         DeclareLaunchArgument('base_baudrate', default_value='115200'),
         DeclareLaunchArgument('base_max_linear', default_value='1.20'),
         DeclareLaunchArgument('base_max_angular', default_value='19.27'),
-        DeclareLaunchArgument('base_cmd_timeout', default_value='0.30'),
-        DeclareLaunchArgument('base_drive_keepalive_sec', default_value='0.20'),
+        DeclareLaunchArgument('base_cmd_timeout', default_value='0.25'),
+        DeclareLaunchArgument('base_drive_keepalive_sec', default_value='0.10'),
         DeclareLaunchArgument('base_publish_tf', default_value='true'),
         DeclareLaunchArgument('base_imu_enabled', default_value='true'),
         DeclareLaunchArgument('base_fusion_mode', default_value='none'),
@@ -509,7 +509,7 @@ def generate_launch_description():
         DeclareLaunchArgument('camera_scan_topic', default_value='/camera/scan'),
 
         DeclareLaunchArgument('nav2_params_file', default_value=default_nav2_params),
-        DeclareLaunchArgument('nav2_bt_xml_file', default_value=os.path.join(rb_share, 'behavior_trees', 'mapping_navigate_to_pose.xml')),
+        DeclareLaunchArgument('nav2_bt_xml_file', default_value=os.path.join(rb_share, 'behavior_trees', 'navigate_to_pose_recovery.xml')),
         DeclareLaunchArgument('nav2_autostart', default_value='true'),
         DeclareLaunchArgument('nav2_start', default_value='true'),
 

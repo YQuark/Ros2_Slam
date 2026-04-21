@@ -89,4 +89,4 @@ wait $CAMERA_PID 2>/dev/null
 echo ""
 echo -e "${GREEN}可以正常运行摄像头了！${NC}"
 echo -e "${YELLOW}使用以下命令启动:${NC}"
-echo "  ./start_camera.sh"
+echo "  ./robot.sh sensor camera"

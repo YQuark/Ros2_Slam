@@ -43,9 +43,9 @@ echo ""
 if ! ros2 topic list | grep -q '^/map$'; then
     echo -e "${RED}✗ 未检测到 /map 话题${NC}"
     echo -e "${YELLOW}请先运行建图系统:${NC}"
-    echo "  $SCRIPT_DIR/start_mapping.sh camera"
+    echo "  ./robot.sh mapping camera"
     echo "  或"
-    echo "  $SCRIPT_DIR/start_mapping.sh lidar"
+    echo "  ./robot.sh mapping lidar --real-base"
     exit 1
 fi
 

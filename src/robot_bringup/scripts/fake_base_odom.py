@@ -19,7 +19,7 @@ class FakeBaseOdom(Node):
         self.declare_parameter('child_frame_id', 'base_link')
         self.declare_parameter('publish_tf', True)
         self.declare_parameter('publish_hz', 30.0)
-        self.declare_parameter('cmd_timeout', 0.4)
+        self.declare_parameter('cmd_timeout', 0.25)
 
         self.cmd_vel_topic = self.get_parameter('cmd_vel_topic').value
         self.odom_topic = self.get_parameter('odom_topic').value
@@ -43,7 +43,8 @@ class FakeBaseOdom(Node):
         self.create_timer(1.0 / max(self.publish_hz, 1.0), self._on_timer)
 
         self.get_logger().info(
-            f'fake_base_odom started: {self.cmd_vel_topic} -> {self.odom_topic}, hz={self.publish_hz:.1f}'
+            f'fake_base_odom started: {self.cmd_vel_topic} -> {self.odom_topic}, '
+            f'hz={self.publish_hz:.1f} cmd_timeout={self.cmd_timeout:.2f}s'
         )
 
     def _on_cmd_vel(self, msg: Twist):

@@ -234,13 +234,13 @@ class STM32Bridge(Node):
 
         self.declare_parameter('max_linear', 1.20)
         self.declare_parameter('max_angular', 19.27)
-        self.declare_parameter('cmd_timeout', 0.30)
+        self.declare_parameter('cmd_timeout', 0.25)
         self.declare_parameter('control_hz', 20.0)
         self.declare_parameter('status_hz', 20.0)
         self.declare_parameter('serial_open_retry_sec', 2.0)
         self.declare_parameter('status_timeout', 0.75)
         self.declare_parameter('drive_ack', True)
-        self.declare_parameter('drive_keepalive_sec', 0.20)
+        self.declare_parameter('drive_keepalive_sec', 0.10)
         self.declare_parameter('auto_closed_loop_on_cmd', True)
         self.declare_parameter('imu_enabled', True)
         self.declare_parameter('startup_settle_sec', 0.20)
@@ -329,6 +329,12 @@ class STM32Bridge(Node):
             if port
         }
 
+        if self.odom_feedback_source not in ('wheel_cps', 'status_twist'):
+            self.get_logger().warn(
+                f'Invalid odom_feedback_source={self.odom_feedback_source}; falling back to status_twist'
+            )
+            self.odom_feedback_source = 'status_twist'
+
         self.serial = None
         self.connected_port = ''
         self.rx_buf = bytearray()
@@ -397,12 +403,6 @@ class STM32Bridge(Node):
             f'jump_reject={math.degrees(self.status_yaw_jump_reject):.1f}deg publish_tf={self.publish_tf}'
         )
         self.get_logger().info(f'STM32 bridge started with port={self.port} baudrate={self.baudrate}')
-
-        if self.odom_feedback_source not in ('wheel_cps', 'status_twist'):
-            self.get_logger().warn(
-                f'Invalid odom_feedback_source={self.odom_feedback_source}; falling back to status_twist'
-            )
-            self.odom_feedback_source = 'status_twist'
 
     def resolve_port(self) -> Optional[str]:
         requested = self.port.strip()

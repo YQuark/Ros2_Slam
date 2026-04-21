@@ -1,0 +1,26 @@
+[
+  {
+    "stage": "skeleton_check",
+    "status": "completed"
+  },
+  {
+    "stage": "deep_interview",
+    "status": "completed"
+  },
+  {
+    "stage": "requirement_doc",
+    "status": "completed"
+  },
+  {
+    "stage": "xl_plan",
+    "status": "completed"
+  },
+  {
+    "stage": "plan_execute",
+    "status": "completed"
+  },
+  {
+    "stage": "phase_cleanup",
+    "status": "completed"
+  }
+]

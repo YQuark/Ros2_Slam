@@ -12,7 +12,7 @@ from launch.substitutions import LaunchConfiguration
 def generate_launch_description():
     nav2_share = get_package_share_directory('nav2_bringup')
     rb_share = get_package_share_directory('robot_bringup')
-    default_bt_xml = os.path.join(rb_share, 'behavior_trees', 'mapping_navigate_to_pose.xml')
+    default_bt_xml = os.path.join(rb_share, 'behavior_trees', 'navigate_to_pose_recovery.xml')
 
     return LaunchDescription([
         DeclareLaunchArgument('use_sim_time', default_value='false'),

@@ -1,6 +1,6 @@
 # ROS2 机器人上位机工程
 
-本仓库负责把传感器接入、SLAM 建图、Nav2 导航、STM32 底盘桥接、底盘 EKF 融合和可视化调试收敛成一套可维护、可复用、可扩展的 ROS2 工程体系。
+本仓库负责把传感器接入、SLAM 建图、Nav2 导航、STM32 底盘桥接、底盘 EKF 融合和可视化调试收口成一套可维护的 ROS2 上位机工程。
 
 ## 能力矩阵
 
@@ -16,10 +16,12 @@
 
 ## 统一入口
 
-- 运维入口：`/home/robot/ros2_ws/launch_scripts/robot.sh`
-- 技术总入口：`/home/robot/ros2_ws/src/robot_bringup/launch/system.launch.py`
+- 用户和运维入口：`/home/robot/ros2_ws/launch_scripts/robot.sh`
+- 工程编排入口：`/home/robot/ros2_ws/src/robot_bringup/launch/system.launch.py`
 
-## 快速开始
+对外只推荐 `robot.sh`。`system.launch.py` 只用于开发、调试和二次编排。
+
+## 快速路径
 
 ```bash
 cd /home/robot/ros2_ws
@@ -30,47 +32,45 @@ source /home/robot/ros2_ws/install/setup.bash
 
 ```bash
 cd /home/robot/ros2_ws/launch_scripts
-./robot.sh sensor lidar
-./robot.sh mapping lidar --real-base
 ./robot.sh mapping lidar --real-base --ekf-base
 ./robot.sh save-map my_map
 ./robot.sh navigation --real-base --ekf-base
 ```
 
-当前默认串口与雷达配置:
+标准导航流程只有一条：
 
-- 底盘默认串口: `/dev/ttyUSB1`
-- 雷达默认串口: `/dev/ttyUSB0`
-- 雷达建图参数: `src/robot_bringup/config/ydlidar_X2_mapping.yaml`
-- 当前默认修复方向: `inverted: true`
+1. 运行 `./robot.sh navigation --real-base --ekf-base`
+2. 在 RViz 中先执行 `2D Pose Estimate`
+3. 等激光与地图基本重合后，再用 `2D Goal Pose` 下发目标
+
+两阶段导航 `--localization-only` / `--nav2-only` 只保留为定位未就绪或现场异常时的回退流程，不再作为默认主流程。
+
+## 当前默认约定
+
+- 底盘默认串口：`/dev/ttyUSB1`
+- 雷达默认串口：`/dev/ttyUSB0`
+- 雷达参数文件：`src/robot_bringup/config/ydlidar_X2_mapping.yaml`
+- 默认激光手性修正：`inverted: true`
+- 默认导航行为树：`src/robot_bringup/behavior_trees/navigate_to_pose_recovery.xml`
+- 默认底盘命令时序：`cmd_timeout=0.25s`、`drive_keepalive_sec=0.10s`
 
 ## 仓库分层
 
 ```text
 ros2_ws
-├── docs/                  # 中文文档主入口，按任务组织
+├── docs/                  # 中文主文档，按任务组织
 ├── launch_scripts/        # 统一运维入口与诊断脚本
 ├── src/
 │   ├── robot_bringup      # launch / config / rviz 总编排
 │   ├── stm32_robot_bridge # 串口协议桥接与 odom/imu 发布
-│   ├── third_party/       # vendored 依赖（robot_localization / geographic_msgs）
+│   ├── third_party/       # vendored 依赖
 │   ├── ydlidar_ros2_driver
 │   ├── ros2_astra_camera
 │   └── YDLidar-SDK
-├── build/                 # colcon 生成目录（忽略）
-├── install/               # colcon 安装目录（忽略）
-├── log/                   # colcon 构建日志（忽略）
+├── build/ install/ log/   # colcon 生成目录
 ├── README.md
 └── SYSTEM_OVERVIEW.md
 ```
-
-### 代码层级
-
-- 用户入口层：`launch_scripts/robot.sh`
-- 编排层：`src/robot_bringup/launch/system.launch.py`
-- 设备接入层：`stm32_robot_bridge`、雷达驱动、相机驱动
-- 算法层：`slam_toolbox`、`Nav2`、`robot_localization`
-- 参数与可视化层：`robot_bringup/config`、`robot_bringup/rviz`
 
 ## 文档导航
 
@@ -88,8 +88,8 @@ ros2_ws
 
 ## 设计原则
 
+- 运维层只保留一个正式 CLI：`launch_scripts/robot.sh`
+- `start_*.sh` 继续存在，但只做兼容转发，不再维护独立逻辑
 - 技术编排只保留一个核心入口：`src/robot_bringup/launch/system.launch.py`
-- 运维层只保留一个推荐 CLI：`launch_scripts/robot.sh`
-- 历史 `start_*.sh` 继续可用，但仅作为兼容包装
-- vendored 第三方依赖统一收口在 `src/third_party/`
-- 文档统一使用中文，并按用户路径与开发路径拆分
+- 文档统一按“单阶段默认、两阶段回退”的导航语义描述
+- 代码是真值来源，文档随代码更新

@@ -1,0 +1,10 @@
+{
+  "run_id": "2026-04-22-host-firmware-frame-timing-audit",
+  "runtime": "vibe",
+  "mode": "interactive_governed",
+  "lane": "root_governed",
+  "workspace": "/mnt/d/Document/Work/projects/Ros2_Slam",
+  "related_workspace": "/mnt/d/Document/Work/projects/Clion",
+  "requirement_doc": "docs/requirements/2026-04-22-host-firmware-frame-timing-static-audit.md",
+  "plan_doc": "docs/plans/2026-04-22-host-firmware-frame-timing-static-audit-execution-plan.md"
+}

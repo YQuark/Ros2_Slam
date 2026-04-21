@@ -56,3 +56,4 @@ ros2 launch robot_bringup system.launch.py mode:=mapping
 
 - 雷达外参默认从 `base_link` 发布到 `laser_frame`：`x=0.07, y=0.0, z=0.13, roll=0, pitch=0, yaw=1.570796326795`
 - `precision` 雷达建图档只保留更细的 `0.03m` 地图分辨率，其余匹配行为尽量贴近 `quality`
+- 底盘命令时序默认和 `robot.sh navigation` 保持一致：`cmd_timeout=0.25s`、`drive_keepalive_sec=0.10s`

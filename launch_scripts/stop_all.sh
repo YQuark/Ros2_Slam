@@ -42,6 +42,16 @@ pkill -f "ydlidar_ros2_driver_node" 2>/dev/null
 pkill -f "odom_simulator" 2>/dev/null
 pkill -f "fake_base_odom.py" 2>/dev/null
 pkill -f "fake_base_odom" 2>/dev/null
+pkill -f "frontier_explorer.py" 2>/dev/null
+pkill -f "planner_server" 2>/dev/null
+pkill -f "controller_server" 2>/dev/null
+pkill -f "recoveries_server" 2>/dev/null
+pkill -f "bt_navigator" 2>/dev/null
+pkill -f "waypoint_follower" 2>/dev/null
+pkill -f "lifecycle_manager_navigation" 2>/dev/null
+pkill -f "lifecycle_manager_localization" 2>/dev/null
+pkill -f "map_server" 2>/dev/null
+pkill -f "amcl" 2>/dev/null
 pkill -f "async_slam_toolbox_node" 2>/dev/null
 pkill -f "map_to_pointcloud_viz.py" 2>/dev/null
 pkill -f "static_transform_publisher" 2>/dev/null
