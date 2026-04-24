@@ -38,6 +38,8 @@ done
 sleep 1
 pkill -f "ros2 run" 2>/dev/null
 pkill -f "ros2 launch" 2>/dev/null
+pkill -f "bridge_node" 2>/dev/null
+pkill -f "stm32_robot_bridge" 2>/dev/null
 pkill -f "ydlidar_ros2_driver_node" 2>/dev/null
 pkill -f "odom_simulator" 2>/dev/null
 pkill -f "fake_base_odom.py" 2>/dev/null
@@ -61,6 +63,9 @@ pkill -f "rgbd_odometry" 2>/dev/null
 pkill -f "slam_toolbox" 2>/dev/null
 pkill -f "rviz2" 2>/dev/null
 pkill -f "rtabmap" 2>/dev/null
+
+# 清理 ROS2 CLI daemon，避免 node graph 残留旧节点名
+ros2 daemon stop >/dev/null 2>&1 || true
 
 echo -e "${GREEN}✓ 所有节点已停止${NC}"
 echo ""

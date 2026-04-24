@@ -50,6 +50,7 @@ cd /home/robot/ros2_ws/launch_scripts
 ./robot.sh full
 ./robot.sh check lidar
 ./robot.sh check mapping
+./robot.sh check navigation
 ./robot.sh doctor
 ./robot.sh teleop
 ./robot.sh stop

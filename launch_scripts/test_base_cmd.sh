@@ -15,6 +15,7 @@ BASE_PORT="${BASE_PORT:-/dev/ttyUSB1}"
 BASE_TEST_MODE="${BASE_TEST_MODE:-rotate}"
 BASE_TEST_LINEAR="${BASE_TEST_LINEAR:-0.08}"
 BASE_TEST_ANGULAR="${BASE_TEST_ANGULAR:-0.35}"
+BASE_TEST_ANGULAR_SERIES="${BASE_TEST_ANGULAR_SERIES:-0.35,0.7,1.0,1.5,2.0,3.0}"
 BASE_TEST_DURATION="${BASE_TEST_DURATION:-1.5}"
 BASE_TEST_PUBLISH_HZ="${BASE_TEST_PUBLISH_HZ:-10}"
 BASE_TEST_CMD_TIMEOUT="${BASE_TEST_CMD_TIMEOUT:-1.0}"
@@ -25,7 +26,7 @@ BASE_TEST_LOG_DIR="${BASE_TEST_LOG_DIR:-/tmp/robot_base_test}"
 
 usage() {
     cat <<'EOF'
-Usage: ./test_base_cmd.sh [--base-port PORT] [--rotate-only|--with-linear] [--no-stop-first]
+Usage: ./test_base_cmd.sh [--base-port PORT] [--rotate-only|--with-linear|--calibrate-angular] [--no-stop-first]
 
 Purpose:
   Isolate upper-computer base control only:
@@ -37,6 +38,7 @@ Defaults:
 Environment overrides:
   BASE_TEST_LINEAR=0.08
   BASE_TEST_ANGULAR=0.35
+  BASE_TEST_ANGULAR_SERIES=0.35,0.7,1.0,1.5,2.0,3.0
   BASE_TEST_DURATION=1.5
   BASE_TEST_CMD_TIMEOUT=1.0
   BASE_TEST_KEEPALIVE=0.10
@@ -59,6 +61,10 @@ while [ $# -gt 0 ]; do
             ;;
         --with-linear)
             BASE_TEST_MODE="linear"
+            shift
+            ;;
+        --calibrate-angular)
+            BASE_TEST_MODE="angular_sweep"
             shift
             ;;
         --no-stop-first)
@@ -125,6 +131,9 @@ log_info "This test starts only stm32_bridge and publishes low-speed /cmd_vel."
 log_info "Keep the robot lifted or in a clear open area. Press Ctrl-C to abort."
 log_info "base_port=${BASE_PORT}"
 log_info "mode=${BASE_TEST_MODE} duration=${BASE_TEST_DURATION}s publish_hz=${BASE_TEST_PUBLISH_HZ}"
+if [ "$BASE_TEST_MODE" = "angular_sweep" ]; then
+    log_info "angular_series=${BASE_TEST_ANGULAR_SERIES}"
+fi
 log_info "cmd_timeout=${BASE_TEST_CMD_TIMEOUT}s keepalive=${BASE_TEST_KEEPALIVE}s"
 log_info "logs: ${BASE_TEST_LOG_DIR}"
 echo
@@ -172,6 +181,7 @@ python3 "${SCRIPT_DIR}/base_cmd_test_node.py" \
     --mode "${BASE_TEST_MODE}" \
     --linear "${BASE_TEST_LINEAR}" \
     --angular "${BASE_TEST_ANGULAR}" \
+    --angular-series "${BASE_TEST_ANGULAR_SERIES}" \
     --duration "${BASE_TEST_DURATION}" \
     --hz "${BASE_TEST_PUBLISH_HZ}" >"$CMD_LOG" 2>&1
 
@@ -188,6 +198,18 @@ echo "Bridge log: $BRIDGE_LOG"
 echo "Odom log:   $ODOM_LOG"
 echo "Cmd log:    $CMD_LOG"
 echo
+echo "Quantitative summary:"
+grep '^SUMMARY ' "$CMD_LOG" || echo "  (no summary lines found)"
+if grep -q '^CALIBRATION ' "$CMD_LOG"; then
+    echo
+    echo "Angular calibration:"
+    grep '^CALIBRATION ' "$CMD_LOG"
+fi
+echo
+if grep -q 'status=NO_ODOM' "$CMD_LOG"; then
+    log_warn "⚠ 至少一个测试阶段没有收到 /odom，当前测试不能证明底盘已正确执行。"
+    log_warn "  优先检查 stm32_bridge 是否真正启动、底盘是否上电、串口是否正确。"
+fi
 echo "Useful checks:"
 echo "  rg 'cmd_vel_rx|drive_tx|status_summary|NACK|mode=' $BRIDGE_LOG"
 echo "  tail -80 $BRIDGE_LOG"

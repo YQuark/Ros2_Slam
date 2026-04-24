@@ -14,6 +14,7 @@ STOP_ALL_SCRIPT="${SCRIPT_DIR}/stop_all.sh"
 SAVE_MAP_SCRIPT="${SCRIPT_DIR}/save_map.sh"
 CHECK_SYSTEM_SCRIPT="${SCRIPT_DIR}/check_system.sh"
 CHECK_MAPPING_SCRIPT="${SCRIPT_DIR}/check_mapping_pipeline.sh"
+CHECK_NAVIGATION_SCRIPT="${SCRIPT_DIR}/check_navigation_pipeline.sh"
 KEYBOARD_CONTROL_SCRIPT="${SCRIPT_DIR}/keyboard_control.sh"
 BASE_TEST_SCRIPT="${SCRIPT_DIR}/test_base_cmd.sh"
 
@@ -71,6 +72,7 @@ main_usage() {
   ./robot.sh navigation --real-base --ekf-base
   ./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base
   ./robot.sh base-test --rotate-only
+  ./robot.sh base-test --calibrate-angular
   ./robot.sh sensor lidar
   ./robot.sh check lidar
   ./robot.sh doctor
@@ -108,6 +110,7 @@ check_usage() {
 用法:
   ./robot.sh check lidar [雷达参数文件]
   ./robot.sh check mapping [--allow-headless] [--min-scan-hz N]
+  ./robot.sh check navigation
 EOF
 }
 
@@ -919,6 +922,9 @@ run_navigation() {
             log_warn "⚠ 未检测到底盘串口，桥接节点将以 auto 模式持续重试"
         fi
     fi
+    if [ "$localization_only" = false ] && [ -x "$CHECK_NAVIGATION_SCRIPT" ]; then
+        log_info "若 RViz 点 2D Goal Pose 后没有 /plan 或车不动，可另开终端执行: ./robot.sh check navigation"
+    fi
     echo
 
     ros2 launch robot_bringup system.launch.py \
@@ -1205,6 +1211,9 @@ run_check() {
             ;;
         mapping)
             run_passthrough_script "$CHECK_MAPPING_SCRIPT" "$@"
+            ;;
+        navigation)
+            run_passthrough_script "$CHECK_NAVIGATION_SCRIPT" "$@"
             ;;
         -h|--help|"")
             check_usage

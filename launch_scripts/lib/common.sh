@@ -85,12 +85,24 @@ render_yaml_key_value() {
 
 ros2_node_exists() {
     local node_name="$1"
-    ros2 node list 2>/dev/null | grep -Fxq "$node_name"
+    ros2 node list --no-daemon 2>/dev/null | grep -Fxq "$node_name"
 }
 
 ros2_lifecycle_is_active() {
     local node_name="$1"
-    ros2 lifecycle get "$node_name" 2>/dev/null | grep -qi "active"
+    ros2_lifecycle_get_state "$node_name" | grep -qi "active"
+}
+
+ros2_lifecycle_get_state() {
+    local node_name="$1"
+    local timeout_sec="${2:-3}"
+
+    if command -v timeout >/dev/null 2>&1; then
+        timeout "${timeout_sec}s" ros2 lifecycle get --no-daemon "$node_name" 2>/dev/null | tr -d '\r'
+        return $?
+    fi
+
+    ros2 lifecycle get --no-daemon "$node_name" 2>/dev/null | tr -d '\r'
 }
 
 ros2_wait_for_topic_message() {
@@ -101,5 +113,5 @@ ros2_wait_for_topic_message() {
         return 2
     fi
 
-    timeout "${timeout_sec}s" ros2 topic echo --once "$topic_name" >/dev/null 2>&1
+    timeout "${timeout_sec}s" ros2 topic echo --once --no-daemon "$topic_name" >/dev/null 2>&1
 }

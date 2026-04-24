@@ -35,7 +35,9 @@
 #ifndef GEODESY__ECEF_H_
 #define GEODESY__ECEF_H_
 
+#include <iomanip>
 #include <limits>
+#include <ostream>
 
 #include "geodesy/wgs84.h"
 #include "geometry_msgs/msg/quaternion.hpp"

@@ -34,15 +34,9 @@ ament_python_install_package(${PROJECT_NAME} PACKAGE_DIR src/${PROJECT_NAME})
 add_library(geoconv STATIC
   src/conv/utm_conversions.cpp
   src/conv/ecef_conversions.cpp)
-  
-target_link_libraries(geoconv PUBLIC
-  ${geographic_msgs_TARGETS}
-  ${geometry_msgs_TARGETS}
-  ${sensor_msgs_TARGETS}
-  ${unique_identifier_msgs_TARGETS}
-  angles::angles
-  geographic_msgs::validation
-  sensor_msgs::sensor_msgs_library
+
+ament_target_dependencies(geoconv
+  ${dependencies}
 )
 
 if(BUILD_TESTING)
