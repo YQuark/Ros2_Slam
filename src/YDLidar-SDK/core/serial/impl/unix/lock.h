@@ -166,7 +166,7 @@ Trent
 #endif /* WIN32 */
 
 /* allow people to override the directories */
-/* #define USER_LOCK_DIRECTORY "/home/tjarvi/1.5/build" */
+/* #define USER_LOCK_DIRECTORY "/tmp/ydlidar_lock" */
 #ifdef USER_LOCK_DIRECTORY
 #	define LOCKDIR USER_LOCK_DIRECTORY
 #endif /* USER_LOCK_DIRECTORY */

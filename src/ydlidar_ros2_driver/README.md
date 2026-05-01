@@ -59,7 +59,7 @@ ydlidar_ros2_driver depends on YDLidar-SDK library. If you have never installed 
     printenv | grep -i ROS
     ```
     You should see something similar to:
-        `OLDPWD=/home/tony/ydlidar_ros2_ws/install`
+        `OLDPWD=/home/robot/ros2_ws/install`
 
 5. Create serial port Alias [optional] 
     ```
@@ -73,7 +73,7 @@ ydlidar_ros2_driver depends on YDLidar-SDK library. If you have never installed 
 ```
 ydlidar_ros2_driver_node:
   ros__parameters:
-    port: /dev/ttyUSB0
+    port: /dev/ydlidar
     frame_id: laser_frame
     ignore_array: ""
     baudrate: 230400
@@ -187,7 +187,6 @@ More paramters details, see [here](details.md)
 ![Development Path](images/EAI.png)
 
 If you have any extra questions, please feel free to [contact us](http://www.ydlidar.cn/cn/contact)
-
 
 
 
