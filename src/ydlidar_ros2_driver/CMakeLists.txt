@@ -25,6 +25,10 @@ find_package(tf2_ros REQUIRED)
 ############## YDLIDAR SDK START#####################################
 #find ydlidar_sdk package
 find_package(ydlidar_sdk REQUIRED)
+if(NOT YDLIDAR_SDK_LIBRARY_DIRS)
+  get_filename_component(YDLIDAR_SDK_PREFIX "${ydlidar_sdk_DIR}/../../.." ABSOLUTE)
+  set(YDLIDAR_SDK_LIBRARY_DIRS "${YDLIDAR_SDK_PREFIX}/lib")
+endif()
 ############## YDLIDAR SDK END#####################################
 
 #Include directories
@@ -91,4 +95,3 @@ if(BUILD_TESTING)
 endif()
 
 ament_package()
-

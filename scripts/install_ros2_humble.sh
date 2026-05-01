@@ -100,8 +100,11 @@ fi
 
 echo "==> 验证 ROS2"
 # shellcheck disable=SC1091
+set +u
 source /opt/ros/humble/setup.bash
-ros2 --version
+set -u
+echo "ROS_DISTRO=${ROS_DISTRO:-unknown}"
+ros2 doctor --report >/dev/null
 colcon version-check || true
 
 echo "ROS2 Humble 安装完成。下一步:"
