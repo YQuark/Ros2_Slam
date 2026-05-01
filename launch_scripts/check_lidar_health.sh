@@ -16,7 +16,8 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 ROS_WS="/home/robot/ros2_ws"
-PARAM_FILE="${1:-$ROS_WS/src/ydlidar_ros2_driver/params/X2.yaml}"
+PARAM_FILE="$ROS_WS/src/ydlidar_ros2_driver/params/X2.yaml"
+LIDAR_PORT_OVERRIDE=""
 NODE_EXE="$ROS_WS/install/ydlidar_ros2_driver/lib/ydlidar_ros2_driver/ydlidar_ros2_driver_node"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DETECT_LIDAR_PORT_SCRIPT="$SCRIPT_DIR/detect_lidar_port.sh"
@@ -31,6 +32,37 @@ HZ_LOG="${LOG_PREFIX}_scan_hz.log"
 
 NODE_PID=""
 TMP_PARAM_FILE=""
+
+usage() {
+    cat <<'EOF'
+用法: check_lidar_health.sh [参数文件] [--lidar-port PATH]
+
+默认参数文件: /home/robot/ros2_ws/src/ydlidar_ros2_driver/params/X2.yaml
+默认雷达设备: 参数文件中的 port，正式部署建议使用 /dev/ydlidar
+EOF
+}
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --lidar-port|--port)
+            if [ $# -lt 2 ]; then
+                echo -e "${RED}✗ --lidar-port 需要一个串口路径${NC}"
+                usage
+                exit 1
+            fi
+            LIDAR_PORT_OVERRIDE="$2"
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            PARAM_FILE="$1"
+            shift
+            ;;
+    esac
+done
 
 cleanup() {
     if [ -n "$NODE_PID" ] && kill -0 "$NODE_PID" 2>/dev/null; then
@@ -57,8 +89,8 @@ if [ ! -f "$PARAM_FILE" ]; then
 fi
 
 CONFIG_PORT="$(awk '$1 == "port:" {print $2; exit}' "$PARAM_FILE")"
-LIDAR_PORT="$CONFIG_PORT"
-if [ -x "$DETECT_LIDAR_PORT_SCRIPT" ]; then
+LIDAR_PORT="${LIDAR_PORT_OVERRIDE:-$CONFIG_PORT}"
+if [ -z "$LIDAR_PORT_OVERRIDE" ] && [ -x "$DETECT_LIDAR_PORT_SCRIPT" ]; then
     DETECTED_PORT="$($DETECT_LIDAR_PORT_SCRIPT "$CONFIG_PORT" 2>/dev/null || true)"
     if [ -n "$DETECTED_PORT" ]; then
         LIDAR_PORT="$DETECTED_PORT"

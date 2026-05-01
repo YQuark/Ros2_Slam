@@ -32,6 +32,8 @@ add_candidate() {
     CANDIDATES+=("$resolved")
 }
 
+add_candidate /dev/ydlidar
+
 for port in /dev/ttyUSB*; do
     [ -e "$port" ] || continue
     add_candidate "$port"

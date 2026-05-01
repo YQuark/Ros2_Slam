@@ -81,7 +81,7 @@ EOF
 
 mapping_usage() {
     cat <<'EOF'
-用法: ./robot.sh mapping [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--auto-drive] [--auto-drive-duration SEC]
+用法: ./robot.sh mapping [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--auto-drive] [--auto-drive-duration SEC]
 
 说明:
   --auto-drive 使用 Nav2 + frontier_explorer 自动选择未知边界目标，不再直接发布 /cmd_vel。
@@ -92,7 +92,7 @@ EOF
 
 navigation_usage() {
     cat <<'EOF'
-用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--base-use-status-yaw|--no-base-status-yaw] [--base-odom-source status_twist|wheel_cps] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--no-rviz] [--skip-lidar-check] [--base-port PORT] [--localization-only|--nav2-only]
+用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--base-use-status-yaw|--no-base-status-yaw] [--base-odom-source status_twist|wheel_cps] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--no-rviz] [--skip-lidar-check] [--base-port PORT] [--localization-only|--nav2-only]
 
 说明:
   map.yaml 省略时默认使用 /home/robot/ros2_maps/latest.yaml。
@@ -108,7 +108,7 @@ EOF
 check_usage() {
     cat <<'EOF'
 用法:
-  ./robot.sh check lidar [雷达参数文件]
+  ./robot.sh check lidar [雷达参数文件或 --lidar-port PATH]
   ./robot.sh check mapping [--allow-headless] [--min-scan-hz N]
   ./robot.sh check navigation
 EOF
@@ -207,9 +207,10 @@ prepare_lidar_params_with_runtime_overrides() {
     local params_file="$1"
     local reversion_override="${2:-}"
     local inverted_override="${3:-}"
+    local port_override="${4:-}"
     local tmp_file=""
 
-    if [ -z "$reversion_override" ] && [ -z "$inverted_override" ]; then
+    if [ -z "$reversion_override" ] && [ -z "$inverted_override" ] && [ -z "$port_override" ]; then
         printf '%s\n' "$params_file"
         return 0
     fi
@@ -224,6 +225,10 @@ prepare_lidar_params_with_runtime_overrides() {
     fi
     if [ -n "$inverted_override" ]; then
         render_yaml_key_value "$tmp_file" "inverted" "$inverted_override" "$tmp_file.tmp"
+        mv "$tmp_file.tmp" "$tmp_file"
+    fi
+    if [ -n "$port_override" ]; then
+        render_yaml_key_value "$tmp_file" "port" "$port_override" "$tmp_file.tmp"
         mv "$tmp_file.tmp" "$tmp_file"
     fi
 
@@ -379,6 +384,7 @@ run_mapping() {
     local lidar_tf_yaw="${LIDAR_TF_YAW:-$DEFAULT_LIDAR_TF_YAW_RAD}"
     local lidar_reversion_override=""
     local lidar_inverted_override=""
+    local lidar_port_override=""
     local lidar_port=""
     local base_port_explicit=false
     local arg=""
@@ -436,6 +442,15 @@ run_mapping() {
                 fi
                 base_port="$2"
                 base_port_explicit=true
+                shift 2
+                ;;
+            --lidar-port)
+                if [ $# -lt 2 ]; then
+                    log_error "✗ --lidar-port 需要一个串口路径"
+                    mapping_usage
+                    exit 1
+                fi
+                lidar_port_override="$2"
                 shift 2
                 ;;
             --lidar-yaw-rad)
@@ -515,7 +530,7 @@ run_mapping() {
         rviz_config="$DEFAULT_LIDAR_RVIZ"
         lidar_params="$(resolve_default_lidar_params)"
         lidar_params="$(prepare_lidar_params "$lidar_params")"
-        lidar_params="$(prepare_lidar_params_with_runtime_overrides "$lidar_params" "$lidar_reversion_override" "$lidar_inverted_override")"
+        lidar_params="$(prepare_lidar_params_with_runtime_overrides "$lidar_params" "$lidar_reversion_override" "$lidar_inverted_override" "$lidar_port_override")"
         lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
         if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
             log_error "✗ 未找到雷达设备"
@@ -701,6 +716,7 @@ run_navigation() {
     local lidar_tf_yaw="${LIDAR_TF_YAW:-$DEFAULT_LIDAR_TF_YAW_RAD}"
     local lidar_reversion_override=""
     local lidar_inverted_override=""
+    local lidar_port_override=""
     local base_port_explicit=false
     local localization_only=false
     local nav2_only=false
@@ -774,6 +790,15 @@ run_navigation() {
                 fi
                 base_port="$2"
                 base_port_explicit=true
+                shift 2
+                ;;
+            --lidar-port)
+                if [ $# -lt 2 ]; then
+                    log_error "✗ --lidar-port 需要一个串口路径"
+                    navigation_usage
+                    exit 1
+                fi
+                lidar_port_override="$2"
                 shift 2
                 ;;
             --lidar-yaw-rad)
@@ -869,7 +894,7 @@ run_navigation() {
 
     lidar_params="$(resolve_default_lidar_params)"
     lidar_params="$(prepare_lidar_params "$lidar_params")"
-    lidar_params="$(prepare_lidar_params_with_runtime_overrides "$lidar_params" "$lidar_reversion_override" "$lidar_inverted_override")"
+    lidar_params="$(prepare_lidar_params_with_runtime_overrides "$lidar_params" "$lidar_reversion_override" "$lidar_inverted_override" "$lidar_port_override")"
     lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
     if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
         log_error "✗ 未找到雷达设备"
@@ -960,6 +985,7 @@ run_navigation() {
 run_sensor() {
     local sensor="${1:-}"
     local lidar_params=""
+    local lidar_port_override=""
     local lidar_port=""
 
     if [ -z "$sensor" ]; then
@@ -974,8 +1000,30 @@ run_sensor() {
     case "$sensor" in
         lidar)
             print_header "激光雷达传感器启动"
+            while [ $# -gt 0 ]; do
+                case "$1" in
+                    --lidar-port|--port)
+                        if [ $# -lt 2 ]; then
+                            log_error "✗ --lidar-port 需要一个串口路径"
+                            exit 1
+                        fi
+                        lidar_port_override="$2"
+                        shift 2
+                        ;;
+                    -h|--help)
+                        echo "用法: ./robot.sh sensor lidar [--lidar-port PATH]"
+                        exit 0
+                        ;;
+                    *)
+                        log_error "✗ 未知参数: $1"
+                        echo "用法: ./robot.sh sensor lidar [--lidar-port PATH]"
+                        exit 1
+                        ;;
+                esac
+            done
             lidar_params="$(resolve_default_lidar_params)"
             lidar_params="$(prepare_lidar_params "$lidar_params")"
+            lidar_params="$(prepare_lidar_params_with_runtime_overrides "$lidar_params" "" "" "$lidar_port_override")"
             lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
             if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
                 log_error "✗ 未找到雷达设备"

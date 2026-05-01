@@ -1,0 +1,14 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>ydlidar_sdk</name>
+  <version>1.2.19</version>
+  <description>YDLIDAR SDK CMake package used by ydlidar_ros2_driver.</description>
+  <maintainer email="robot@example.com">robot</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>cmake</buildtool_depend>
+
+  <export>
+    <build_type>cmake</build_type>
+  </export>
+</package>
