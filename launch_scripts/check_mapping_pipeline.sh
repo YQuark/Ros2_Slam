@@ -54,7 +54,7 @@ echo -e "${BLUE}    建图链路验收${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-source /opt/ros/foxy/setup.bash
+source /opt/ros/humble/setup.bash
 source "$ROS_WS/install/setup.bash"
 
 fail() {

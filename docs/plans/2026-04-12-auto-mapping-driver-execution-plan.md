@@ -12,9 +12,9 @@ the shell entrypoint, and documentation.
 3. Install the script from `robot_bringup/CMakeLists.txt`.
 4. Add mapping-specific `nav2_mapping_params.yaml`.
 5. Pass this package's BT XML path through `robot_bringup/launch/nav2.launch.py`
-   because Nav2 Foxy rewrites `default_bt_xml_filename` at launch time.
+   because Nav2 Humble rewrites `default_bt_xml_filename` at launch time.
 6. Keep mapping BT XML and `plugin_lib_names` in the same contract by using the
-   Foxy-compatible `PipelineSequence + RateController + ComputePathToPose +
+   Humble-compatible `PipelineSequence + RateController + ComputePathToPose +
    FollowPath` tree and only listing those plugin libraries.
 7. In mapping mode with `auto_mapping_drive:=true`, start Nav2 navigation
    servers with the mapping params file.

@@ -191,7 +191,7 @@ def _validate_and_compose(context):
         if use_base_ekf:
             if not _package_exists('robot_localization'):
                 raise RuntimeError(
-                    "Missing package: robot_localization. Install it first, e.g. 'sudo apt install ros-foxy-robot-localization'."
+                    "Missing package: robot_localization. Install it first, e.g. 'sudo apt install ros-humble-robot-localization'."
                 )
             actions.append(ekf_launch)
     if fake_base_enabled:
@@ -219,7 +219,7 @@ def _validate_and_compose(context):
         )
         if no_base and visual_odom_enabled:
             if not _package_exists('rtabmap_odom'):
-                raise RuntimeError("Missing package: rtabmap_odom. Install 'ros-foxy-rtabmap-ros'.")
+                raise RuntimeError("Missing package: rtabmap_odom. Install 'ros-humble-rtabmap-ros'.")
             actions.append(
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'visual_odom.launch.py')),
@@ -234,7 +234,7 @@ def _validate_and_compose(context):
             )
     elif mode == 'mapping' and no_base and camera_enabled and visual_odom_enabled:
         if not _package_exists('rtabmap_odom'):
-            raise RuntimeError("Missing package: rtabmap_odom. Install 'ros-foxy-rtabmap-ros'.")
+            raise RuntimeError("Missing package: rtabmap_odom. Install 'ros-humble-rtabmap-ros'.")
         actions.append(
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'visual_odom.launch.py')),
@@ -284,7 +284,7 @@ def _validate_and_compose(context):
             if not _package_exists('nav2_bringup'):
                 raise RuntimeError(
                     "auto_mapping_drive requires nav2_bringup. Install it first, e.g. "
-                    "'sudo apt install ros-foxy-navigation2 ros-foxy-nav2-bringup'."
+                    "'sudo apt install ros-humble-navigation2 ros-humble-nav2-bringup'."
                 )
             actions.append(
                 IncludeLaunchDescription(
@@ -355,7 +355,7 @@ def _validate_and_compose(context):
             raise RuntimeError("Navigation mode requires base_mode:=real or base_mode:=fake.")
         if not _package_exists('nav2_bringup'):
             raise RuntimeError(
-                "Missing package: nav2_bringup. Install nav2 first, e.g. 'sudo apt install ros-foxy-navigation2 ros-foxy-nav2-bringup'."
+                "Missing package: nav2_bringup. Install nav2 first, e.g. 'sudo apt install ros-humble-navigation2 ros-humble-nav2-bringup'."
             )
         if map_file == '' or not os.path.isfile(map_file):
             raise RuntimeError("Navigation mode requires a valid 'map_file' (*.yaml).")

@@ -15,7 +15,7 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 
 # 设置ROS2环境
-source /opt/ros/foxy/setup.bash
+source /opt/ros/humble/setup.bash
 
 # 停止tmux会话
 if tmux has-session -t robot_system 2>/dev/null; then

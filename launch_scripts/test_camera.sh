@@ -19,7 +19,7 @@ echo -e "${YELLOW}========================================${NC}"
 echo ""
 
 # 设置ROS2环境
-source /opt/ros/foxy/setup.bash
+source /opt/ros/humble/setup.bash
 source $ROS_WS/install/setup.bash
 
 # 检查摄像头设备

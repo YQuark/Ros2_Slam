@@ -48,7 +48,7 @@ echo -e "${BLUE}    雷达健康检查${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
-source /opt/ros/foxy/setup.bash
+source /opt/ros/humble/setup.bash
 source "$ROS_WS/install/setup.bash"
 
 if [ ! -f "$PARAM_FILE" ]; then

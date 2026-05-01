@@ -25,7 +25,7 @@
 
 ```bash
 cd /home/robot/ros2_ws
-source /opt/ros/foxy/setup.bash
+source /opt/ros/humble/setup.bash
 colcon build --symlink-install
 source /home/robot/ros2_ws/install/setup.bash
 ```

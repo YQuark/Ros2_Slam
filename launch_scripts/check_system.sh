@@ -35,7 +35,7 @@ echo ""
 echo -e "${BLUE}2. 工作空间${NC}"
 if [ -f /home/robot/ros2_ws/install/setup.bash ]; then
     echo -e "${GREEN}✓ 工作空间已构建${NC}"
-    source /opt/ros/foxy/setup.bash 2>/dev/null
+    source /opt/ros/humble/setup.bash 2>/dev/null
     source /home/robot/ros2_ws/install/setup.bash 2>/dev/null
     ros2 pkg list | grep -E "ydlidar|astra|robot|stm32" | while read -r pkg; do
         echo -e "${GREEN}  ✓ $pkg${NC}"

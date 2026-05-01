@@ -14,7 +14,7 @@ through Nav2 planned motion instead of PS2, ESP, or a direct `/cmd_vel` script.
 - The frontier explorer must not publish `/cmd_vel`; only Nav2 may command the
   base during automatic mapping.
 - `robot_bringup/launch/nav2.launch.py` must explicitly pass the behavior tree
-  XML path to Nav2 Foxy `navigation_launch.py`; otherwise Foxy rewrites
+  XML path to Nav2 Humble `navigation_launch.py`; otherwise Humble rewrites
   `default_bt_xml_filename` and can run a tree that does not match this
   package's `plugin_lib_names`.
 - The mapping behavior tree must use only BT nodes whose plugin libraries are

@@ -22,7 +22,7 @@ echo -e "${GREEN}========================================${NC}"
 echo ""
 
 # 设置ROS2环境
-source /opt/ros/foxy/setup.bash
+source /opt/ros/humble/setup.bash
 source $ROS_WS/install/setup.bash
 
 # 获取地图名称

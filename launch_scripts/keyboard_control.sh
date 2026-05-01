@@ -21,7 +21,7 @@ echo -e "${BLUE}========================================${NC}"
 echo ""
 
 # 设置ROS2环境
-source /opt/ros/foxy/setup.bash
+source /opt/ros/humble/setup.bash
 source $ROS_WS/install/setup.bash
 
 echo -e "${GREEN}正在启动键盘控制...${NC}"

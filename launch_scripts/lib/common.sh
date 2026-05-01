@@ -44,7 +44,7 @@ setup_ros_env() {
     esac
 
     # shellcheck disable=SC1091
-    source /opt/ros/foxy/setup.bash
+    source /opt/ros/humble/setup.bash
     if [ -f "${ROS_WS}/install/setup.bash" ]; then
         # shellcheck disable=SC1091
         source "${ROS_WS}/install/setup.bash"
