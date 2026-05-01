@@ -1,0 +1,15 @@
+raspberrypi:
+  ros__parameters:
+    board: Raspberry Pi 4B
+    architecture: arm64
+    os: Ubuntu 22.04 64-bit
+    ros_distro: humble
+    workspace: /home/robot/ros2_ws
+    default_rmw: ""
+    headless_supported: true
+    rviz_default_enabled: true
+    monitor_temperature: true
+    monitor_throttling: true
+    monitor_memory: true
+    monitor_disk: true
+    notes: "DDS、散热、电源与 USB 稳定性以现场实测为准"

@@ -1,5 +1,15 @@
 # 文档总览
 
+ARM 迁移优先阅读：
+
+- [00_project_scope.md](./00_project_scope.md)
+- [01_raspberrypi_setup.md](./01_raspberrypi_setup.md)
+- [02_hardware_connection.md](./02_hardware_connection.md)
+- [03_lidar_mapping.md](./03_lidar_mapping.md)
+- [99_troubleshooting.md](./99_troubleshooting.md)
+
+历史中文文档仍保留用于追溯旧 x86 工程能力，后续会按阶段迁移到标准文件名。
+
 本目录是当前工程的主文档入口。代码是真值来源，用户侧唯一正式入口是 `launch_scripts/robot.sh`。
 
 ## 先看什么
