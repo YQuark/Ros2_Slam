@@ -24,7 +24,8 @@ PRECISION_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping_l
 FAST_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping_fast.yaml"
 DEFAULT_NAV2_MAPPING_PARAMS="${ROS_WS}/src/robot_bringup/config/nav2_mapping_params.yaml"
 DEFAULT_NAV2_BT_XML="${ROS_WS}/src/robot_bringup/behavior_trees/navigate_to_pose_recovery.xml"
-DEFAULT_LIDAR_PARAMS="${ROS_WS}/src/robot_bringup/config/ydlidar_X2_mapping.yaml"
+DEFAULT_LIDAR_PARAMS="${ROS_WS}/src/robot_bringup/config/ydlidar_x2.yaml"
+DEFAULT_LIDAR_LEGACY_PARAMS="${ROS_WS}/src/robot_bringup/config/ydlidar_X2_mapping.yaml"
 DEFAULT_LIDAR_FALLBACK_PARAMS="${ROS_WS}/src/ydlidar_ros2_driver/params/X2.yaml"
 DEFAULT_LIDAR_RVIZ="${ROS_WS}/src/robot_bringup/rviz/lidar_mapping.rviz"
 DEFAULT_SYSTEM_RVIZ="${ROS_WS}/src/robot_bringup/rviz/system.rviz"
@@ -67,7 +68,7 @@ main_usage() {
   help          查看帮助
 
 示例:
-  ./robot.sh mapping lidar --real-base
+  ./robot.sh mapping lidar --manual --real-base
   ./robot.sh save-map my_map
   ./robot.sh navigation --real-base --ekf-base
   ./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base
@@ -81,10 +82,10 @@ EOF
 
 mapping_usage() {
     cat <<'EOF'
-用法: ./robot.sh mapping [camera|lidar] [auto|quality|precision|fast] [--skip-lidar-check] [--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--auto-drive] [--auto-drive-duration SEC]
+用法: ./robot.sh mapping [camera|lidar] [quality|precision|fast] [--manual|--auto] [--skip-lidar-check] [--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--auto-drive-duration SEC]
 
 说明:
-  --auto-drive 使用 Nav2 + frontier_explorer 自动选择未知边界目标，不再直接发布 /cmd_vel。
+  --manual 默认非自主建图；--auto 使用 Nav2 + frontier_explorer 自动选择未知边界目标，不直接发布 /cmd_vel。
   可用 AUTO_MAPPING_GOAL_CLEARANCE_RADIUS / AUTO_MAPPING_GOAL_UNKNOWN_CLEARANCE_RADIUS 临时放宽或收紧贴墙距离。
   lidar 源建图时可用 --lidar-reversion / --lidar-inverted / --lidar-yaw-* 做运行时覆盖。
 EOF
@@ -238,6 +239,10 @@ prepare_lidar_params_with_runtime_overrides() {
 resolve_default_lidar_params() {
     if [ -f "$DEFAULT_LIDAR_PARAMS" ]; then
         printf '%s\n' "$DEFAULT_LIDAR_PARAMS"
+        return 0
+    fi
+    if [ -f "$DEFAULT_LIDAR_LEGACY_PARAMS" ]; then
+        printf '%s\n' "$DEFAULT_LIDAR_LEGACY_PARAMS"
         return 0
     fi
     if [ -f "$DEFAULT_LIDAR_FALLBACK_PARAMS" ]; then
@@ -402,7 +407,7 @@ run_mapping() {
                 has_source=true
                 shift
                 ;;
-            auto|quality|precision|fast)
+            quality|precision|fast)
                 if [ "$has_profile" = true ]; then
                     log_error "✗ 重复指定参数档位: $arg"
                     mapping_usage
@@ -410,6 +415,14 @@ run_mapping() {
                 fi
                 slam_profile="$arg"
                 has_profile=true
+                shift
+                ;;
+            --manual)
+                auto_mapping_drive="false"
+                shift
+                ;;
+            --auto|--auto-drive)
+                auto_mapping_drive="true"
                 shift
                 ;;
             --skip-lidar-check)
@@ -485,10 +498,6 @@ run_mapping() {
                 ;;
             --no-lidar-inverted)
                 lidar_inverted_override="false"
-                shift
-                ;;
-            --auto-drive)
-                auto_mapping_drive="true"
                 shift
                 ;;
             --auto-drive-duration)
