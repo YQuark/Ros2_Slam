@@ -102,6 +102,19 @@ if [ -z "$LIDAR_PORT" ] || [ ! -e "$LIDAR_PORT" ]; then
     exit 1
 fi
 
+if [ ! -r "$LIDAR_PORT" ] || [ ! -w "$LIDAR_PORT" ]; then
+    echo -e "${RED}✗ 当前用户没有雷达串口读写权限: $LIDAR_PORT${NC}"
+    echo -e "${YELLOW}当前用户组: $(id -nG)${NC}"
+    echo -e "${YELLOW}设备权限: $(ls -l "$LIDAR_PORT")${NC}"
+    echo -e "${YELLOW}请在树莓派本机执行一次:${NC}"
+    echo "  sudo usermod -aG dialout robot"
+    echo "  sudo chmod 666 $LIDAR_PORT"
+    echo -e "${YELLOW}长期建议执行:${NC}"
+    echo "  /home/robot/ros2_ws/launch_scripts/setup_lidar_permissions.sh"
+    echo -e "${YELLOW}加入 dialout 后需要重新登录，或重启终端/系统。${NC}"
+    exit 1
+fi
+
 if [ "$LIDAR_PORT" != "$CONFIG_PORT" ]; then
     TMP_PARAM_FILE="$(mktemp /tmp/ydlidar_health_XXXX.yaml)"
     sed -E "s|^([[:space:]]*port:).*|\\1 ${LIDAR_PORT}|" "$PARAM_FILE" > "$TMP_PARAM_FILE"

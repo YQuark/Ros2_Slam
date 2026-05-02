@@ -3,7 +3,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROS_WS="/home/robot/ros2_ws"
+ROS_WS="${ROS_WS:-/home/robot/ros2_ws}"
 
 # shellcheck source=/home/robot/ros2_ws/launch_scripts/lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
@@ -94,7 +94,7 @@ EOF
 
 navigation_usage() {
     cat <<'EOF'
-用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--base-use-status-yaw|--no-base-status-yaw] [--base-odom-source status_twist|wheel_cps] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--no-rviz] [--skip-lidar-check] [--base-port PORT] [--localization-only|--nav2-only]
+用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--no-rviz] [--skip-lidar-check] [--base-port PORT] [--localization-only|--nav2-only]
 
 说明:
   map.yaml 省略时默认使用 /home/robot/ros2_maps/latest.yaml。
@@ -103,7 +103,6 @@ navigation_usage() {
   --localization-only 只启动雷达、底盘、AMCL 和 RViz，先完成初始定位。
   --nav2-only         在初始定位完成后，单独启动 Nav2 规划和控制节点；会先检查 AMCL 是否就绪。
   若 2D Pose Estimate 箭头与点云朝向不一致，优先测试 --lidar-reversion / --lidar-inverted，再考虑 lidar_tf_yaw。
-  若运动时 scan 不贴 map，优先测试 --no-base-status-yaw 或 --base-odom-source wheel_cps。
 EOF
 }
 
@@ -406,14 +405,7 @@ run_mapping() {
     local lidar_params=""
     local rviz_config="$DEFAULT_SYSTEM_RVIZ"
     local use_base_arg="false"
-    local base_imu_enabled="${BASE_IMU_ENABLED:-true}"
     local base_fusion_mode="none"
-    local base_use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
-    local base_status_yaw_mode="${BASE_STATUS_YAW_MODE:-relative}"
-    local base_status_yaw_jump_reject_deg="${BASE_STATUS_YAW_JUMP_REJECT_DEG:-25.0}"
-    local base_max_linear="${BASE_MAX_LINEAR:-1.20}"
-    local base_max_angular="${BASE_MAX_ANGULAR:-19.27}"
-    local base_odom_feedback_source="${BASE_ODOM_FEEDBACK_SOURCE:-status_twist}"
     local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
     local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
@@ -609,11 +601,6 @@ run_mapping() {
     fi
 
     if [ "$mapping_source" = "lidar" ] && [ "$base_mode" = "real" ]; then
-        base_imu_enabled="${BASE_IMU_ENABLED:-true}"
-        base_use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
-        base_max_linear="${BASE_MAX_LINEAR:-1.20}"
-        base_max_angular="${BASE_MAX_ANGULAR:-19.27}"
-        base_odom_feedback_source="${BASE_ODOM_FEEDBACK_SOURCE:-status_twist}"
         base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
         if [ "${BASE_STATUS_LOG_INTERVAL_SEC:-}" = "" ]; then
             base_status_log_interval_sec="5.0"
@@ -679,7 +666,6 @@ run_mapping() {
     log_info "底盘模式: ${base_mode}"
     if [ "$base_mode" = "real" ]; then
         log_info "底盘串口: ${base_port}"
-        log_info "底盘 IMU 参与控制: ${base_imu_enabled}"
         log_info "底盘融合模式: ${base_fusion_mode}"
     fi
     if [ "$auto_mapping_drive" = "true" ]; then
@@ -697,14 +683,7 @@ run_mapping() {
         base_mode:=${base_mode} \
         use_base:=${use_base_arg} \
         base_port:=${base_port} \
-        base_max_linear:=${base_max_linear} \
-        base_max_angular:=${base_max_angular} \
-        base_imu_enabled:=${base_imu_enabled} \
         base_fusion_mode:=${base_fusion_mode} \
-        base_use_status_yaw:=${base_use_status_yaw} \
-        base_status_yaw_mode:=${base_status_yaw_mode} \
-        base_status_yaw_jump_reject_deg:=${base_status_yaw_jump_reject_deg} \
-        base_odom_feedback_source:=${base_odom_feedback_source} \
         base_wheel_track_width:=${base_wheel_track_width} \
         base_odom_angular_scale:=${base_odom_angular_scale} \
         base_odom_angular_sign:=${base_odom_angular_sign} \
@@ -741,12 +720,7 @@ run_navigation() {
     local map_file="$DEFAULT_MAP"
     local base_mode="real"
     local base_port="${BASE_PORT:-auto}"
-    local base_imu_enabled="${BASE_IMU_ENABLED:-true}"
     local base_fusion_mode="none"
-    local base_use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
-    local base_status_yaw_mode="${BASE_STATUS_YAW_MODE:-relative}"
-    local base_status_yaw_jump_reject_deg="${BASE_STATUS_YAW_JUMP_REJECT_DEG:-25.0}"
-    local base_odom_feedback_source="${BASE_ODOM_FEEDBACK_SOURCE:-status_twist}"
     local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
     local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
@@ -785,32 +759,6 @@ run_navigation() {
             --ekf-base)
                 base_fusion_mode="ekf"
                 shift
-                ;;
-            --base-use-status-yaw)
-                base_use_status_yaw="true"
-                shift
-                ;;
-            --no-base-status-yaw)
-                base_use_status_yaw="false"
-                shift
-                ;;
-            --base-odom-source)
-                if [ $# -lt 2 ]; then
-                    log_error "✗ --base-odom-source 需要 status_twist 或 wheel_cps"
-                    navigation_usage
-                    exit 1
-                fi
-                case "$2" in
-                    status_twist|wheel_cps)
-                        base_odom_feedback_source="$2"
-                        ;;
-                    *)
-                        log_error "✗ 无效的 --base-odom-source: $2"
-                        navigation_usage
-                        exit 1
-                        ;;
-                esac
-                shift 2
                 ;;
             --no-rviz)
                 use_rviz=false
@@ -982,10 +930,7 @@ run_navigation() {
     log_info "导航 odom 来源: ${odom_source_label}"
     if [ "$base_mode" = "real" ]; then
         log_info "底盘串口: ${base_port}"
-        log_info "底盘 IMU 参与控制: ${base_imu_enabled}"
         log_info "底盘融合模式: ${base_fusion_mode}"
-        log_info "底盘航向来源: $( [ "$base_use_status_yaw" = "true" ] && printf '下位机 yaw_est' || printf '桥接积分 w_est' )"
-        log_info "底盘速度来源: ${base_odom_feedback_source}"
         log_info "底盘命令保活: timeout=${base_cmd_timeout}s keepalive=${base_drive_keepalive_sec}s"
         if [ "$base_port" = "auto" ]; then
             log_warn "⚠ 未检测到底盘串口，桥接节点将以 auto 模式持续重试"
@@ -1006,11 +951,6 @@ run_navigation() {
         map_file:=${map_file} \
         base_port:=${base_port} \
         base_baudrate:=115200 \
-        base_imu_enabled:=${base_imu_enabled} \
-        base_use_status_yaw:=${base_use_status_yaw} \
-        base_status_yaw_mode:=${base_status_yaw_mode} \
-        base_status_yaw_jump_reject_deg:=${base_status_yaw_jump_reject_deg} \
-        base_odom_feedback_source:=${base_odom_feedback_source} \
         base_wheel_track_width:=${base_wheel_track_width} \
         base_odom_angular_scale:=${base_odom_angular_scale} \
         base_odom_angular_sign:=${base_odom_angular_sign} \
@@ -1090,11 +1030,6 @@ run_sensor() {
 
 run_base() {
     local base_port="${BASE_PORT:-auto}"
-    local use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
-    local base_imu_enabled="${BASE_IMU_ENABLED:-true}"
-    local base_odom_feedback_source="${BASE_ODOM_FEEDBACK_SOURCE:-status_twist}"
-    local status_yaw_mode="${BASE_STATUS_YAW_MODE:-relative}"
-    local status_yaw_jump_reject_deg="${BASE_STATUS_YAW_JUMP_REJECT_DEG:-25.0}"
     local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
     local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
@@ -1110,12 +1045,8 @@ run_base() {
                 base_port="$2"
                 shift 2
                 ;;
-            --use-status-yaw|--base-use-status-yaw)
-                use_status_yaw="true"
-                shift
-                ;;
             -h|--help)
-                echo "用法: ./robot.sh base [--port /dev/ttyUSB1] [--use-status-yaw]"
+                echo "用法: ./robot.sh base [--port /dev/ttyUSB1]"
                 exit 0
                 ;;
             *)
@@ -1134,17 +1065,9 @@ run_base() {
     else
         log_info "底盘串口: ${base_port}"
     fi
-    log_info "底盘 IMU 参与控制: ${base_imu_enabled}"
-    log_info "底盘航向来源: $( [ "$use_status_yaw" = "true" ] && printf '下位机 yaw_est' || printf '桥接积分 w_est' )"
-    log_info "底盘速度来源: ${base_odom_feedback_source}"
     ros2 launch stm32_robot_bridge stm32_bridge.launch.py \
         port:=${base_port} \
         baudrate:=115200 \
-        imu_enabled:=${base_imu_enabled} \
-        use_status_yaw:=${use_status_yaw} \
-        status_yaw_mode:=${status_yaw_mode} \
-        status_yaw_jump_reject_deg:=${status_yaw_jump_reject_deg} \
-        odom_feedback_source:=${base_odom_feedback_source} \
         wheel_track_width:=${base_wheel_track_width} \
         odom_angular_scale:=${base_odom_angular_scale} \
         odom_angular_sign:=${base_odom_angular_sign} \
@@ -1162,11 +1085,6 @@ run_system() {
     local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
     local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
-    local base_imu_enabled="${BASE_IMU_ENABLED:-true}"
-    local base_use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
-    local base_status_yaw_mode="${BASE_STATUS_YAW_MODE:-relative}"
-    local base_status_yaw_jump_reject_deg="${BASE_STATUS_YAW_JUMP_REJECT_DEG:-25.0}"
-    local base_odom_feedback_source="${BASE_ODOM_FEEDBACK_SOURCE:-status_twist}"
     local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-0.0}"
     local rviz_config="$DEFAULT_SYSTEM_RVIZ"
 
@@ -1242,9 +1160,6 @@ run_system() {
     echo "  • YDLIDAR X2 激光雷达 (${lidar_port})"
     echo "  • 雷达 yaw 外参(rad): ${lidar_tf_yaw}"
     echo "  • STM32 串口桥接 (${base_port})"
-    echo "  • 底盘 IMU 参与控制: ${base_imu_enabled}"
-    echo "  • 底盘航向来源: $( [ "$base_use_status_yaw" = "true" ] && printf '下位机 yaw_est' || printf '桥接积分 w_est' )"
-    echo "  • 底盘速度来源: ${base_odom_feedback_source}"
     echo "  • SLAM Toolbox"
     if [ "$use_rviz" = true ]; then
         echo "  • RViz2"
@@ -1260,14 +1175,9 @@ run_system() {
         use_rviz:=${use_rviz} \
         base_port:=${base_port} \
         base_baudrate:=115200 \
-        base_imu_enabled:=${base_imu_enabled} \
-        base_use_status_yaw:=${base_use_status_yaw} \
         base_wheel_track_width:=${base_wheel_track_width} \
-        base_odom_feedback_source:=${base_odom_feedback_source} \
         base_odom_angular_scale:=${base_odom_angular_scale} \
         base_odom_angular_sign:=${base_odom_angular_sign} \
-        base_status_yaw_mode:=${base_status_yaw_mode} \
-        base_status_yaw_jump_reject_deg:=${base_status_yaw_jump_reject_deg} \
         base_status_log_interval_sec:=${base_status_log_interval_sec} \
         lidar_tf_yaw:=${lidar_tf_yaw} \
         lidar_params_file:=${lidar_params} \

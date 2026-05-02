@@ -127,22 +127,14 @@ def _validate_and_compose(context):
         launch_arguments={
             'port': LaunchConfiguration('base_port'),
             'baudrate': LaunchConfiguration('base_baudrate'),
-            'max_linear': LaunchConfiguration('base_max_linear'),
-            'max_angular': LaunchConfiguration('base_max_angular'),
             'cmd_timeout': base_cmd_timeout,
             'drive_keepalive_sec': base_drive_keepalive_sec,
             'publish_tf': 'false' if use_base_ekf else LaunchConfiguration('base_publish_tf').perform(context),
-            'imu_enabled': LaunchConfiguration('base_imu_enabled'),
             'publish_imu': 'true' if use_base_ekf else 'false',
             'imu_topic': LaunchConfiguration('base_imu_topic'),
             'imu_frame_id': LaunchConfiguration('base_imu_frame_id'),
-            'use_status_yaw': LaunchConfiguration('base_use_status_yaw'),
-            'status_yaw_mode': LaunchConfiguration('base_status_yaw_mode'),
-            'status_yaw_jump_reject_deg': LaunchConfiguration('base_status_yaw_jump_reject_deg'),
-            'odom_feedback_source': LaunchConfiguration('base_odom_feedback_source'),
             'wheel_radius': LaunchConfiguration('base_wheel_radius'),
             'wheel_track_width': LaunchConfiguration('base_wheel_track_width'),
-            'encoder_cpr': LaunchConfiguration('base_encoder_cpr'),
             'odom_linear_scale': LaunchConfiguration('base_odom_linear_scale'),
             'odom_angular_scale': LaunchConfiguration('base_odom_angular_scale'),
             'odom_angular_sign': LaunchConfiguration('base_odom_angular_sign'),
@@ -185,6 +177,28 @@ def _validate_and_compose(context):
             actions.append(ekf_launch)
     if fake_base_enabled:
         actions.append(fake_base_node)
+
+    # Static TF: base_link -> base_footprint (ground projection, z=0)
+    actions.append(
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='static_tf_base_footprint',
+            arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'base_footprint'],
+            output='screen',
+        )
+    )
+
+    # Static TF: base_link -> imu_link (IMU mounting offset, TBD when mechanical finalized)
+    actions.append(
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='static_tf_imu_link',
+            arguments=['0', '0', '0', '0', '0', '0', 'base_link', 'imu_link'],
+            output='screen',
+        )
+    )
 
     if mode == 'mapping' and mapping_source != 'lidar':
         raise RuntimeError("Invalid 'mapping_source'. Only 'lidar' is supported (camera removed).")
@@ -406,22 +420,14 @@ def generate_launch_description():
 
         DeclareLaunchArgument('base_port', default_value='auto'),
         DeclareLaunchArgument('base_baudrate', default_value='115200'),
-        DeclareLaunchArgument('base_max_linear', default_value='1.20'),
-        DeclareLaunchArgument('base_max_angular', default_value='19.27'),
         DeclareLaunchArgument('base_cmd_timeout', default_value='0.25'),
         DeclareLaunchArgument('base_drive_keepalive_sec', default_value='0.10'),
         DeclareLaunchArgument('base_publish_tf', default_value='true'),
-        DeclareLaunchArgument('base_imu_enabled', default_value='true'),
         DeclareLaunchArgument('base_fusion_mode', default_value='none'),
         DeclareLaunchArgument('base_imu_topic', default_value='/imu/data'),
         DeclareLaunchArgument('base_imu_frame_id', default_value='imu_link'),
-        DeclareLaunchArgument('base_use_status_yaw', default_value='true'),
-        DeclareLaunchArgument('base_status_yaw_mode', default_value='relative'),
-        DeclareLaunchArgument('base_status_yaw_jump_reject_deg', default_value='25.0'),
-        DeclareLaunchArgument('base_odom_feedback_source', default_value='status_twist'),
         DeclareLaunchArgument('base_wheel_radius', default_value='0.0325'),
         DeclareLaunchArgument('base_wheel_track_width', default_value='0.1250'),
-        DeclareLaunchArgument('base_encoder_cpr', default_value='2464.0'),
         DeclareLaunchArgument('base_odom_linear_scale', default_value='1.0'),
         DeclareLaunchArgument('base_odom_angular_scale', default_value='1.0'),
         DeclareLaunchArgument('base_odom_angular_sign', default_value='1.0'),

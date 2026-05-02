@@ -4,12 +4,10 @@
 
 ## 包职责
 
-- 订阅 `/cmd_vel`
-- 发送 `SET_DRIVE` 和 `SET_MODE`
-- 轮询 `GET_STATUS`
-- 发布 `/odom`
-- 按需发布 `/imu/data`
-- 在未启用 EKF 时发布 `odom -> base_link`
+- 订阅 `/cmd_vel`，发送 `SET_VELOCITY` (0x01)
+- 轮询 `STATUS` (0x81)，发布 `/odom`
+- 按需发布 `/imu/data`、`/battery_state`、`/motor/left_current`、`/motor/right_current`、`/chassis/status`
+- 在未启用 EKF 时发布 `odom -> base_link` TF
 
 ## 在工程中的位置
 
@@ -20,11 +18,10 @@
 ## 当前协议假设
 
 - 串口默认参数：`115200 8N1`
-- 默认工作模式要求下位机进入 `MODE_CLOSED_LOOP`
-- 状态包优先使用二进制 `GET_STATUS`
-- `/odom.twist` 默认使用状态包中的 `v_est / w_est`
-- `max_linear=1.20m/s`、`max_angular=19.27rad/s` 只用于 Q15 协议编码和解码，不等于导航运行速度
-- `use_status_yaw:=true` 时只在下位机 `imu_valid=1` 的状态帧中使用 `yaw_est`
+- 协议帧格式：`0xA5 0x5A + length(1B) + cmd(1B) + payload + checksum8(1B)`
+- `SET_VELOCITY` (0x01)：`float linear_x + float angular_z + uint8 enable + uint8 mode`（10 字节）
+- `STATUS` (0x81)：47 字节，包含轮速、编码器、电池、电流、IMU 原始数据、错误标志、控制模式
+- `/odom.twist` 默认使用 STATUS 中的轮速计算
 - 当前统一默认时序：`cmd_timeout=0.25s`、`drive_keepalive_sec=0.10s`
 
 ## 推荐启动方式

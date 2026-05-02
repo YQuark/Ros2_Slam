@@ -1,9 +1,31 @@
+# ROS2 build artifacts
 build/
 install/
 log/
 
-*.pyc
-__pycache__/
-.DS_Store
+# ROS2 bags and recordings
+*.bag
+*.bag.*
+*.db3
 
+# Python
+*.pyc
+*.pyo
+__pycache__/
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Editor swap files
+*.swp
+*.swo
+*~
+
+# Git internal
 *.git.inner.bak/
