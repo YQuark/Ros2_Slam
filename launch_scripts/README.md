@@ -12,6 +12,25 @@ cd /home/robot/ros2_ws/launch_scripts
 ./robot.sh --help
 ```
 
+## 雷达 RViz 建图
+
+统一入口只使用 `robot.sh`。树莓派现场先用虚拟底盘 TF 跑通雷达、SLAM Toolbox 和 RViz：
+
+```bash
+cd /home/robot/ros2_ws/launch_scripts
+./robot.sh mapping lidar --manual --fake-base
+```
+
+需要真实底盘里程计时：
+
+```bash
+./robot.sh mapping lidar --manual --real-base --base-port auto
+```
+
+如需手动指定雷达串口，可追加 `--lidar-port /dev/ttyUSB0`。
+
+RViz 配置使用 `src/robot_bringup/rviz/lidar_mapping.rviz`，固定坐标系为 `map`，显示 `/map`、`/map_points`、`/scan` 和 TF。
+
 ## 当前推荐流程
 
 主业务流程：
