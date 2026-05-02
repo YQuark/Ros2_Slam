@@ -1,0 +1,22 @@
+{
+    "names": {
+        "ydlidar_ros2_driver": {
+            "cmake-args": [
+                "-DCMAKE_BUILD_TYPE=Release"
+            ]
+        },
+        "robot_localization": {
+            "cmake-args": [
+                "-DCMAKE_BUILD_TYPE=Release"
+            ]
+        },
+        "slam_toolbox": {
+            "cmake-args": [
+                "-DCMAKE_BUILD_TYPE=Release"
+            ]
+        }
+    },
+    "build-base": "build",
+    "install-base": "install",
+    "symlink-install": true
+}

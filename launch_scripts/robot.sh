@@ -9,10 +9,13 @@ ROS_WS="/home/robot/ros2_ws"
 source "${SCRIPT_DIR}/lib/common.sh"
 
 LIDAR_HEALTH_SCRIPT="${SCRIPT_DIR}/check_lidar_health.sh"
+DETECT_LIDAR_PORT_SCRIPT="${SCRIPT_DIR}/detect_lidar_port.sh"
 DETECT_BASE_PORT_SCRIPT="${SCRIPT_DIR}/detect_base_port.sh"
 STOP_ALL_SCRIPT="${SCRIPT_DIR}/stop_all.sh"
 SAVE_MAP_SCRIPT="${SCRIPT_DIR}/save_map.sh"
 CHECK_SYSTEM_SCRIPT="${SCRIPT_DIR}/check_system.sh"
+CHECK_CHASSIS_SCRIPT="${SCRIPT_DIR}/check_chassis.sh"
+CHECK_TF_SCRIPT="${SCRIPT_DIR}/check_tf.sh"
 CHECK_MAPPING_SCRIPT="${SCRIPT_DIR}/check_mapping_pipeline.sh"
 CHECK_NAVIGATION_SCRIPT="${SCRIPT_DIR}/check_navigation_pipeline.sh"
 KEYBOARD_CONTROL_SCRIPT="${SCRIPT_DIR}/keyboard_control.sh"
@@ -25,11 +28,9 @@ FAST_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping_fast.y
 DEFAULT_NAV2_MAPPING_PARAMS="${ROS_WS}/src/robot_bringup/config/nav2_mapping_params.yaml"
 DEFAULT_NAV2_BT_XML="${ROS_WS}/src/robot_bringup/behavior_trees/navigate_to_pose_recovery.xml"
 DEFAULT_LIDAR_PARAMS="${ROS_WS}/src/robot_bringup/config/ydlidar_x2.yaml"
-DEFAULT_LIDAR_LEGACY_PARAMS="${ROS_WS}/src/robot_bringup/config/ydlidar_X2_mapping.yaml"
 DEFAULT_LIDAR_FALLBACK_PARAMS="${ROS_WS}/src/ydlidar_ros2_driver/params/X2.yaml"
 DEFAULT_LIDAR_RVIZ="${ROS_WS}/src/robot_bringup/rviz/lidar_mapping.rviz"
 DEFAULT_SYSTEM_RVIZ="${ROS_WS}/src/robot_bringup/rviz/system.rviz"
-DEFAULT_CAMERA_INFO_URL="file://${ROS_WS}/src/robot_bringup/config/camera_info/rgb_Astra_Orbbec.yaml"
 DEFAULT_LIDAR_TF_YAW_RAD="1.570796326795"
 
 TMP_FILES=()
@@ -112,6 +113,8 @@ check_usage() {
   ./robot.sh check lidar [雷达参数文件或 --lidar-port PATH]
   ./robot.sh check mapping [--allow-headless] [--min-scan-hz N]
   ./robot.sh check navigation
+  ./robot.sh check chassis
+  ./robot.sh check tf
 EOF
 }
 
@@ -236,13 +239,65 @@ prepare_lidar_params_with_runtime_overrides() {
     printf '%s\n' "$tmp_file"
 }
 
+resolve_lidar_params_device() {
+    local params_file="$1"
+    local explicit_port_override="${2:-}"
+    local configured_port=""
+    local detected_port=""
+
+    configured_port="$(get_yaml_key_value "$params_file" "port" || true)"
+    if [ -z "$configured_port" ]; then
+        log_error "✗ 雷达参数文件缺少 port: ${params_file}"
+        exit 1
+    fi
+
+    if [ -e "$configured_port" ]; then
+        printf '%s\n' "$params_file"
+        return 0
+    fi
+
+    if [ -n "$explicit_port_override" ]; then
+        log_error "✗ 指定的雷达设备不存在: ${configured_port}"
+        exit 1
+    fi
+
+    if [ -x "$DETECT_LIDAR_PORT_SCRIPT" ]; then
+        detected_port="$("$DETECT_LIDAR_PORT_SCRIPT" "$configured_port" 2>/dev/null || true)"
+    fi
+
+    if [ -n "$detected_port" ] && [ -e "$detected_port" ]; then
+        log_warn "未找到 ${configured_port}，自动使用检测到的雷达串口: ${detected_port}" >&2
+        prepare_lidar_params_with_runtime_overrides "$params_file" "" "" "$detected_port"
+        return 0
+    fi
+
+    log_error "✗ 未找到雷达设备"
+    log_error "  已检查: ${configured_port}"
+    log_error "  可用时建议建立 /dev/ydlidar，或启动时传 --lidar-port /dev/ttyUSBx"
+    exit 1
+}
+
+ensure_lidar_port_access() {
+    local lidar_port="$1"
+
+    if [ -r "$lidar_port" ] && [ -w "$lidar_port" ]; then
+        return 0
+    fi
+
+    log_error "✗ 当前用户没有雷达串口读写权限: ${lidar_port}"
+    log_error "  当前用户组: $(id -nG)"
+    log_error "  设备权限: $(ls -l "$lidar_port")"
+    log_error "  请在树莓派本机执行一次:"
+    log_error "    sudo /home/robot/ros2_ws/launch_scripts/setup_lidar_permissions.sh"
+    log_error "  临时测试也可执行:"
+    log_error "    sudo chmod 666 ${lidar_port}"
+    log_error "  加入 dialout 后需要重新登录，或重启终端/系统。"
+    exit 1
+}
+
 resolve_default_lidar_params() {
     if [ -f "$DEFAULT_LIDAR_PARAMS" ]; then
         printf '%s\n' "$DEFAULT_LIDAR_PARAMS"
-        return 0
-    fi
-    if [ -f "$DEFAULT_LIDAR_LEGACY_PARAMS" ]; then
-        printf '%s\n' "$DEFAULT_LIDAR_LEGACY_PARAMS"
         return 0
     fi
     if [ -f "$DEFAULT_LIDAR_FALLBACK_PARAMS" ]; then
@@ -339,19 +394,17 @@ ensure_localization_ready_for_nav2() {
 }
 
 run_mapping() {
-    local mapping_source="camera"
+    local mapping_source="lidar"
     local slam_profile="auto"
     local skip_lidar_check=false
     local use_rviz=true
     local base_mode="none"
-    local base_port="${BASE_PORT:-/dev/ttyUSB1}"
+    local base_port="${BASE_PORT:-auto}"
     local has_source=false
     local has_profile=false
     local slam_params=""
     local lidar_params=""
     local rviz_config="$DEFAULT_SYSTEM_RVIZ"
-    local use_camera="false"
-    local use_visual_odom="false"
     local use_base_arg="false"
     local base_imu_enabled="${BASE_IMU_ENABLED:-true}"
     local base_fusion_mode="none"
@@ -540,11 +593,9 @@ run_mapping() {
         lidar_params="$(resolve_default_lidar_params)"
         lidar_params="$(prepare_lidar_params "$lidar_params")"
         lidar_params="$(prepare_lidar_params_with_runtime_overrides "$lidar_params" "$lidar_reversion_override" "$lidar_inverted_override" "$lidar_port_override")"
+        lidar_params="$(resolve_lidar_params_device "$lidar_params" "$lidar_port_override")"
         lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
-        if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
-            log_error "✗ 未找到雷达设备"
-            exit 1
-        fi
+        ensure_lidar_port_access "$lidar_port"
         export ROBOT_LIDAR_PORT_HINT="$lidar_port"
         if [ "$skip_lidar_check" = false ] && [ -x "$LIDAR_HEALTH_SCRIPT" ]; then
             log_info "执行雷达数据健康检查..."
@@ -555,15 +606,6 @@ run_mapping() {
     if [ "$base_mode" = "real" ]; then
         base_port="$(resolve_base_port_avoiding_lidar "建图模式" "$base_port" "$lidar_port" "$base_port_explicit")"
         export ROBOT_BASE_PORT_HINT="$base_port"
-    fi
-
-    if [ "$mapping_source" = "camera" ]; then
-        use_camera="true"
-        if ros2 pkg list 2>/dev/null | grep -qx "rtabmap_odom"; then
-            use_visual_odom="true"
-        else
-            log_warn "提示: 未检测到 rtabmap_odom，回退到无视觉里程计模式"
-        fi
     fi
 
     if [ "$mapping_source" = "lidar" ] && [ "$base_mode" = "real" ]; then
@@ -652,7 +694,6 @@ run_mapping() {
     ros2 launch robot_bringup system.launch.py \
         mode:=mapping \
         mapping_source:=${mapping_source} \
-        use_camera:=${use_camera} \
         base_mode:=${base_mode} \
         use_base:=${use_base_arg} \
         base_port:=${base_port} \
@@ -689,21 +730,17 @@ run_mapping() {
         auto_mapping_side_emergency_stop_distance:=${auto_mapping_side_emergency_stop_distance} \
         auto_mapping_side_stop_distance:=${auto_mapping_side_stop_distance} \
         auto_mapping_side_resume_distance:=${auto_mapping_side_resume_distance} \
-        use_visual_odom:=${use_visual_odom} \
         use_rviz:=${use_rviz} \
         lidar_tf_yaw:=${lidar_tf_yaw} \
         lidar_params_file:=${lidar_params:-$DEFAULT_LIDAR_PARAMS} \
         rviz_config:=${rviz_config} \
-        camera_use_uvc:=true \
-        camera_enable_ir:=false \
-        camera_color_info_url:=${DEFAULT_CAMERA_INFO_URL} \
         slam_params_file:=${slam_params}
 }
 
 run_navigation() {
     local map_file="$DEFAULT_MAP"
     local base_mode="real"
-    local base_port="${BASE_PORT:-/dev/ttyUSB1}"
+    local base_port="${BASE_PORT:-auto}"
     local base_imu_enabled="${BASE_IMU_ENABLED:-true}"
     local base_fusion_mode="none"
     local base_use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
@@ -904,11 +941,9 @@ run_navigation() {
     lidar_params="$(resolve_default_lidar_params)"
     lidar_params="$(prepare_lidar_params "$lidar_params")"
     lidar_params="$(prepare_lidar_params_with_runtime_overrides "$lidar_params" "$lidar_reversion_override" "$lidar_inverted_override" "$lidar_port_override")"
+    lidar_params="$(resolve_lidar_params_device "$lidar_params" "$lidar_port_override")"
     lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
-    if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
-        log_error "✗ 未找到雷达设备"
-        exit 1
-    fi
+    ensure_lidar_port_access "$lidar_port"
     export ROBOT_LIDAR_PORT_HINT="$lidar_port"
 
     if [ "$base_mode" = "real" ]; then
@@ -963,7 +998,6 @@ run_navigation() {
 
     ros2 launch robot_bringup system.launch.py \
         mode:=navigation \
-        use_camera:=false \
         use_lidar:=true \
         base_mode:=${base_mode} \
         base_fusion_mode:=${base_fusion_mode} \
@@ -1033,27 +1067,19 @@ run_sensor() {
             lidar_params="$(resolve_default_lidar_params)"
             lidar_params="$(prepare_lidar_params "$lidar_params")"
             lidar_params="$(prepare_lidar_params_with_runtime_overrides "$lidar_params" "" "" "$lidar_port_override")"
+            lidar_params="$(resolve_lidar_params_device "$lidar_params" "$lidar_port_override")"
             lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
-            if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
-                log_error "✗ 未找到雷达设备"
-                exit 1
-            fi
+            ensure_lidar_port_access "$lidar_port"
             log_info "雷达串口: ${lidar_port}"
             log_info "雷达参数: ${lidar_params}"
             ros2 launch robot_bringup sensors.launch.py \
                 use_lidar:=true \
-                use_camera:=false \
                 lidar_params_file:=${lidar_params}
             ;;
         camera)
-            print_header "Astra Pro 摄像头启动"
-            if [ ! -e /dev/video0 ] && [ ! -e /dev/video1 ]; then
-                log_error "✗ 未找到摄像头设备"
-                exit 1
-            fi
-            ros2 launch robot_bringup sensors.launch.py \
-                use_lidar:=false \
-                use_camera:=true
+            log_error "✗ 摄像头传感器已移除（不再使用 Astra Pro）"
+            log_error "  如需添加新摄像头，请创建对应的 launch 文件和配置"
+            exit 1
             ;;
         *)
             log_error "✗ 未知传感器类型: $sensor"
@@ -1063,7 +1089,7 @@ run_sensor() {
 }
 
 run_base() {
-    local base_port="${BASE_PORT:-/dev/ttyUSB1}"
+    local base_port="${BASE_PORT:-auto}"
     local use_status_yaw="${BASE_USE_STATUS_YAW:-true}"
     local base_imu_enabled="${BASE_IMU_ENABLED:-true}"
     local base_odom_feedback_source="${BASE_ODOM_FEEDBACK_SOURCE:-status_twist}"
@@ -1126,7 +1152,7 @@ run_base() {
 }
 
 run_system() {
-    local base_port="${BASE_PORT:-/dev/ttyUSB1}"
+    local base_port="${BASE_PORT:-auto}"
     local use_rviz=true
     local skip_lidar_check=false
     local lidar_params=""
@@ -1199,11 +1225,9 @@ run_system() {
 
     lidar_params="$(resolve_default_lidar_params)"
     lidar_params="$(prepare_lidar_params "$lidar_params")"
+    lidar_params="$(resolve_lidar_params_device "$lidar_params" "")"
     lidar_port="$(get_yaml_key_value "$lidar_params" "port" || true)"
-    if [ -z "$lidar_port" ] || [ ! -e "$lidar_port" ]; then
-        log_error "✗ 未找到雷达设备"
-        exit 1
-    fi
+    ensure_lidar_port_access "$lidar_port"
     export ROBOT_LIDAR_PORT_HINT="$lidar_port"
     base_port="$(resolve_base_port_avoiding_lidar "完整系统" "$base_port" "$lidar_port" "$base_port_explicit")"
     export ROBOT_BASE_PORT_HINT="$base_port"
@@ -1217,7 +1241,6 @@ run_system() {
     log_info "系统组件:"
     echo "  • YDLIDAR X2 激光雷达 (${lidar_port})"
     echo "  • 雷达 yaw 外参(rad): ${lidar_tf_yaw}"
-    echo "  • Astra Pro 深度相机"
     echo "  • STM32 串口桥接 (${base_port})"
     echo "  • 底盘 IMU 参与控制: ${base_imu_enabled}"
     echo "  • 底盘航向来源: $( [ "$base_use_status_yaw" = "true" ] && printf '下位机 yaw_est' || printf '桥接积分 w_est' )"
@@ -1232,7 +1255,6 @@ run_system() {
         mode:=mapping \
         mapping_source:=lidar \
         use_lidar:=true \
-        use_camera:=true \
         base_mode:=real \
         use_base:=true \
         use_rviz:=${use_rviz} \
@@ -1265,6 +1287,12 @@ run_check() {
     case "$target" in
         lidar)
             run_passthrough_script "$LIDAR_HEALTH_SCRIPT" "$@"
+            ;;
+        chassis)
+            run_passthrough_script "$CHECK_CHASSIS_SCRIPT" "$@"
+            ;;
+        tf)
+            run_passthrough_script "$CHECK_TF_SCRIPT" "$@"
             ;;
         mapping)
             run_passthrough_script "$CHECK_MAPPING_SCRIPT" "$@"

@@ -251,7 +251,7 @@ class STM32Bridge(Node):
         self.declare_parameter('odom_feedback_source', 'status_twist')
         self.declare_parameter('wheel_radius', 0.0325)
         self.declare_parameter('wheel_track_width', 0.1250)
-        self.declare_parameter('encoder_cpr', 2340.0)
+        self.declare_parameter('encoder_cpr', 2464.0)
         self.declare_parameter('odom_linear_scale', 1.0)
         self.declare_parameter('odom_angular_scale', 1.0)
         self.declare_parameter('odom_angular_sign', 1.0)

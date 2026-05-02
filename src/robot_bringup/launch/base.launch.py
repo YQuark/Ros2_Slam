@@ -44,7 +44,7 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
-        DeclareLaunchArgument('port', default_value='/dev/ttyUSB1'),
+        DeclareLaunchArgument('port', default_value='auto'),
         DeclareLaunchArgument('baudrate', default_value='115200'),
         DeclareLaunchArgument('max_linear', default_value='1.20'),
         DeclareLaunchArgument('max_angular', default_value='19.27'),
@@ -55,14 +55,14 @@ def generate_launch_description():
         DeclareLaunchArgument('imu_enabled', default_value='true'),
         DeclareLaunchArgument('publish_imu', default_value='false'),
         DeclareLaunchArgument('imu_topic', default_value='/imu/data'),
-        DeclareLaunchArgument('imu_frame_id', default_value='base_link'),
+        DeclareLaunchArgument('imu_frame_id', default_value='imu_link'),
         DeclareLaunchArgument('use_status_yaw', default_value='true'),
         DeclareLaunchArgument('status_yaw_mode', default_value='relative'),
         DeclareLaunchArgument('status_yaw_jump_reject_deg', default_value='25.0'),
         DeclareLaunchArgument('odom_feedback_source', default_value='status_twist'),
         DeclareLaunchArgument('wheel_radius', default_value='0.0325'),
         DeclareLaunchArgument('wheel_track_width', default_value='0.1250'),
-        DeclareLaunchArgument('encoder_cpr', default_value='2340.0'),
+        DeclareLaunchArgument('encoder_cpr', default_value='2464.0'),
         DeclareLaunchArgument('odom_linear_scale', default_value='1.0'),
         DeclareLaunchArgument('odom_angular_scale', default_value='1.0'),
         DeclareLaunchArgument('odom_angular_sign', default_value='1.0'),
