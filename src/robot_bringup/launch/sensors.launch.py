@@ -4,9 +4,8 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, LogInfo
+from launch.actions import DeclareLaunchArgument, LogInfo
 from launch.conditions import IfCondition
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -62,21 +61,8 @@ def generate_launch_description():
         output='screen',
     )
 
-    camera_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(ydlidar_share, 'launch', 'astra_pro.launch.py')),
-        condition=IfCondition(LaunchConfiguration('use_camera')),
-        launch_arguments={
-            'enable_color': LaunchConfiguration('camera_enable_color'),
-            'enable_ir': LaunchConfiguration('camera_enable_ir'),
-            'use_uvc_camera': LaunchConfiguration('camera_use_uvc'),
-            'color_info_url': LaunchConfiguration('camera_color_info_url'),
-            'ir_info_url': LaunchConfiguration('camera_ir_info_url'),
-        }.items(),
-    )
-
     return LaunchDescription([
         DeclareLaunchArgument('use_lidar', default_value='true'),
-        DeclareLaunchArgument('use_camera', default_value='false'),
         DeclareLaunchArgument('lidar_params_file', default_value=os.path.join(ydlidar_share, 'params', 'X2.yaml')),
         DeclareLaunchArgument('lidar_raw_scan_topic', default_value='/scan_raw'),
         DeclareLaunchArgument('lidar_scan_topic', default_value='/scan'),
@@ -94,11 +80,6 @@ def generate_launch_description():
             default_value='1.570796326795',
             description='base_link -> laser_frame yaw in radians; override at runtime with lidar_tf_yaw:=<value>',
         ),
-        DeclareLaunchArgument('camera_enable_color', default_value='true'),
-        DeclareLaunchArgument('camera_enable_ir', default_value='false'),
-        DeclareLaunchArgument('camera_use_uvc', default_value='true'),
-        DeclareLaunchArgument('camera_color_info_url', default_value=''),
-        DeclareLaunchArgument('camera_ir_info_url', default_value=''),
         LogInfo(
             condition=IfCondition(LaunchConfiguration('use_lidar')),
             msg=[
@@ -119,5 +100,4 @@ def generate_launch_description():
         lidar_node,
         scan_normalizer,
         lidar_tf,
-        camera_launch,
     ])

@@ -49,7 +49,7 @@ cd /home/robot/ros2_ws/launch_scripts
 只有在二次开发或诊断桥接内部行为时，才直接调用包级 launch：
 
 ```bash
-source /opt/ros/foxy/setup.bash
+source /opt/ros/humble/setup.bash
 source /home/robot/ros2_ws/install/setup.bash
 ros2 launch stm32_robot_bridge stm32_bridge.launch.py port:=auto baudrate:=115200
 ros2 launch stm32_robot_bridge stm32_bridge.launch.py port:=/dev/ttyUSB1 status_log_interval_sec:=1.0 cmd_log_interval_sec:=1.0

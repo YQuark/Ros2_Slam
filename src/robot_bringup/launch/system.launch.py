@@ -39,11 +39,9 @@ def _validate_and_compose(context):
     mapping_source = LaunchConfiguration('mapping_source').perform(context)
     use_rviz = LaunchConfiguration('use_rviz')
     use_lidar = LaunchConfiguration('use_lidar')
-    use_camera = LaunchConfiguration('use_camera')
     use_base_legacy = LaunchConfiguration('use_base').perform(context).lower() == 'true'
     base_mode = LaunchConfiguration('base_mode').perform(context).strip().lower()
     base_fusion_mode = LaunchConfiguration('base_fusion_mode').perform(context).strip().lower()
-    use_visual_odom = LaunchConfiguration('use_visual_odom')
     fallback_static_odom = LaunchConfiguration('fallback_static_odom').perform(context).lower() == 'true'
     map_file = LaunchConfiguration('map_file').perform(context)
     rviz_enabled = use_rviz.perform(context).lower() == 'true'
@@ -76,9 +74,6 @@ def _validate_and_compose(context):
     no_base = base_mode == 'none'
     use_base_ekf = real_base_enabled and base_fusion_mode == 'ekf'
     lidar_enabled = use_lidar.perform(context).lower() == 'true'
-    camera_enabled = use_camera.perform(context).lower() == 'true'
-    if mode == 'mapping' and mapping_source == 'camera':
-        lidar_enabled = False
     lidar_port_hint = _read_lidar_port_hint(lidar_params_file) if lidar_enabled else ''
     if auto_mapping_drive:
         if not real_base_enabled and not fake_base_enabled:
@@ -111,7 +106,6 @@ def _validate_and_compose(context):
         PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'sensors.launch.py')),
         launch_arguments={
             'use_lidar': 'true' if lidar_enabled else 'false',
-            'use_camera': 'true' if camera_enabled else 'false',
             'lidar_params_file': LaunchConfiguration('lidar_params_file'),
             'lidar_raw_scan_topic': LaunchConfiguration('lidar_raw_scan_topic'),
             'lidar_scan_topic': LaunchConfiguration('lidar_scan_topic'),
@@ -125,11 +119,6 @@ def _validate_and_compose(context):
             'lidar_tf_roll': LaunchConfiguration('lidar_tf_roll'),
             'lidar_tf_pitch': LaunchConfiguration('lidar_tf_pitch'),
             'lidar_tf_yaw': LaunchConfiguration('lidar_tf_yaw'),
-            'camera_enable_color': LaunchConfiguration('camera_enable_color'),
-            'camera_enable_ir': LaunchConfiguration('camera_enable_ir'),
-            'camera_use_uvc': LaunchConfiguration('camera_use_uvc'),
-            'camera_color_info_url': LaunchConfiguration('camera_color_info_url'),
-            'camera_ir_info_url': LaunchConfiguration('camera_ir_info_url'),
         }.items(),
     )
 
@@ -197,62 +186,11 @@ def _validate_and_compose(context):
     if fake_base_enabled:
         actions.append(fake_base_node)
 
-    visual_odom_enabled = use_visual_odom.perform(context).lower() == 'true'
-
-    if mode == 'mapping' and mapping_source not in ('camera', 'lidar'):
-        raise RuntimeError("Invalid 'mapping_source'. Use 'camera' or 'lidar'.")
-
-    if mode == 'mapping' and mapping_source == 'camera':
-        if not camera_enabled:
-            raise RuntimeError("Camera mapping requires 'use_camera:=true'.")
-        if not _package_exists('depthimage_to_laserscan'):
-            raise RuntimeError("Missing package: depthimage_to_laserscan.")
-        actions.append(
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'camera_scan.launch.py')),
-                launch_arguments={
-                    'depth_topic': LaunchConfiguration('camera_scan_depth_topic'),
-                    'camera_info_topic': LaunchConfiguration('camera_scan_info_topic'),
-                    'scan_topic': LaunchConfiguration('camera_scan_topic'),
-                }.items(),
-            )
-        )
-        if no_base and visual_odom_enabled:
-            if not _package_exists('rtabmap_odom'):
-                raise RuntimeError("Missing package: rtabmap_odom. Install 'ros-humble-rtabmap-ros'.")
-            actions.append(
-                IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'visual_odom.launch.py')),
-                    launch_arguments={
-                        'rgb_topic': LaunchConfiguration('visual_odom_rgb_topic'),
-                        'depth_topic': LaunchConfiguration('visual_odom_depth_topic'),
-                        'camera_info_topic': LaunchConfiguration('visual_odom_camera_info_topic'),
-                        'base_frame': LaunchConfiguration('visual_odom_base_frame'),
-                        'odom_frame': LaunchConfiguration('visual_odom_odom_frame'),
-                    }.items(),
-                )
-            )
-    elif mode == 'mapping' and no_base and camera_enabled and visual_odom_enabled:
-        if not _package_exists('rtabmap_odom'):
-            raise RuntimeError("Missing package: rtabmap_odom. Install 'ros-humble-rtabmap-ros'.")
-        actions.append(
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'visual_odom.launch.py')),
-                launch_arguments={
-                    'rgb_topic': LaunchConfiguration('visual_odom_rgb_topic'),
-                    'depth_topic': LaunchConfiguration('visual_odom_depth_topic'),
-                    'camera_info_topic': LaunchConfiguration('visual_odom_camera_info_topic'),
-                    'base_frame': LaunchConfiguration('visual_odom_base_frame'),
-                    'odom_frame': LaunchConfiguration('visual_odom_odom_frame'),
-                }.items(),
-            )
-        )
+    if mode == 'mapping' and mapping_source != 'lidar':
+        raise RuntimeError("Invalid 'mapping_source'. Only 'lidar' is supported (camera removed).")
 
     # In no-base mapping, always keep a valid odom->base_link chain.
-    if mode == 'mapping' and no_base and fallback_static_odom and (
-        (mapping_source == 'camera' and not visual_odom_enabled)
-        or (mapping_source == 'lidar' and not (camera_enabled and visual_odom_enabled))
-    ):
+    if mode == 'mapping' and no_base and fallback_static_odom:
         actions.append(
             Node(
                 package='tf2_ros',
@@ -268,7 +206,7 @@ def _validate_and_compose(context):
         if not _package_exists('slam_toolbox'):
             raise RuntimeError('Missing package: slam_toolbox. Install and rebuild workspace.')
 
-        scan_topic = LaunchConfiguration('camera_scan_topic') if mapping_source == 'camera' else LaunchConfiguration('lidar_scan_topic')
+        scan_topic = LaunchConfiguration('lidar_scan_topic')
         actions.append(
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(os.path.join(this_share, 'launch', 'slam.launch.py')),
@@ -400,19 +338,11 @@ def generate_launch_description():
         DeclareLaunchArgument('mapping_source', default_value='lidar'),
         DeclareLaunchArgument('use_sim_time', default_value='false'),
         DeclareLaunchArgument('use_lidar', default_value='true'),
-        DeclareLaunchArgument('use_camera', default_value='false'),
         DeclareLaunchArgument('base_mode', default_value='real'),
         DeclareLaunchArgument('use_base', default_value='true'),
-        DeclareLaunchArgument('use_visual_odom', default_value='false'),
         DeclareLaunchArgument('fallback_static_odom', default_value='true'),
         DeclareLaunchArgument('use_rviz', default_value='true'),
-        DeclareLaunchArgument('camera_enable_color', default_value='true'),
-        DeclareLaunchArgument('camera_enable_ir', default_value='false'),
-        DeclareLaunchArgument('camera_use_uvc', default_value='true'),
-        DeclareLaunchArgument('camera_color_info_url', default_value=''),
-        DeclareLaunchArgument('camera_ir_info_url', default_value=''),
-
-        DeclareLaunchArgument('lidar_params_file', default_value=os.path.join(rb_share, 'config', 'ydlidar_X2_mapping.yaml')),
+        DeclareLaunchArgument('lidar_params_file', default_value=os.path.join(rb_share, 'config', 'ydlidar_x2.yaml')),
         DeclareLaunchArgument('lidar_raw_scan_topic', default_value='/scan_raw'),
         DeclareLaunchArgument('lidar_scan_topic', default_value='/scan'),
         DeclareLaunchArgument('lidar_scan_output_size', default_value='425'),
@@ -474,7 +404,7 @@ def generate_launch_description():
         DeclareLaunchArgument('auto_mapping_cmd_deadzone_margin_norm', default_value='0.005'),
         DeclareLaunchArgument('auto_mapping_cmd_min_effective_norm', default_value='0.085'),
 
-        DeclareLaunchArgument('base_port', default_value='/dev/ttyUSB1'),
+        DeclareLaunchArgument('base_port', default_value='auto'),
         DeclareLaunchArgument('base_baudrate', default_value='115200'),
         DeclareLaunchArgument('base_max_linear', default_value='1.20'),
         DeclareLaunchArgument('base_max_angular', default_value='19.27'),
@@ -484,29 +414,20 @@ def generate_launch_description():
         DeclareLaunchArgument('base_imu_enabled', default_value='true'),
         DeclareLaunchArgument('base_fusion_mode', default_value='none'),
         DeclareLaunchArgument('base_imu_topic', default_value='/imu/data'),
-        DeclareLaunchArgument('base_imu_frame_id', default_value='base_link'),
+        DeclareLaunchArgument('base_imu_frame_id', default_value='imu_link'),
         DeclareLaunchArgument('base_use_status_yaw', default_value='true'),
         DeclareLaunchArgument('base_status_yaw_mode', default_value='relative'),
         DeclareLaunchArgument('base_status_yaw_jump_reject_deg', default_value='25.0'),
         DeclareLaunchArgument('base_odom_feedback_source', default_value='status_twist'),
         DeclareLaunchArgument('base_wheel_radius', default_value='0.0325'),
         DeclareLaunchArgument('base_wheel_track_width', default_value='0.1250'),
-        DeclareLaunchArgument('base_encoder_cpr', default_value='2340.0'),
+        DeclareLaunchArgument('base_encoder_cpr', default_value='2464.0'),
         DeclareLaunchArgument('base_odom_linear_scale', default_value='1.0'),
         DeclareLaunchArgument('base_odom_angular_scale', default_value='1.0'),
         DeclareLaunchArgument('base_odom_angular_sign', default_value='1.0'),
         DeclareLaunchArgument('base_status_log_interval_sec', default_value='0.0'),
         DeclareLaunchArgument('base_cmd_log_interval_sec', default_value='0.0'),
         DeclareLaunchArgument('base_ekf_params_file', default_value=os.path.join(rb_share, 'config', 'ekf_base.yaml')),
-
-        DeclareLaunchArgument('visual_odom_rgb_topic', default_value='/camera/color/image_raw'),
-        DeclareLaunchArgument('visual_odom_depth_topic', default_value='/camera/depth/image_raw'),
-        DeclareLaunchArgument('visual_odom_camera_info_topic', default_value='/camera/color/camera_info'),
-        DeclareLaunchArgument('visual_odom_base_frame', default_value='base_link'),
-        DeclareLaunchArgument('visual_odom_odom_frame', default_value='odom'),
-        DeclareLaunchArgument('camera_scan_depth_topic', default_value='/camera/depth/image_raw'),
-        DeclareLaunchArgument('camera_scan_info_topic', default_value='/camera/depth/camera_info'),
-        DeclareLaunchArgument('camera_scan_topic', default_value='/camera/scan'),
 
         DeclareLaunchArgument('nav2_params_file', default_value=default_nav2_params),
         DeclareLaunchArgument('nav2_bt_xml_file', default_value=os.path.join(rb_share, 'behavior_trees', 'navigate_to_pose_recovery.xml')),

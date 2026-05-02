@@ -121,6 +121,48 @@ CPU=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)
 MEM=$(free -m | awk 'NR==2 {printf "%.1f%%", ($3/$2)*100}')
 echo -e "${GREEN}  CPU使用率: ${CPU:-unknown}%${NC}"
 echo -e "${GREEN}  内存使用率: ${MEM:-unknown}${NC}"
+
+# 7b. RPi 温度与电压检查
+if command -v vcgencmd >/dev/null 2>&1; then
+    TEMP_RAW=$(vcgencmd measure_temp 2>/dev/null | grep -oP '[\d.]+' || true)
+    if [ -n "$TEMP_RAW" ]; then
+        TEMP_INT=${TEMP_RAW%.*}
+        if [ "${TEMP_INT:-0}" -ge 80 ]; then
+            echo -e "${RED}  CPU温度: ${TEMP_RAW}°C (过热! 已降频)${NC}"
+        elif [ "${TEMP_INT:-0}" -ge 70 ]; then
+            echo -e "${YELLOW}  CPU温度: ${TEMP_RAW}°C (偏高)${NC}"
+        else
+            echo -e "${GREEN}  CPU温度: ${TEMP_RAW}°C${NC}"
+        fi
+    fi
+
+    THROTTLED=$(vcgencmd get_throttled 2>/dev/null | grep -oP '0x\w+' || true)
+    if [ -n "$THROTTLED" ]; then
+        THROTTLED_VAL=$((THROTTLED))
+        if [ "$THROTTLED_VAL" -ne 0 ]; then
+            echo -e "${RED}  电压/节流状态: ${THROTTLED}${NC}"
+            [ $((THROTTLED_VAL & 0x1)) -ne 0 ] && echo -e "${RED}    ⚠ 当前欠压${NC}"
+            [ $((THROTTLED_VAL & 0x2)) -ne 0 ] && echo -e "${RED}    ⚠ 当前 ARM 频率受限${NC}"
+            [ $((THROTTLED_VAL & 0x4)) -ne 0 ] && echo -e "${RED}    ⚠ 当前过热${NC}"
+            [ $((THROTTLED_VAL & 0x10000)) -ne 0 ] && echo -e "${YELLOW}    ⚠ 曾经发生欠压${NC}"
+            [ $((THROTTLED_VAL & 0x20000)) -ne 0 ] && echo -e "${YELLOW}    ⚠ 曾经 ARM 频率受限${NC}"
+            [ $((THROTTLED_VAL & 0x40000)) -ne 0 ] && echo -e "${YELLOW}    ⚠ 曾经过热${NC}"
+        else
+            echo -e "${GREEN}  电压/节流状态: 正常 (0x0)${NC}"
+        fi
+    fi
+
+    GOVERNOR=$(cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor 2>/dev/null || true)
+    if [ -n "$GOVERNOR" ]; then
+        if [ "$GOVERNOR" = "ondemand" ] || [ "$GOVERNOR" = "conservative" ]; then
+            echo -e "${YELLOW}  CPU调速策略: ${GOVERNOR} (建议 performance)${NC}"
+        else
+            echo -e "${GREEN}  CPU调速策略: ${GOVERNOR}${NC}"
+        fi
+    fi
+else
+    echo -e "${YELLOW}  vcgencmd 不可用（非树莓派平台）${NC}"
+fi
 echo ""
 
 echo -e "${BLUE}8. 推荐下一步${NC}"

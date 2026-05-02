@@ -3,21 +3,44 @@ robot:
     platform: raspberry_pi_4b
     os: ubuntu_22_04_64bit
     ros_distro: humble
+
+    # TF frame names
     base_frame: base_link
     base_footprint_frame: base_footprint
     odom_frame: odom
     map_frame: map
     laser_frame: laser_frame
     imu_frame: imu_link
+
+    # Fusion
     odom_source: bridge
     ekf_enabled_by_default: false
-    wheel_radius_m: "待实测"
-    wheel_base_m: "待实测"
-    encoder_counts_per_rev: "待确认"
-    left_encoder_sign: "待实测"
-    right_encoder_sign: "待实测"
-    left_motor_sign: "待实测"
-    right_motor_sign: "待实测"
-    max_linear_speed_mps: "待实测"
-    max_angular_speed_radps: "待实测"
+
+    # Serial
+    baudrate: 115200
     cmd_timeout_sec: 0.25
+    drive_keepalive_sec: 0.10
+
+    # Kinematic parameters (estimated, pending physical measurement)
+    wheel_radius_m: 0.0325      # 待实测确认
+    wheel_base_m: 0.125         # 待实测确认
+    encoder_counts_per_rev: 2464 # 估计值 11*4*56, 待 TIM 编码器模式确认
+    left_encoder_sign: 1        # 待实测
+    right_encoder_sign: 1       # 待实测
+    left_motor_sign: 1          # 待实测
+    right_motor_sign: 1         # 待实测
+
+    # Speed limits (protocol encoding only, not navigation limits)
+    max_linear_speed_mps: 1.20
+    max_angular_speed_radps: 19.27
+
+    # TODO: 以下参数待机械定型后填入
+    # chassis_length_m: TBD
+    # chassis_width_m: TBD
+    # chassis_height_m: TBD
+    # ground_clearance_m: TBD
+    # lidar_mount_x: TBD
+    # lidar_mount_y: TBD
+    # lidar_mount_z: TBD
+    # lidar_mount_yaw: TBD
+    # footprint: TBD (当前 nav2 临时值 [[±0.11, ±0.075]])
