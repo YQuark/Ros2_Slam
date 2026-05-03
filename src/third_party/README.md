@@ -7,6 +7,19 @@
 - `robot_localization`
 - `geographic_info`
 
+## 本地兼容修改
+
+- `robot_localization` 已针对 ROS 2 Humble / Ubuntu 22.04 / arm64 做本地兼容修复。
+- 主要修复点包括 C++17 构建标准、Humble `rclcpp::Duration` 构造方式、`declare_parameter` 显式类型声明，以及 `GeographicLib` 链接。
+- 已验证命令：
+
+```bash
+source /opt/ros/humble/setup.bash
+CMAKE_BUILD_PARALLEL_LEVEL=1 colcon build --symlink-install --packages-select robot_localization --parallel-workers 1
+source install/setup.bash
+ros2 pkg prefix robot_localization
+```
+
 ## 为什么放在这里
 
 - 当前环境不依赖系统 `apt` 安装即可完成 `robot_localization` 相关构建

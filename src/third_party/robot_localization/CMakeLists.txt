@@ -1,9 +1,12 @@
 cmake_minimum_required(VERSION 3.5)
 project(robot_localization)
 
-if(NOT WIN32)
-  set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++14")
+list(APPEND CMAKE_MODULE_PATH /usr/share/cmake/geographiclib)
+
+if(NOT CMAKE_CXX_STANDARD)
+  set(CMAKE_CXX_STANDARD 17)
 endif()
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -30,6 +33,7 @@ find_package(tf2_geometry_msgs REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(Boost REQUIRED)
+find_package(GeographicLib REQUIRED)
 find_package(yaml_cpp_vendor REQUIRED)
 
 set(library_name rl_lib)
@@ -88,6 +92,7 @@ add_executable(
 target_link_libraries(
   ${library_name}
   ${EIGEN3_LIBRARIES}
+  ${GeographicLib_LIBRARIES}
 )
 
 ament_target_dependencies(
@@ -237,7 +242,7 @@ if(BUILD_TESTING)
 
   #### NAVSAT CONVERSION TESTS ####
   ament_add_gtest(test_navsat_conversions test/test_navsat_conversions.cpp)
-  target_link_libraries(test_navsat_conversions ${library_name})
+  target_link_libraries(test_navsat_conversions ${library_name} ${GeographicLib_LIBRARIES})
 
   #### NAVSAT TRANSFORM TESTS ####
   ament_add_gtest_executable(test_navsat_transform test/test_navsat_transform.cpp)

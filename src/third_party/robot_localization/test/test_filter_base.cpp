@@ -33,6 +33,7 @@
 #include <gtest/gtest.h>
 #include <Eigen/Dense>
 
+#include <chrono>
 #include <iostream>
 #include <queue>
 #include <string>
@@ -138,8 +139,9 @@ TEST(FilterBaseTest, DerivedFilterGetSet) {
 
   // Simple get/set checks
   double timeout = 7.4;
-  derived.setSensorTimeout(rclcpp::Duration(timeout));
-  EXPECT_EQ(derived.getSensorTimeout(), rclcpp::Duration(timeout));
+  auto timeout_duration = rclcpp::Duration(std::chrono::duration<double>(timeout));
+  derived.setSensorTimeout(timeout_duration);
+  EXPECT_EQ(derived.getSensorTimeout(), timeout_duration);
 
   double lastMeasTime = 3.83;
   derived.setLastMeasurementTime(rclcpp::Time(lastMeasTime));

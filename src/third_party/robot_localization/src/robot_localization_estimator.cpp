@@ -30,6 +30,8 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <chrono>
+#include <cstdint>
 #include <memory>
 #include <vector>
 
@@ -182,7 +184,8 @@ void RobotLocalizationEstimator::extrapolate(
   rclcpp::Time time_stamp = rclcpp::Time(
     boundary_state.time_stamp *
     1000000000);
-  rclcpp::Duration delta_duration = rclcpp::Duration(delta * 1000000000);
+  rclcpp::Duration delta_duration =
+    rclcpp::Duration(std::chrono::nanoseconds(static_cast<int64_t>(delta * 1000000000.0)));
   filter_->predict(time_stamp, delta_duration);
 
   state_at_req_time.time_stamp = requested_time;

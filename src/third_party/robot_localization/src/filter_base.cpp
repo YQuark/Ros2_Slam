@@ -35,6 +35,7 @@
 #include <robot_localization/filter_common.hpp>
 #include <robot_localization/filter_utilities.hpp>
 
+#include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -46,9 +47,9 @@ namespace robot_localization
 {
 FilterBase::FilterBase()
 : initialized_(false), use_control_(false),
-  use_dynamic_process_noise_covariance_(false), control_timeout_(0),
+  use_dynamic_process_noise_covariance_(false), control_timeout_(0, 0),
   last_measurement_time_(0, 0, RCL_ROS_TIME), latest_control_time_(0, 0, RCL_ROS_TIME),
-  sensor_timeout_(0), debug_stream_(nullptr),
+  sensor_timeout_(0, 0), debug_stream_(nullptr),
   acceleration_gains_(TWIST_SIZE, 0.0),
   acceleration_limits_(TWIST_SIZE, 0.0),
   deceleration_gains_(TWIST_SIZE, 0.0),
@@ -99,7 +100,7 @@ void FilterBase::reset()
   covariance_epsilon_ *= 0.001;
 
   // Assume 30Hz from sensor data (configurable)
-  sensor_timeout_ = rclcpp::Duration(0.033333333);
+  sensor_timeout_ = rclcpp::Duration(std::chrono::duration<double>(0.033333333));
 
   // Initialize our last update and measurement times
   last_measurement_time_ = rclcpp::Time(0, 0, RCL_ROS_TIME);
@@ -197,7 +198,7 @@ void FilterBase::processMeasurement(const Measurement & measurement)
     "------ FilterBase::processMeasurement (" << measurement.topic_name_ <<
       ") ------\n");
 
-  rclcpp::Duration delta(0);
+  rclcpp::Duration delta(0, 0);
 
   // If we've had a previous reading, then go through the predict/update
   // cycle. Otherwise, set our state and covariance to whatever we get
@@ -215,7 +216,7 @@ void FilterBase::processMeasurement(const Measurement & measurement)
 
     // Only want to carry out a prediction if it's
     // forward in time. Otherwise, just correct.
-    if (delta > rclcpp::Duration(0)) {
+    if (delta > rclcpp::Duration(0, 0)) {
       validateDelta(delta);
       predict(measurement.time_, delta);
 
@@ -247,7 +248,7 @@ void FilterBase::processMeasurement(const Measurement & measurement)
     initialized_ = true;
   }
 
-  if (delta >= rclcpp::Duration(0)) {
+  if (delta >= rclcpp::Duration(0, 0)) {
     // Update the last measurement and update time.
     // The measurement time is based on the time stamp of the
     // measurement, whereas the update time is based on this
