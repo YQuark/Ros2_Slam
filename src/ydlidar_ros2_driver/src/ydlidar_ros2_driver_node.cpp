@@ -25,7 +25,6 @@
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "std_srvs/srv/empty.hpp"
 #include <vector>
-#include <iostream>
 #include <string>
 #include <signal.h>
 
@@ -37,7 +36,7 @@ int main(int argc, char *argv[]) {
 
   auto node = rclcpp::Node::make_shared("ydlidar_ros2_driver_node");
 
-  RCLCPP_INFO(node->get_logger(), "[YDLIDAR INFO] Current ROS Driver Version: %s\n", ((std::string)ROS2Verision).c_str());
+  RCLCPP_INFO(node->get_logger(), "[YDLIDAR INFO] Current ROS Driver Version: %s\n", std::string(ROS2Verision).c_str());
 
   CYdLidar laser;
   std::string str_optvalue = "/dev/ydlidar";
@@ -226,15 +225,27 @@ int main(int argc, char *argv[]) {
       scan_msg->time_increment = scan.config.time_increment;
       scan_msg->range_min = scan.config.min_range;
       scan_msg->range_max = scan.config.max_range;
-      
-      int size = (scan.config.max_angle - scan.config.min_angle)/ scan.config.angle_increment + 1;
+
+      // Guard against division-by-zero on angle_increment (H2)
+      if (std::abs(scan.config.angle_increment) < 1e-9f) {
+        RCLCPP_WARN(node->get_logger(), "Skipping scan: angle_increment is near zero");
+        continue;
+      }
+
+      int size = static_cast<int>((scan.config.max_angle - scan.config.min_angle) / scan.config.angle_increment) + 1;
+      // Guard against integer overflow / invalid size (H3)
+      if (size <= 0 || size > 100000) {
+        RCLCPP_WARN(node->get_logger(), "Skipping scan: computed size %d is out of valid range", size);
+        continue;
+      }
+
       scan_msg->ranges.resize(size);
       scan_msg->intensities.resize(size);
-      for (size_t i=0; i < scan.points.size(); i++) 
+      for (size_t i = 0; i < scan.points.size(); i++)
       {
         const auto& p = scan.points.at(i);
-        int index = std::ceil((scan.points[i].angle - scan.config.min_angle)/scan.config.angle_increment);
-        if(index >=0 && index < size) {
+        int index = std::ceil((scan.points[i].angle - scan.config.min_angle) / scan.config.angle_increment);
+        if (index >= 0 && index < size) {
           scan_msg->ranges[index] = scan.points[i].range;
           scan_msg->intensities[index] = scan.points[i].intensity;
         }

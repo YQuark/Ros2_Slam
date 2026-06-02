@@ -11,9 +11,15 @@ from geometry_msgs.msg import Twist, TransformStamped
 from tf2_ros import TransformBroadcaster
 import math
 import sys
-import select
-import termios
-import tty
+
+# Unix-only terminal modules (M3: guard for Windows compatibility)
+try:
+    import select
+    import termios
+    import tty
+    HAS_TERMIOS = True
+except ImportError:
+    HAS_TERMIOS = False
 
 
 class OdomSimulator(Node):
@@ -40,8 +46,8 @@ class OdomSimulator(Node):
         # TF广播器
         self.tf_broadcaster = TransformBroadcaster(self)
 
-        # 读取键盘设置
-        self.settings = termios.tcgetattr(sys.stdin)
+        # 读取键盘设置 (M4: save for restoration in finally)
+        self.settings = termios.tcgetattr(sys.stdin) if HAS_TERMIOS else None
 
         self.get_logger().info('=== 里程计模拟器已启动 ===')
         self.get_logger().info('使用 teleop_twist_keyboard 控制')
@@ -137,6 +143,9 @@ def main(args=None):
     except KeyboardInterrupt:
         pass
     finally:
+        # M4: Restore terminal settings on exit
+        if HAS_TERMIOS and odom_sim.settings is not None:
+            termios.tcsetattr(sys.stdin, termios.TCSADRAIN, odom_sim.settings)
         odom_sim.destroy_node()
         rclpy.shutdown()
 

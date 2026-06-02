@@ -4,8 +4,7 @@
 
 ## 当前包含
 
-- `robot_localization`
-- `geographic_info`
+- `robot_localization` — EKF/UKF 定位库（vendored，已做本地兼容修改）
 
 ## 本地兼容修改
 

@@ -188,6 +188,39 @@ More paramters details, see [here](details.md)
 
 If you have any extra questions, please feel free to [contact us](http://www.ydlidar.cn/cn/contact)
 
+---
+
+## 本项目本地修改说明
+
+本包在上游 YDLIDAR ROS2 Driver 基础上做了以下本地修改，适配 Raspberry Pi 4B + ROS2 Humble 环境。
+
+### 安全性修复
+
+1. **除零防护** (`ydlidar_ros2_driver_node.cpp`)
+   - `angle_increment` 为零时跳过该帧扫描，避免除零崩溃
+   - `size` 计算结果超出 `[0, 100000]` 范围时跳过，避免整数溢出
+
+2. **缓冲区越界防护** (`ydlidar_ros2_driver_client.cpp`)
+   - `time_increment` 为零时跳过回调，避免除零
+   - `count` 钳制到 `scan->ranges.size()`，避免越界读取
+
+3. **Windows 兼容性** (`odom_simulator.py`)
+   - `select`、`termios`、`tty` 导入用 `try/except` 包裹，Windows 下优雅降级
+   - 退出时恢复终端设置（`finally` 块）
+
+### 代码质量
+
+- 移除重复的 `#include <iostream>`
+- 修复 C-style cast 为 `std::string()` 构造
+
+### 构建系统
+
+- `YDLidar-SDK/CMakeLists.txt` 的 `cmake_minimum_required` 从 2.8 升级到 3.5，兼容 ROS2 Humble
+
+### 配置说明
+
+- `config/slam_params.yaml` 为上游示例配置，本项目实际使用 `src/robot_bringup/config/slam_toolbox_mapping*.yaml`
+
 
 
 

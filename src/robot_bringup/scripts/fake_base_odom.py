@@ -70,6 +70,8 @@ class FakeBaseOdom(Node):
         self.x += vx * math.cos(yaw_mid) * dt
         self.y += vx * math.sin(yaw_mid) * dt
         self.yaw += wz * dt
+        # L3: Wrap yaw to [-pi, pi] to prevent floating-point precision degradation
+        self.yaw = math.atan2(math.sin(self.yaw), math.cos(self.yaw))
 
         qz = math.sin(self.yaw * 0.5)
         qw = math.cos(self.yaw * 0.5)

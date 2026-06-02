@@ -22,7 +22,9 @@
 - `SET_VELOCITY` (0x01)：`float linear_x + float angular_z + uint8 enable + uint8 mode`（10 字节）
 - `STATUS` (0x81)：47 字节，包含轮速、编码器、电池、电流、IMU 原始数据、错误标志、控制模式
 - `/odom.twist` 默认使用 STATUS 中的轮速计算
+- `/odom` 的 yaw 角度包裹到 `[-π, π]`，防止长时间运行浮点精度下降
 - 当前统一默认时序：`cmd_timeout=0.25s`、`drive_keepalive_sec=0.10s`
+- 速度安全限幅：`max_linear_vel=0.5 m/s`、`max_angular_vel=2.0 rad/s`（超出范围的 `/cmd_vel` 会被钳制）
 
 ## 推荐启动方式
 

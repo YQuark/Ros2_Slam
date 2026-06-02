@@ -1,3 +1,9 @@
+# ===========================================================================
+# 注意：此文件为上游 YDLIDAR 示例配置，非本项目实际使用的 SLAM 参数。
+# 本项目实际使用的 SLAM 配置位于 src/robot_bringup/config/slam_toolbox_mapping*.yaml
+# 此文件中的参数值（如 minimum_travel_distance: 0.5, map_update_interval: 5.0）
+# 与实际配置差异较大，请勿直接使用。
+# ===========================================================================
 slam_toolbox:
   ros__parameters:
     # 插件参数

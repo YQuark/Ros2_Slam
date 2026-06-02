@@ -14,7 +14,18 @@
 #define RAD2DEG(x) ((x)*180./M_PI)
 
 static void scanCb(sensor_msgs::msg::LaserScan::SharedPtr scan) {
+  // Guard against division-by-zero on time_increment (H1)
+  if (scan->time_increment <= 0.0f) {
+    printf("[YDLIDAR WARN]: Skipping scan: time_increment is zero or negative\n");
+    return;
+  }
+
   int count = scan->scan_time / scan->time_increment;
+  // Clamp count to actual ranges size to prevent buffer over-read (H1)
+  if (count > static_cast<int>(scan->ranges.size())) {
+    count = static_cast<int>(scan->ranges.size());
+  }
+
   printf("[YDLIDAR INFO]: I heard a laser scan %s[%d]:\n", scan->header.frame_id.c_str(), count);
   printf("[YDLIDAR INFO]: angle_range : [%f, %f]\n", RAD2DEG(scan->angle_min),
          RAD2DEG(scan->angle_max));

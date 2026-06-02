@@ -69,7 +69,6 @@ ros2_ws
 │   ├── stm32_robot_bridge # 串口协议桥接与 odom/imu 发布
 │   ├── third_party/       # vendored 依赖
 │   ├── ydlidar_ros2_driver
-│   ├── ros2_astra_camera
 │   └── YDLidar-SDK
 ├── README.md
 └── SYSTEM_OVERVIEW.md
@@ -78,20 +77,19 @@ ros2_ws
 ## 文档导航
 
 - [文档总览](./docs/README.md)
-- [项目范围](./docs/00_project_scope.md)
-- [树莓派环境](./docs/01_raspberrypi_setup.md)
-- [硬件连接](./docs/02_hardware_connection.md)
-- [YDLIDAR X2 与建图入口](./docs/03_lidar_mapping.md)
+- [项目范围](./docs/00-项目范围.md)
 - [快速开始](./docs/01-快速开始.md)
 - [系统架构](./docs/02-系统架构.md)
 - [硬件接线与设备识别](./docs/03-硬件接线与设备识别.md)
+- [串口桥接协议](./docs/04-串口桥接协议.md)
 - [建图指南](./docs/04-建图指南.md)
 - [建图测试流程](./docs/05-建图测试流程.md)
-- [导航拆解调试](./docs/05-导航拆解调试.md)
+- [导航拆解调试](./docs/05b-导航拆解调试.md)
 - [底盘与串口桥接](./docs/06-底盘与串口桥接.md)
 - [运维与排障](./docs/07-运维与排障.md)
 - [开发与二次复用](./docs/08-开发与二次复用.md)
 - [迁移与兼容说明](./docs/09-迁移与兼容说明.md)
+- [树莓派4B雷达迁移问题清单](./docs/10-树莓派4B雷达迁移问题清单.md)
 
 ## 设计原则
 

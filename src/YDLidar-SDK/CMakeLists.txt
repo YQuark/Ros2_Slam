@@ -1,4 +1,5 @@
-cmake_minimum_required(VERSION 2.8)
+# Bumped from 2.8 to 3.5 for ROS2 Humble compatibility (M6)
+cmake_minimum_required(VERSION 3.5)
 project(ydlidar_sdk C CXX)
 
 #########################################################

@@ -176,6 +176,10 @@ class STM32Bridge(Node):
         self.declare_parameter('cmd_log_interval_sec', 0.0)
         self.declare_parameter('excluded_ports', [])
 
+        # M12: Velocity bounds for safety clamping
+        self.declare_parameter('max_linear_vel', 0.5)   # m/s
+        self.declare_parameter('max_angular_vel', 2.0)   # rad/s
+
         self.port = str(self.get_parameter('port').value)
         self.baudrate = int(self.get_parameter('baudrate').value)
         self.cmd_vel_topic = self.get_parameter('cmd_vel_topic').value
@@ -217,6 +221,10 @@ class STM32Bridge(Node):
             for port in excluded_ports_list + env_excluded_ports
             if port
         }
+
+        # M12: Velocity bounds for safety clamping
+        self.max_linear_vel = float(self.get_parameter('max_linear_vel').value)
+        self.max_angular_vel = float(self.get_parameter('max_angular_vel').value)
 
         self.serial = None
         self.connected_port = ''
@@ -515,8 +523,9 @@ class STM32Bridge(Node):
 
     def on_cmd_vel(self, msg: Twist) -> None:
         self.has_seen_cmd_vel = True
-        self.target_vx = float(msg.linear.x)
-        self.target_wz = float(msg.angular.z)
+        # M12: Clamp velocities to safe bounds
+        self.target_vx = max(-self.max_linear_vel, min(self.max_linear_vel, float(msg.linear.x)))
+        self.target_wz = max(-self.max_angular_vel, min(self.max_angular_vel, float(msg.angular.z)))
         self.last_cmd_time = self.get_clock().now()
         self.log_cmd_vel_rx(self.target_vx, self.target_wz)
 

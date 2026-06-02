@@ -33,17 +33,23 @@ ros2 launch robot_bringup system.launch.py mode:=mapping
 - `launch/system.launch.py`
   总编排入口。
 - `launch/sensors.launch.py`
-  传感器层。
+  传感器层（雷达、IMU 等）。
 - `launch/base.launch.py`
-  真实底盘桥接。
+  真实底盘桥接（stm32_robot_bridge）。
 - `launch/base_ekf.launch.py`
   底盘 EKF 融合层。
 - `launch/slam.launch.py`
   `slam_toolbox` 建图。
 - `launch/localization.launch.py`
-  定位。
+  定位（map_server + AMCL）。
 - `launch/nav2.launch.py`
-  `Nav2`。
+  `Nav2` 导航。
+- `launch/viz.launch.py`
+  RViz 可视化。
+- `launch/camera_scan.launch.py`
+  摄像头扫描（预留）。
+- `launch/visual_odom.launch.py`
+  视觉里程计（预留）。
 
 ## 使用原则
 
@@ -57,3 +63,4 @@ ros2 launch robot_bringup system.launch.py mode:=mapping
 - 雷达外参默认从 `base_link` 发布到 `laser_frame`：`x=0.07, y=0.0, z=0.13, roll=0, pitch=0, yaw=1.570796326795`
 - `precision` 雷达建图档只保留更细的 `0.03m` 地图分辨率，其余匹配行为尽量贴近 `quality`
 - 底盘命令时序默认和 `robot.sh navigation` 保持一致：`cmd_timeout=0.25s`、`drive_keepalive_sec=0.10s`
+- 底盘速度安全限幅：`max_linear_vel=0.5 m/s`、`max_angular_vel=2.0 rad/s`（可通过 launch 参数覆盖）
