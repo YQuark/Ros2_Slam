@@ -20,11 +20,15 @@
 - 串口默认参数：`115200 8N1`
 - 协议帧格式：`0xA5 0x5A + length(1B) + cmd(1B) + payload + checksum8(1B)`
 - `SET_VELOCITY` (0x01)：`float linear_x + float angular_z + uint8 enable + uint8 mode`（10 字节）
-- `STATUS` (0x81)：47 字节，包含轮速、编码器、电池、电流、IMU 原始数据、错误标志、控制模式
+- `ESTOP` (0x02)：`uint8 enabled`（1 字节），节点退出或串口故障时自动发送
+- `STATUS` (0x81)：45 字节，包含轮速、编码器、电池、电流、IMU 原始数据、错误标志、控制模式
 - `/odom.twist` 默认使用 STATUS 中的轮速计算
 - `/odom` 的 yaw 角度包裹到 `[-π, π]`，防止长时间运行浮点精度下降
 - 当前统一默认时序：`cmd_timeout=0.25s`、`drive_keepalive_sec=0.10s`
 - 速度安全限幅：`max_linear_vel=0.5 m/s`、`max_angular_vel=2.0 rad/s`（超出范围的 `/cmd_vel` 会被钳制）
+- 帧解析：`MAX_FRAME_LENGTH=128`，防止畸形 length 字段导致解析卡顿
+- cmd_vel 超时后以 3× keepalive 间隔周期发送零速，确保 MCU 可靠收到停车命令
+- 串口重连采用非阻塞状态机（settling → syncing → 正常），不阻塞 ROS2 executor
 
 ## 推荐启动方式
 

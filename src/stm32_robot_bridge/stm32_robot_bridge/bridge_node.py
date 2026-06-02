@@ -32,11 +32,13 @@ CMD_STATUS = 0x81
 #   + battery_voltage(f32) + left_current(f32) + right_current(f32)
 #   + imu_accel[3](i16) + imu_gyro[3](i16)
 #   + error_flags(u32) + control_mode(u8)
-STATUS_PAYLOAD_SIZE = 47  # 4+4+4+4+4+4+4+6+6+4+1
+STATUS_PAYLOAD_SIZE = 45  # 4+4+4+4+4+4+4+6+6+4+1 = f32*4+i32*2+f32*3+i16*6+u32+u8
 
 MODE_IDLE = 0
 MODE_OPEN_LOOP = 1
 MODE_CLOSED_LOOP = 2
+
+MAX_FRAME_LENGTH = 128  # Maximum valid payload length for v1 protocol
 
 
 def _wrap_angle(angle: float) -> float:
@@ -127,6 +129,9 @@ class Protocol:
         while i + 3 < len(buf):
             if buf[i] == FRAME_SOF and buf[i + 1] == FRAME_SOF2:
                 length = buf[i + 2]
+                if length > MAX_FRAME_LENGTH:
+                    i += 1
+                    continue
                 frame_end = i + 4 + length + 1  # header(4) + payload + checksum(1)
                 if frame_end > len(buf):
                     return None, i  # incomplete, wait for more data
@@ -243,6 +248,13 @@ class STM32Bridge(Node):
         self.target_vx = 0.0
         self.target_wz = 0.0
         self.has_seen_cmd_vel = False
+
+        # Non-blocking reconnection state machine
+        # SAFETY: This node assumes SingleThreadedExecutor.
+        # Switching to MultiThreadedExecutor requires adding locks to all shared state.
+        self._reconnect_state = None  # None | 'settling' | 'syncing'
+        self._reconnect_deadline = 0.0
+        self._sync_remaining = 0
 
         self.x = 0.0
         self.y = 0.0
@@ -366,9 +378,21 @@ class STM32Bridge(Node):
             except Exception:
                 pass
 
+    def send_estop(self) -> None:
+        """Send ESTOP frame to stop motors immediately."""
+        if self.serial is not None:
+            try:
+                estop_payload = struct.pack('<B', 0)  # enabled=0 (stop)
+                frame = Protocol.build_frame(CMD_ESTOP, estop_payload)
+                self.serial.write(frame)
+                self.serial.flush()
+            except Exception:
+                pass
+
     def close_serial(self, reason: str) -> None:
         port = self.connected_port
         if self.serial is not None:
+            self.send_estop()
             try:
                 self.serial.close()
             except Exception:
@@ -422,9 +446,10 @@ class STM32Bridge(Node):
             self.get_logger().info(f'Opened STM32 serial {resolved_port}@{self.baudrate}')
             self.set_modem_lines_low()
             self.reset_serial_buffers()
-            time.sleep(max(self.startup_settle_sec, 0.0))
-            self.startup_sync_controller()
-            self.write_frame(CMD_STATUS, b'')
+            # Non-blocking: start settle timer, sync will happen in control_loop
+            self._reconnect_state = 'settling'
+            self._reconnect_deadline = time.monotonic() + max(self.startup_settle_sec, 0.0)
+            self._sync_remaining = 3
             return True
         except Exception as e:
             self.serial = None
@@ -530,6 +555,19 @@ class STM32Bridge(Node):
         self.log_cmd_vel_rx(self.target_vx, self.target_wz)
 
     def control_loop(self) -> None:
+        # Handle non-blocking reconnection state machine
+        if self._reconnect_state == 'settling':
+            if time.monotonic() >= self._reconnect_deadline:
+                self._reconnect_state = 'syncing'
+            return  # skip this tick during settle
+        elif self._reconnect_state == 'syncing':
+            if self._sync_remaining > 0:
+                self.write_frame(CMD_SET_VELOCITY, self.encode_drive_payload(0.0, 0.0))
+                self._sync_remaining -= 1
+                return
+            self._reconnect_state = None
+            self.write_frame(CMD_STATUS, b'')
+
         self.ensure_serial()
         self.read_serial_frames()
 
@@ -547,11 +585,13 @@ class STM32Bridge(Node):
         drive_key = (vx, wz)
         now_monotonic = time.monotonic()
         should_send = self.last_drive_cmd != drive_key
+        # Always apply keepalive when we have seen cmd_vel, at different rates
         if cmd_active:
-            should_send = (
-                should_send
-                or (now_monotonic - self.last_drive_tx_time) >= max(self.drive_keepalive_sec, 0.05)
-            )
+            keepalive_interval = max(self.drive_keepalive_sec, 0.05)
+        else:
+            keepalive_interval = max(self.drive_keepalive_sec * 3, 0.15)
+        if (now_monotonic - self.last_drive_tx_time) >= keepalive_interval:
+            should_send = True
         if self.has_seen_cmd_vel and should_send:
             sent = self.write_frame(CMD_SET_VELOCITY, payload)
             self.log_drive_tx(vx, wz, sent, cmd_active)
@@ -838,7 +878,9 @@ def main(args=None) -> None:
     except KeyboardInterrupt:
         pass
     finally:
+        # Send ESTOP before closing serial to stop motors immediately
         if node.serial is not None:
+            node.send_estop()
             try:
                 node.serial.close()
             except Exception:
