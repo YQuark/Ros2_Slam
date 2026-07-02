@@ -91,7 +91,8 @@ class MappingMetricsMonitor(Node):
 
         self.create_subscription(Odometry, '/odom', self.on_odom, 20)
         self.create_subscription(Odometry, '/odometry/filtered', self.on_filtered, 20)
-        self.create_subscription(Imu, '/imu/data', self.on_imu, 20)
+        if args.imu_topic:
+            self.create_subscription(Imu, args.imu_topic, self.on_imu, 20)
         self.create_timer(1.0 / self.print_hz, self.on_timer)
 
         self.get_logger().info(
@@ -306,11 +307,12 @@ class MappingMetricsMonitor(Node):
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description='Live quantitative monitor for mapping odom/imu streams.')
+    parser = argparse.ArgumentParser(description='Live quantitative monitor for mapping odom and optional IMU streams.')
     parser.add_argument('--print-hz', type=float, default=2.0, help='Console summary frequency.')
     parser.add_argument('--static-linear-threshold', type=float, default=0.02, help='Static vx threshold in m/s.')
     parser.add_argument('--static-angular-threshold', type=float, default=3.0, help='Static wz threshold in deg/s.')
     parser.add_argument('--static-imu-gz-threshold', type=float, default=3.0, help='Static imu gz threshold in deg/s.')
+    parser.add_argument('--imu-topic', default='', help='Optional IMU topic. Leave empty for wheel-only v2 STATUS.')
     parser.add_argument('--csv-out', default='', help='Optional CSV file path for continuous metric logging.')
     return parser.parse_args()
 

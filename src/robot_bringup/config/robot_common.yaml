@@ -22,7 +22,7 @@ robot:
     drive_keepalive_sec: 0.10
 
     # Kinematic parameters (estimated, pending physical measurement)
-    wheel_radius_m: 0.0325      # 待实测确认
+    wheel_radius_m: 0.0350      # 下位机当前真实默认值
     wheel_base_m: 0.125         # 待实测确认
     encoder_counts_per_rev: 2464 # 估计值 11*4*56, 待 TIM 编码器模式确认
     left_encoder_sign: 1        # 待实测

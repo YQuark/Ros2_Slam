@@ -3,7 +3,7 @@
 set -euo pipefail
 
 emit_first=1
-active_probe=0
+passive_probe=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -11,164 +11,26 @@ while [ $# -gt 0 ]; do
             emit_first=0
             ;;
         --probe)
-            active_probe=1
+            passive_probe=1
             ;;
     esac
     shift
 done
 
-BASE_PORT_HINT="${ROBOT_BASE_PORT_HINT:-${BASE_PORT_HINT:-}}"
-LIDAR_PORT_HINT="${ROBOT_LIDAR_PORT_HINT:-${LIDAR_PORT_HINT:-}}"
-
-declare -A SEEN=()
-RESULTS=()
-
-add_port() {
-    local candidate="$1"
-    local resolved="$candidate"
-
-    [ -e "$candidate" ] || return 0
-
-    if resolved="$(readlink -f "$candidate" 2>/dev/null)"; then
-        :
-    else
-        resolved="$candidate"
-    fi
-
-    [ -n "$resolved" ] || return 0
-    [ -e "$resolved" ] || return 0
-
-    if [ -n "${SEEN[$resolved]:-}" ]; then
-        return 0
-    fi
-
-    SEEN[$resolved]=1
-    RESULTS+=("$resolved")
-}
+BASE_PORT_HINT="${ROBOT_BASE_PORT_HINT:-${BASE_PORT_HINT:-/dev/serial0}}"
 
 resolve_port() {
     local candidate="$1"
     readlink -f "$candidate" 2>/dev/null || printf '%s\n' "$candidate"
 }
 
-move_hint_to_end() {
-    local hint="$1"
-    local resolved_hint=""
-    local port=""
-    local filtered=()
-
-    [ -n "$hint" ] || return 0
-    resolved_hint="$(resolve_port "$hint")"
-
-    for port in "${RESULTS[@]}"; do
-        if [ "$port" != "$resolved_hint" ]; then
-            filtered+=("$port")
-        fi
-    done
-
-    for port in "${RESULTS[@]}"; do
-        if [ "$port" = "$resolved_hint" ]; then
-            filtered+=("$port")
-            RESULTS=("${filtered[@]}")
-            return 0
-        fi
-    done
+add_if_exists() {
+    local candidate="$1"
+    [ -e "$candidate" ] || return 0
+    resolve_port "$candidate"
 }
 
-order_results_by_path() {
-    local candidate=""
-    local resolved=""
-    local port=""
-    local found=0
-    local ordered=()
-
-    for candidate in /dev/serial/by-path/*; do
-        [ -e "$candidate" ] || continue
-        resolved="$(resolve_port "$candidate")"
-        for port in "${RESULTS[@]}"; do
-            if [ "$port" = "$resolved" ]; then
-                found=0
-                for candidate in "${ordered[@]}"; do
-                    if [ "$candidate" = "$resolved" ]; then
-                        found=1
-                        break
-                    fi
-                done
-                if [ "$found" -eq 0 ]; then
-                    ordered+=("$resolved")
-                fi
-                break
-            fi
-        done
-    done
-
-    for port in "${RESULTS[@]}"; do
-        found=0
-        for candidate in "${ordered[@]}"; do
-            if [ "$candidate" = "$port" ]; then
-                found=1
-                break
-            fi
-        done
-        if [ "$found" -eq 0 ]; then
-            ordered+=("$port")
-        fi
-    done
-
-    RESULTS=("${ordered[@]}")
-}
-
-for pattern in \
-    /dev/serial/by-id/*CP210* \
-    /dev/serial/by-id/*cp210* \
-    /dev/serial/by-id/*Silicon_Labs* \
-    /dev/serial/by-id/*USB*UART*
-do
-    for candidate in $pattern; do
-        [ -e "$candidate" ] || continue
-        add_port "$candidate"
-    done
-done
-
-for port in /dev/ttyUSB*; do
-    [ -e "$port" ] || continue
-
-    if command -v udevadm >/dev/null 2>&1; then
-        props="$(udevadm info -q property -n "$port" 2>/dev/null || true)"
-        if printf '%s\n' "$props" | grep -Eiq 'ID_VENDOR_ID=10c4|ID_MODEL_ID=ea60|CP210'; then
-            add_port "$port"
-            continue
-        fi
-    fi
-
-    tty_name="${port##*/}"
-    driver_path="$(readlink -f "/sys/class/tty/${tty_name}/device/driver" 2>/dev/null || true)"
-    if printf '%s\n' "$driver_path" | grep -q 'cp210x'; then
-        add_port "$port"
-    fi
-done
-
-if [ "${#RESULTS[@]}" -eq 0 ]; then
-    exit 0
-fi
-
-order_results_by_path
-move_hint_to_end "$BASE_PORT_HINT"
-
-if [ -n "$LIDAR_PORT_HINT" ]; then
-    RESOLVED_LIDAR_HINT="$(resolve_port "$LIDAR_PORT_HINT")"
-    FILTERED_RESULTS=()
-    for port in "${RESULTS[@]}"; do
-        if [ "$port" != "$RESOLVED_LIDAR_HINT" ]; then
-            FILTERED_RESULTS+=("$port")
-        fi
-    done
-    if [ "${#FILTERED_RESULTS[@]}" -gt 0 ]; then
-        RESULTS=("${FILTERED_RESULTS[@]}")
-    fi
-fi
-
-probe_base_port() {
+probe_v2_status() {
     local port="$1"
 
     python3 - "$port" <<'PY'
@@ -181,163 +43,139 @@ except Exception:
     sys.exit(2)
 
 port = sys.argv[1]
-
-LINK_SOF = 0xA5
-LINK_EOF = 0x5A
-LINK_VER = 0x01
-MSG_GET_STATUS = 0x02
-FLAG_ACK_REQ = 0x01
-FLAG_IS_ACK = 0x02
+FRAME0 = 0xA5
+FRAME1 = 0x5A
+CMD_STATUS = 0x81
+STATUS_PAYLOAD_SIZE = 64
+MAX_LENGTH = 65
 
 
-def crc16_ccitt_false(data: bytes) -> int:
-    crc = 0xFFFF
+def crc8(data: bytes) -> int:
+    crc = 0
     for byte in data:
-        crc ^= byte << 8
+        crc ^= byte
         for _ in range(8):
-            if crc & 0x8000:
-                crc = ((crc << 1) ^ 0x1021) & 0xFFFF
+            if crc & 0x80:
+                crc = ((crc << 1) ^ 0x5E) & 0xFF
             else:
-                crc = (crc << 1) & 0xFFFF
+                crc = (crc << 1) & 0xFF
     return crc
 
 
-def cobs_encode(data: bytes) -> bytes:
-    out = bytearray()
-    idx = 0
-    while idx < len(data):
-        code_pos = len(out)
-        out.append(0)
-        code = 1
-        while idx < len(data) and data[idx] != 0 and code < 0xFF:
-            out.append(data[idx])
-            idx += 1
-            code += 1
-        out[code_pos] = code
-        if idx < len(data) and data[idx] == 0:
-            idx += 1
-    return bytes(out)
+def parse_frames(buffer: bytearray):
+    frames = []
+    while True:
+        header = -1
+        for index in range(max(0, len(buffer) - 1)):
+            if buffer[index] == FRAME0 and buffer[index + 1] == FRAME1:
+                header = index
+                break
+        if header < 0:
+            if buffer and buffer[-1] == FRAME0:
+                del buffer[:-1]
+            else:
+                buffer.clear()
+            return frames
+        if header > 0:
+            del buffer[:header]
+        if len(buffer) < 3:
+            return frames
 
+        length = buffer[2]
+        if length == 0 or length > MAX_LENGTH:
+            del buffer[0]
+            continue
+        frame_len = length + 4
+        if len(buffer) < frame_len:
+            return frames
 
-def cobs_decode(data: bytes):
-    out = bytearray()
-    idx = 0
-    while idx < len(data):
-        code = data[idx]
-        if code == 0:
-            return None
-        idx += 1
-        for _ in range(code - 1):
-            if idx >= len(data):
-                return None
-            out.append(data[idx])
-            idx += 1
-        if code != 0xFF and idx < len(data):
-            out.append(0)
-    return bytes(out)
-
-
-def build_get_status(seq: int) -> bytes:
-    payload = b""
-    header = bytes([LINK_SOF, LINK_VER, MSG_GET_STATUS, FLAG_ACK_REQ, seq]) + len(payload).to_bytes(2, "little")
-    crc = crc16_ccitt_false(header[1:] + payload)
-    frame = header + payload + crc.to_bytes(2, "little") + bytes([LINK_EOF])
-    return cobs_encode(frame) + b"\x00"
-
-
-def parse_frame(raw: bytes):
-    dec = cobs_decode(raw)
-    if dec is None or len(dec) < 10:
-        return None
-    if dec[0] != LINK_SOF or dec[-1] != LINK_EOF:
-        return None
-    if dec[1] != LINK_VER:
-        return None
-    payload_len = int.from_bytes(dec[5:7], "little")
-    if len(dec) != payload_len + 10:
-        return None
-    payload = dec[7:7 + payload_len]
-    recv_crc = int.from_bytes(dec[7 + payload_len:9 + payload_len], "little")
-    calc_crc = crc16_ccitt_false(dec[1:7] + payload)
-    if recv_crc != calc_crc:
-        return None
-    return dec[2], dec[3], dec[4], payload
+        body = bytes(buffer[2:3 + length])
+        if crc8(body) != buffer[frame_len - 1]:
+            del buffer[0]
+            continue
+        cmd = buffer[3]
+        payload = bytes(buffer[4:3 + length])
+        frames.append((cmd, payload))
+        del buffer[:frame_len]
 
 
 try:
-    ser = serial.Serial(port, 115200, timeout=0.2)
+    ser = serial.Serial(port, 115200, timeout=0.05, write_timeout=0.05, rtscts=False, dsrdtr=False)
 except Exception:
     sys.exit(1)
 
 try:
-    time.sleep(0.25)
-    ser.reset_input_buffer()
-
-    for seq in range(1, 3):
-        ser.write(build_get_status(seq))
-        ser.flush()
-
-        deadline = time.time() + 0.35
-        buf = bytearray()
-        while time.time() < deadline:
-            chunk = ser.read(256)
-            if chunk:
-                buf.extend(chunk)
-                while True:
-                    try:
-                        end = buf.index(0)
-                    except ValueError:
-                        break
-                    raw = bytes(buf[:end])
-                    del buf[:end + 1]
-                    if not raw:
-                        continue
-                    parsed = parse_frame(raw)
-                    if not parsed:
-                        continue
-                    msg_type, flags, _seq, payload = parsed
-                    if msg_type == MSG_GET_STATUS and (flags & FLAG_IS_ACK) and len(payload) >= 20:
-                        print(port)
-                        raise SystemExit(0)
-            else:
-                time.sleep(0.03)
-except Exception:
-    pass
+    for attr in ("dtr", "rts"):
+        try:
+            setattr(ser, attr, False)
+        except Exception:
+            pass
+    deadline = time.monotonic() + 1.2
+    buf = bytearray()
+    while time.monotonic() < deadline:
+        chunk = ser.read(256)
+        if chunk:
+            buf.extend(chunk)
+            for cmd, payload in parse_frames(buf):
+                if cmd == CMD_STATUS and len(payload) == STATUS_PAYLOAD_SIZE and payload[0] == 2:
+                    print(port)
+                    raise SystemExit(0)
+        else:
+            time.sleep(0.02)
 finally:
     ser.close()
+
+sys.exit(1)
 PY
 }
 
-if [ "$active_probe" -eq 1 ]; then
-    MATCHED_RESULTS=()
-    for port in "${RESULTS[@]}"; do
-        matched="$(probe_base_port "$port" 2>/dev/null || true)"
-        if [ -n "$matched" ]; then
-            MATCHED_RESULTS+=("$matched")
+RESULTS=()
+if [ -n "$BASE_PORT_HINT" ]; then
+    while IFS= read -r port; do
+        [ -n "$port" ] && RESULTS+=("$port")
+    done < <(add_if_exists "$BASE_PORT_HINT")
+fi
+
+if [ "$BASE_PORT_HINT" != "/dev/serial0" ]; then
+    while IFS= read -r port; do
+        [ -n "$port" ] && RESULTS+=("$port")
+    done < <(add_if_exists "/dev/serial0")
+fi
+
+if [ -e "/dev/ttyAMA0" ]; then
+    resolved_ama="$(resolve_port "/dev/ttyAMA0")"
+    duplicate=0
+    for port in "${RESULTS[@]:-}"; do
+        if [ "$port" = "$resolved_ama" ]; then
+            duplicate=1
+            break
         fi
     done
-    RESULTS=("${MATCHED_RESULTS[@]}")
+    if [ "$duplicate" -eq 0 ]; then
+        RESULTS+=("$resolved_ama")
+    fi
+fi
+
+if [ "${#RESULTS[@]}" -eq 0 ]; then
+    exit 0
+fi
+
+if [ "$passive_probe" -eq 1 ]; then
+    MATCHED=()
+    for port in "${RESULTS[@]}"; do
+        matched="$(probe_v2_status "$port" 2>/dev/null || true)"
+        if [ -n "$matched" ]; then
+            MATCHED+=("$matched")
+        fi
+    done
+    RESULTS=("${MATCHED[@]}")
     if [ "${#RESULTS[@]}" -eq 0 ]; then
         exit 0
-    fi
-    order_results_by_path
-    move_hint_to_end "$BASE_PORT_HINT"
-    if [ -n "$LIDAR_PORT_HINT" ]; then
-        RESOLVED_LIDAR_HINT="$(resolve_port "$LIDAR_PORT_HINT")"
-        FILTERED_RESULTS=()
-        for port in "${RESULTS[@]}"; do
-            if [ "$port" != "$RESOLVED_LIDAR_HINT" ]; then
-                FILTERED_RESULTS+=("$port")
-            fi
-        done
-        if [ "${#FILTERED_RESULTS[@]}" -gt 0 ]; then
-            RESULTS=("${FILTERED_RESULTS[@]}")
-        fi
     fi
 fi
 
 if [ "$emit_first" -eq 1 ]; then
-    printf '%s\n' "${RESULTS[${#RESULTS[@]}-1]}"
+    printf '%s\n' "${RESULTS[0]}"
     exit 0
 fi
 

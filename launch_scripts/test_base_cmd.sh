@@ -11,7 +11,7 @@ source "${SCRIPT_DIR}/lib/common.sh"
 DETECT_BASE_PORT_SCRIPT="${SCRIPT_DIR}/detect_base_port.sh"
 STOP_ALL_SCRIPT="${SCRIPT_DIR}/stop_all.sh"
 
-BASE_PORT="${BASE_PORT:-/dev/ttyUSB1}"
+BASE_PORT="${BASE_PORT:-/dev/serial0}"
 BASE_TEST_MODE="${BASE_TEST_MODE:-rotate}"
 BASE_TEST_LINEAR="${BASE_TEST_LINEAR:-0.08}"
 BASE_TEST_ANGULAR="${BASE_TEST_ANGULAR:-0.35}"
@@ -33,7 +33,7 @@ Purpose:
     ROS2 /cmd_vel -> stm32_bridge -> STM32 -> motors -> /odom
 
 Defaults:
-  rotate-only, angular=0.35rad/s, duration=1.5s, cmd_timeout=1.0s
+  /dev/serial0, rotate-only, angular=0.35rad/s, duration=1.5s, cmd_timeout=1.0s
 
 Environment overrides:
   BASE_TEST_LINEAR=0.08
@@ -125,6 +125,11 @@ if [ "$BASE_PORT" != "auto" ] && [ ! -e "$BASE_PORT" ]; then
     log_error "base port does not exist: $BASE_PORT"
     exit 1
 fi
+if [ "$BASE_PORT" != "auto" ] && { [ ! -r "$BASE_PORT" ] || [ ! -w "$BASE_PORT" ]; }; then
+    log_error "base port is not readable/writable: $BASE_PORT"
+    log_warn "修复: sudo usermod -aG dialout \$USER && 重新登录；并确认 /dev/serial0 指向 /dev/ttyAMA0"
+    exit 1
+fi
 
 print_header "Base Command Test"
 log_info "This test starts only stm32_bridge and publishes low-speed /cmd_vel."
@@ -151,9 +156,6 @@ printf '\n'
 ros2 launch stm32_robot_bridge stm32_bridge.launch.py \
     port:="${BASE_PORT}" \
     baudrate:=115200 \
-    use_status_yaw:=true \
-    status_yaw_mode:=relative \
-    odom_feedback_source:=status_twist \
     cmd_timeout:="${BASE_TEST_CMD_TIMEOUT}" \
     drive_keepalive_sec:="${BASE_TEST_KEEPALIVE}" \
     status_log_interval_sec:=0.5 \
@@ -186,7 +188,7 @@ python3 "${SCRIPT_DIR}/base_cmd_test_node.py" \
     --hz "${BASE_TEST_PUBLISH_HZ}" >"$CMD_LOG" 2>&1
 
 send_stop
-sleep 1
+sleep 2
 
 if kill -0 "$ODOM_PID" 2>/dev/null; then
     kill "$ODOM_PID" 2>/dev/null || true
@@ -211,5 +213,5 @@ if grep -q 'status=NO_ODOM' "$CMD_LOG"; then
     log_warn "  优先检查 stm32_bridge 是否真正启动、底盘是否上电、串口是否正确。"
 fi
 echo "Useful checks:"
-echo "  rg 'cmd_vel_rx|drive_tx|status_summary|NACK|mode=' $BRIDGE_LOG"
+echo "  rg 'Opened STM32 serial|cmd_vel_rx|drive_tx|status_summary|control_source|enabled_mask|speed_valid_mask' $BRIDGE_LOG"
 echo "  tail -80 $BRIDGE_LOG"

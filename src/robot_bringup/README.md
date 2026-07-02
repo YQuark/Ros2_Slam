@@ -8,7 +8,7 @@
 - 编排导航模式：`mode:=navigation`
 - 统一传感器层：雷达、相机、深度转激光、视觉里程计
 - 统一底盘层：真实底盘、虚拟底盘、无底盘占位 TF
-- 可选底盘融合层：`/odom + /imu/data -> /odometry/filtered`
+- 可选底盘融合层：wheel-only `/odom -> /odometry/filtered`
 - 统一可视化层：RViz 与地图点云兼容显示
 
 ## 核心入口

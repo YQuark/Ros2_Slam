@@ -30,16 +30,13 @@ Thumbs.db
 # Git internal
 *.git.inner.bak/
 
-# Local agent/session files (not project code)
-.learnings/
-outputs/
+/.agent
+/.claude
+/.codex
+/.learning
+/log
+/logs
+/outputs
+CLAUDE.md
 AGENTS.md
-
-# Archived plans/requirements (local session artifacts)
-docs/archive/plans/
-docs/archive/requirements/
-docs/archive/host-mcu-integration-status.md
-
-# Local audit tools (not project code)
-tools/generate_host_mcu_audit_docx.py
-tools/generate_host_mcu_reaudit_docx.py
+/pc_test_utils

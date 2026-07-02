@@ -1,66 +1,73 @@
 # stm32_robot_bridge
 
-`stm32_robot_bridge` 是当前工程的底盘串口桥接包，负责把上位机运动命令转换为下位机串口协议，并把下位机状态反馈转换成 ROS2 话题与 TF。
+`stm32_robot_bridge` 是当前工程的 STM32 底盘串口桥接包。它把 ROS2 `/cmd_vel` 转成下位机 v2 上位机协议，并把下位机主动上报的 STATUS 转成 `/odom`、TF、电池与电流状态。
 
 ## 包职责
 
-- 订阅 `/cmd_vel`，发送 `SET_VELOCITY` (0x01)
-- 轮询 `STATUS` (0x81)，发布 `/odom`
-- 按需发布 `/imu/data`、`/battery_state`、`/motor/left_current`、`/motor/right_current`、`/chassis/status`
-- 在未启用 EKF 时发布 `odom -> base_link` TF
+- 订阅 `/cmd_vel`，发送 `SET_VELOCITY` (`0x01`)。
+- 被动接收下位机主动上报的 `STATUS` (`0x81`)，不发送状态请求。
+- 发布 `/odom`、`/battery_state`、`/motor/left_current`、`/motor/right_current`、`/chassis/status`。
+- 未启用 EKF 时发布 `odom -> base_link` TF；启用 wheel-only EKF 时由 EKF 发布该 TF。
+- 提供 `/chassis/estop` (`std_srvs/SetBool`) 显式触发或解除急停。
 
-## 在工程中的位置
+当前下位机 v2 STATUS 不包含 IMU 字段，本包不会发布伪造 IMU 数据。
 
-- 普通运行优先使用 `/home/robot/ros2_ws/launch_scripts/robot.sh`
-- 包级 launch 入口：`launch/stm32_bridge.launch.py`
-- 工程编排通过 `robot_bringup/launch/base.launch.py` 引入本包
+## 当前协议
 
-## 当前协议假设
+权威来源为下位机本地 `D:\Document\Work\projects\F407_V2.0` 当前 `main` 分支：
 
-- 串口默认参数：`115200 8N1`
-- 协议帧格式：`0xA5 0x5A + length(1B) + cmd(1B) + payload + checksum8(1B)`
-- `SET_VELOCITY` (0x01)：`float linear_x + float angular_z + uint8 enable + uint8 mode`（10 字节）
-- `ESTOP` (0x02)：`uint8 enabled`（1 字节），节点退出或串口故障时自动发送
-- `STATUS` (0x81)：45 字节，包含轮速、编码器、电池、电流、IMU 原始数据、错误标志、控制模式
-- `/odom.twist` 默认使用 STATUS 中的轮速计算
-- `/odom` 的 yaw 角度包裹到 `[-π, π]`，防止长时间运行浮点精度下降
-- 当前统一默认时序：`cmd_timeout=0.25s`、`drive_keepalive_sec=0.10s`
-- 速度安全限幅：`max_linear_vel=0.5 m/s`、`max_angular_vel=2.0 rad/s`（超出范围的 `/cmd_vel` 会被钳制）
-- 帧解析：`MAX_FRAME_LENGTH=128`，防止畸形 length 字段导致解析卡顿
-- cmd_vel 超时后以 3× keepalive 间隔周期发送零速，确保 MCU 可靠收到停车命令
-- 串口重连采用非阻塞状态机（settling → syncing → 正常），不阻塞 ROS2 executor
+- `App/protocol/upper_protocol.h`
+- `App/protocol/upper_protocol.c`
+- `App/protocol/upper_uart.c`
 
-## 推荐启动方式
+关键约定：
 
-单独诊断底盘：
+- 串口：Raspberry Pi GPIO UART，默认 `/dev/serial0`，115200 8N1。
+- 帧格式：`0xA5 0x5A + length + cmd + payload + crc8`。
+- `length` 是 `cmd + payload` 的字节数，最大 65。
+- CRC8 覆盖 `length + cmd + payload`，初值 0，多项式步骤为最高位为 1 时异或 `0x5E`。
+- `SET_VELOCITY` payload 固定 10B：`float linear_x + float angular_z + uint8 enable + uint8 mode`，上位机发送 `mode=2`。
+- `STATUS` payload 固定 64B，version 必须为 2。
+
+## 运行入口
+
+优先使用统一入口：
 
 ```bash
 cd /home/robot/ros2_ws/launch_scripts
 ./robot.sh base
-./robot.sh base --port /dev/ttyUSB1
+./robot.sh mapping lidar --manual --real-base
+./robot.sh navigation --real-base --map classroom_v1
 ```
 
-主业务正常运行时，不单独操作本包，而是通过：
-
-```bash
-./robot.sh mapping lidar --real-base --ekf-base
-./robot.sh navigation --real-base --ekf-base
-```
-
-## 直接包级调试
-
-只有在二次开发或诊断桥接内部行为时，才直接调用包级 launch：
+包级调试：
 
 ```bash
 source /opt/ros/humble/setup.bash
 source /home/robot/ros2_ws/install/setup.bash
-ros2 launch stm32_robot_bridge stm32_bridge.launch.py port:=auto baudrate:=115200
-ros2 launch stm32_robot_bridge stm32_bridge.launch.py port:=/dev/ttyUSB1 status_log_interval_sec:=1.0 cmd_log_interval_sec:=1.0
+ros2 launch stm32_robot_bridge stm32_bridge.launch.py port:=/dev/serial0 status_log_interval_sec:=1.0 cmd_log_interval_sec:=1.0
 ```
 
-默认正式导航流程已经把日志频率收得更低，避免长期运行时输出过密。
+如临时使用 USB-UART，可显式覆盖 `port`，但默认路径不做自动 USB 扫描。
+
+## 验证
+
+```bash
+colcon test --packages-select stm32_robot_bridge --event-handlers console_direct+
+./launch_scripts/check_chassis.sh
+./launch_scripts/test_base_cmd.sh --base-port /dev/serial0 --rotate-only
+```
+
+实机验收重点：
+
+- 1 秒内收到 v2 STATUS。
+- `/odom` 约 20Hz 更新。
+- `/cmd_vel` 有效期内下位机 `control_source=1`。
+- `/cmd_vel` 超时后 bridge 只发送一次 `enable=0` 释放上位机控制源。
+- `/chassis/estop` 触发后 STATUS bit0 置位，解除需显式调用服务发送 `false`。
 
 ## 相关文档
 
+- [串口桥接协议](../../docs/04-串口桥接协议.md)
 - [底盘与串口桥接](../../docs/06-底盘与串口桥接.md)
 - [系统架构](../../docs/02-系统架构.md)

@@ -23,6 +23,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DETECT_LIDAR_PORT_SCRIPT="$SCRIPT_DIR/detect_lidar_port.sh"
 MIN_SCAN_HZ=6.0
 CHECK_SECONDS=6
+MAX_STARTUP_CHECKSUM_ERRORS=2
 MAX_RANGE_SIZE_SPAN=8
 MAX_RANGE_SIZE_REL_SPAN=0.03
 
@@ -214,9 +215,13 @@ PY
 cleanup
 NODE_PID=""
 
-CHECKSUM_COUNT=$(grep -Eic "Check Sum|CheckSum|checksum|Failed to get scan" "$DRIVER_LOG" 2>/dev/null || true)
+CHECKSUM_COUNT=$(grep -Eic "Check Sum|CheckSum|checksum" "$DRIVER_LOG" 2>/dev/null || true)
 if [ -z "$CHECKSUM_COUNT" ]; then
     CHECKSUM_COUNT=0
+fi
+SCAN_FAIL_COUNT=$(grep -Eic "Failed to get scan" "$DRIVER_LOG" 2>/dev/null || true)
+if [ -z "$SCAN_FAIL_COUNT" ]; then
+    SCAN_FAIL_COUNT=0
 fi
 SCAN_COUNT=$(awk -F= '/^COUNT=/{print $2}' "$HZ_LOG" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
 AVG_SCAN_HZ=$(awk -F= '/^HZ=/{print $2}' "$HZ_LOG" 2>/dev/null | tail -n 1 | tr -d '[:space:]')
@@ -232,6 +237,7 @@ echo -e "${BLUE}检查结果:${NC}"
 echo "  日志文件: $DRIVER_LOG"
 echo "  频率文件: $HZ_LOG"
 echo "  CheckSum错误数: $CHECKSUM_COUNT"
+echo "  Failed to get scan次数: $SCAN_FAIL_COUNT"
 if [ -n "${SCAN_COUNT:-}" ]; then
     echo "  /scan消息数: ${SCAN_COUNT}"
 fi
@@ -250,9 +256,9 @@ if [ -n "${RANGE_SIZE_SPAN:-}" ]; then
     echo "  点数跨度: ${RANGE_SIZE_SPAN} (${RANGE_SIZE_MIN:-?}..${RANGE_SIZE_MAX:-?})"
 fi
 
-if [ "$CHECKSUM_COUNT" -gt 0 ]; then
+if [ "$SCAN_FAIL_COUNT" -gt 0 ]; then
     echo ""
-    echo -e "${RED}✗ 未通过: 检测到雷达串口数据错误 (CheckSum/Failed to get scan)${NC}"
+    echo -e "${RED}✗ 未通过: 驱动未能持续获取扫描帧 (Failed to get scan)${NC}"
     echo -e "${YELLOW}建议排查:${NC}"
     echo "  1) 更换 USB 线，避免劣质延长线/HUB"
     echo "  2) 检查供电稳定性（雷达单独供电更稳）"
@@ -306,6 +312,17 @@ if ! awk "BEGIN {exit !(($RANGE_SIZE_SPAN <= $MAX_RANGE_SIZE_SPAN) || ($RANGE_SI
     echo -e "${YELLOW}当前统计: ${RANGE_SIZE_STATS}${NC}"
     echo -e "${YELLOW}建议排查雷达转速、USB 串口稳定性和驱动参数；不要为了通过检查而裁剪有效扫描点。${NC}"
     exit 1
+fi
+
+if [ "$CHECKSUM_COUNT" -gt "$MAX_STARTUP_CHECKSUM_ERRORS" ]; then
+    echo ""
+    echo -e "${RED}✗ 未通过: CheckSum 错误过多 (${CHECKSUM_COUNT} > ${MAX_STARTUP_CHECKSUM_ERRORS})${NC}"
+    echo -e "${YELLOW}建议排查 USB 连接、供电稳定性和 X2 参数文件；不要在错误持续出现时跳过检查。${NC}"
+    exit 1
+fi
+
+if [ "$CHECKSUM_COUNT" -gt 0 ]; then
+    echo -e "${YELLOW}提示: 启动期出现 ${CHECKSUM_COUNT} 次 CheckSum，同步后 /scan 质量达标，允许继续建图。${NC}"
 fi
 
 if [ "${UNIQUE_RANGE_SIZE:-0}" -gt 1 ]; then

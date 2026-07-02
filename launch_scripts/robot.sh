@@ -32,6 +32,8 @@ DEFAULT_LIDAR_FALLBACK_PARAMS="${ROS_WS}/src/ydlidar_ros2_driver/params/X2.yaml"
 DEFAULT_LIDAR_RVIZ="${ROS_WS}/src/robot_bringup/rviz/lidar_mapping.rviz"
 DEFAULT_SYSTEM_RVIZ="${ROS_WS}/src/robot_bringup/rviz/system.rviz"
 DEFAULT_LIDAR_TF_YAW_RAD="1.570796326795"
+DEFAULT_BASE_PORT="/dev/serial0"
+DEFAULT_BASE_WHEEL_TRACK_WIDTH="0.1780"
 
 TMP_FILES=()
 
@@ -119,18 +121,11 @@ EOF
 
 resolve_base_port() {
     local port="$1"
-    local detected
 
-    if [ "$port" = "auto" ] && [ -x "$DETECT_BASE_PORT_SCRIPT" ]; then
-        if [ -n "${ROBOT_BASE_PORT_HINT:-}" ]; then
-            detected="${ROBOT_BASE_PORT_HINT}"
-        else
-            detected="$("$DETECT_BASE_PORT_SCRIPT" --probe 2>/dev/null || true)"
-        fi
-        if [ -n "$detected" ]; then
-            printf '%s\n' "$detected"
-            return 0
-        fi
+    if [ "$port" = "auto" ]; then
+        log_warn "base_port=auto 已废弃；当前底盘默认使用 Raspberry Pi GPIO UART ${DEFAULT_BASE_PORT}" >&2
+        printf '%s\n' "${ROBOT_BASE_PORT_HINT:-$DEFAULT_BASE_PORT}"
+        return 0
     fi
 
     printf '%s\n' "$port"
@@ -160,28 +155,22 @@ resolve_base_port_avoiding_lidar() {
                 log_error "  雷达已经占用 ${lidar_port}，请用 --base-port 指定另一个 STM32 串口，或交换 USB 后重试。"
                 exit 1
             fi
-            log_warn "检测到默认底盘串口 ${requested_base_port} 与雷达串口 ${lidar_port} 冲突，改为主动探测底盘并排除雷达口" >&2
-            requested_base_port="auto"
+            log_warn "检测到默认底盘串口 ${requested_base_port} 与雷达串口 ${lidar_port} 冲突，改用 GPIO UART ${DEFAULT_BASE_PORT}" >&2
+            requested_base_port="$DEFAULT_BASE_PORT"
         fi
     fi
 
     resolved_base_port="$(resolve_base_port "$requested_base_port")"
-    if [ "$resolved_base_port" = "auto" ]; then
-        log_error "✗ 未能探测到可用的 STM32 底盘串口"
-        log_error "  ${mode_label} 已确认雷达占用 ${lidar_port}，不能让底盘继续以 auto 模式冒险抢占雷达口。"
-        log_error "  请确认 STM32 已连接并能响应 GET_STATUS，或用 --base-port 指定非雷达串口。"
-        exit 1
-    fi
     if [ ! -e "$resolved_base_port" ]; then
         log_error "✗ 底盘串口不存在: ${resolved_base_port}"
-        log_error "  请确认 STM32 已接入并能响应 GET_STATUS，或用 --base-port 指定实际底盘串口。"
+        log_error "  请确认 Raspberry Pi GPIO UART 已启用，/dev/serial0 存在，或用 --base-port 指定实际底盘串口。"
         exit 1
     fi
 
     resolved_base="$(resolve_port "$resolved_base_port")"
     if [ "$resolved_base" = "$resolved_lidar" ]; then
         log_error "✗ 底盘串口和雷达串口仍然相同: ${resolved_base_port}"
-        log_error "  请确认 STM32 已连接，并不要让底盘和雷达共用同一个 /dev/ttyUSB*。"
+        log_error "  请确认底盘使用 /dev/serial0，或用 --base-port 指定不与雷达冲突的串口。"
         exit 1
     fi
 
@@ -398,7 +387,7 @@ run_mapping() {
     local skip_lidar_check=false
     local use_rviz=true
     local base_mode="none"
-    local base_port="${BASE_PORT:-auto}"
+    local base_port="${BASE_PORT:-$DEFAULT_BASE_PORT}"
     local has_source=false
     local has_profile=false
     local slam_params=""
@@ -406,7 +395,7 @@ run_mapping() {
     local rviz_config="$DEFAULT_SYSTEM_RVIZ"
     local use_base_arg="false"
     local base_fusion_mode="none"
-    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
+    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-$DEFAULT_BASE_WHEEL_TRACK_WIDTH}"
     local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
     local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-0.0}"
@@ -719,9 +708,9 @@ run_mapping() {
 run_navigation() {
     local map_file="$DEFAULT_MAP"
     local base_mode="real"
-    local base_port="${BASE_PORT:-auto}"
+    local base_port="${BASE_PORT:-$DEFAULT_BASE_PORT}"
     local base_fusion_mode="none"
-    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
+    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-$DEFAULT_BASE_WHEEL_TRACK_WIDTH}"
     local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
     local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-5.0}"
@@ -932,9 +921,6 @@ run_navigation() {
         log_info "底盘串口: ${base_port}"
         log_info "底盘融合模式: ${base_fusion_mode}"
         log_info "底盘命令保活: timeout=${base_cmd_timeout}s keepalive=${base_drive_keepalive_sec}s"
-        if [ "$base_port" = "auto" ]; then
-            log_warn "⚠ 未检测到底盘串口，桥接节点将以 auto 模式持续重试"
-        fi
     fi
     if [ "$localization_only" = false ] && [ -x "$CHECK_NAVIGATION_SCRIPT" ]; then
         log_info "若 RViz 点 2D Goal Pose 后没有 /plan 或车不动，可另开终端执行: ./robot.sh check navigation"
@@ -1029,8 +1015,8 @@ run_sensor() {
 }
 
 run_base() {
-    local base_port="${BASE_PORT:-auto}"
-    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
+    local base_port="${BASE_PORT:-$DEFAULT_BASE_PORT}"
+    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-$DEFAULT_BASE_WHEEL_TRACK_WIDTH}"
     local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
     local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-0.0}"
@@ -1046,7 +1032,7 @@ run_base() {
                 shift 2
                 ;;
             -h|--help)
-                echo "用法: ./robot.sh base [--port /dev/ttyUSB1]"
+                echo "用法: ./robot.sh base [--port /dev/serial0]"
                 exit 0
                 ;;
             *)
@@ -1060,11 +1046,7 @@ run_base() {
     setup_ros_env
     print_header "底盘桥接启动"
     base_port="$(resolve_base_port "$base_port")"
-    if [ "$base_port" = "auto" ]; then
-        log_warn "⚠ 暂未检测到底盘串口，桥接节点将以 auto 模式持续重试"
-    else
-        log_info "底盘串口: ${base_port}"
-    fi
+    log_info "底盘串口: ${base_port}"
     ros2 launch stm32_robot_bridge stm32_bridge.launch.py \
         port:=${base_port} \
         baudrate:=115200 \
@@ -1075,14 +1057,14 @@ run_base() {
 }
 
 run_system() {
-    local base_port="${BASE_PORT:-auto}"
+    local base_port="${BASE_PORT:-$DEFAULT_BASE_PORT}"
     local use_rviz=true
     local skip_lidar_check=false
     local lidar_params=""
     local lidar_port=""
     local lidar_tf_yaw="${LIDAR_TF_YAW:-$DEFAULT_LIDAR_TF_YAW_RAD}"
     local base_port_explicit=false
-    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-0.1250}"
+    local base_wheel_track_width="${BASE_WHEEL_TRACK_WIDTH:-$DEFAULT_BASE_WHEEL_TRACK_WIDTH}"
     local base_odom_angular_scale="${BASE_ODOM_ANGULAR_SCALE:-1.0}"
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
     local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-0.0}"

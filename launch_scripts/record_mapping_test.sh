@@ -118,7 +118,6 @@ main() {
   "topics": [
     "/scan",
     "/odom",
-    "/imu/data",
     "/tf",
     "/tf_static",
     "/odometry/filtered"
@@ -184,7 +183,7 @@ EOF
         log_info "说明: ${notes}"
     fi
     echo
-    log_info "开始录制话题: /scan /odom /imu/data /tf /tf_static /odometry/filtered"
+    log_info "开始录制话题: /scan /odom /tf /tf_static /odometry/filtered"
     log_warn "停止录制请按 Ctrl+C"
     echo
 
@@ -193,7 +192,6 @@ EOF
         -o "${bag_name}" \
         /scan \
         /odom \
-        /imu/data \
         /tf \
         /tf_static \
         /odometry/filtered

@@ -67,7 +67,7 @@ fi
 if [ -n "$BASE_PORT" ] && [ -e "$BASE_PORT" ]; then
     echo -e "${GREEN}✓ 下位机: ${BASE_PORT}${NC}"
 else
-    echo -e "${YELLOW}⚠ 下位机: 未检测到 CP2102 串口（当前可保持未连接）${NC}"
+    echo -e "${YELLOW}⚠ 下位机: 未检测到 /dev/serial0 v2 STATUS（当前可保持未连接）${NC}"
 fi
 echo ""
 
