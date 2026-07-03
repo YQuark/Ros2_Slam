@@ -1,66 +1,41 @@
 # robot_bringup
 
-`robot_bringup` 是上位机的技术编排包，不负责运维入口聚合，只负责 launch、参数和可视化配置。
+`robot_bringup` is the platform composition package. It combines description,
+sensing, control, base bridge, state estimation, SLAM and Nav2 profiles; it does
+not own device drivers, serial protocol logic, TF geometry or command
+arbitration internals.
 
-## 包职责
+## Responsibilities
 
-- 编排建图模式：`mode:=mapping`
-- 编排导航模式：`mode:=navigation`
-- 统一传感器层：雷达、相机、深度转激光、视觉里程计
-- 统一底盘层：真实底盘、虚拟底盘、无底盘占位 TF
-- 可选底盘融合层：wheel-only `/odom -> /odometry/filtered`
-- 统一可视化层：RViz 与地图点云兼容显示
+- Compose `mode:=mapping` and `mode:=navigation`.
+- Keep mapping and navigation YAML/BT profiles in one place.
+- Keep RViz as an explicit development option only.
+- Preserve a single operator-facing launch surface for `robot.sh`.
 
-## 核心入口
+## Not Owned Here
+
+- Lidar driver and `/scan_raw -> /scan`: `robot_sensing`.
+- Static platform frames: `robot_description`.
+- `/cmd_vel/* -> /cmd_vel/driver`: `robot_control`.
+- `/wheel/odom -> /odom` and optional EKF: `robot_state_estimation`.
+- STM32 serial protocol and raw base status: `stm32_robot_bridge`.
+
+## Launch Entry Points
 
 ```bash
-ros2 launch robot_bringup system.launch.py mode:=mapping
+ros2 launch robot_bringup system.launch.py mode:=mapping use_rviz:=false
+ros2 launch robot_bringup system.launch.py mode:=navigation map_file:=/home/robot/robot_data/maps/latest.yaml use_rviz:=false
 ```
 
-## 目录约定
+`use_rviz` defaults to `false`; pass `use_rviz:=true` only on a development
+machine or when the Raspberry Pi has a display session.
 
-- `launch/`
-  只放技术 launch，不放运维脚本。
-- `config/`
-  只放参数与设备配置。
-- `rviz/`
-  只放 RViz 视图模板。
-- `scripts/`
-  只放随包安装的 ROS 节点脚本。
+## Stable Platform Topics
 
-## 关键 launch
-
-- `launch/system.launch.py`
-  总编排入口。
-- `launch/sensors.launch.py`
-  传感器层（雷达、IMU 等）。
-- `launch/base.launch.py`
-  真实底盘桥接（stm32_robot_bridge）。
-- `launch/base_ekf.launch.py`
-  底盘 EKF 融合层。
-- `launch/slam.launch.py`
-  `slam_toolbox` 建图。
-- `launch/localization.launch.py`
-  定位（map_server + AMCL）。
-- `launch/nav2.launch.py`
-  `Nav2` 导航。
-- `launch/viz.launch.py`
-  RViz 可视化。
-- `launch/camera_scan.launch.py`
-  摄像头扫描（预留）。
-- `launch/visual_odom.launch.py`
-  视觉里程计（预留）。
-
-## 使用原则
-
-- 用户入口优先使用 `/home/robot/ros2_ws/launch_scripts/robot.sh`
-- 只有在二次开发或调试 launch 行为时，才直接调用本包 launch 文件
-- 兼容参数 `use_base` 仍保留，但新配置应优先使用 `base_mode:=real|fake|none`
-- 如果启用底盘融合，应优先使用 `base_fusion_mode:=ekf`
-
-## 当前默认约定
-
-- 雷达外参默认从 `base_link` 发布到 `laser_frame`：`x=0.07, y=0.0, z=0.13, roll=0, pitch=0, yaw=1.570796326795`
-- `precision` 雷达建图档只保留更细的 `0.03m` 地图分辨率，其余匹配行为尽量贴近 `quality`
-- 底盘命令时序默认和 `robot.sh navigation` 保持一致：`cmd_timeout=0.25s`、`drive_keepalive_sec=0.10s`
-- 底盘速度安全限幅：`max_linear_vel=0.5 m/s`、`max_angular_vel=2.0 rad/s`（可通过 launch 参数覆盖）
+- `/scan_raw`: lidar driver output, internal to the platform.
+- `/scan`: normalized 2D scan, public platform interface.
+- `/wheel/odom`: raw wheel odometry from the STM32 bridge.
+- `/odom`: public odometry from `robot_state_estimation`.
+- `/cmd_vel/teleop`, `/cmd_vel/nav`, `/cmd_vel/test`: command candidates.
+- `/cmd_vel/research/<name>`: optional whitelisted research command candidates.
+- `/cmd_vel/driver`: only `robot_control` should publish this.

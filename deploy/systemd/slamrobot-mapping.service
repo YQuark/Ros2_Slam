@@ -1,0 +1,13 @@
+[Unit]
+Description=SlamRobot headless mapping
+After=network.target
+
+[Service]
+Type=simple
+User=robot
+WorkingDirectory=/home/robot/ros2_ws
+ExecStart=/home/robot/ros2_ws/launch_scripts/robot.sh mapping lidar --manual --real-base --no-rviz
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

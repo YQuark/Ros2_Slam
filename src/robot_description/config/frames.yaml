@@ -1,0 +1,5 @@
+frames:
+  base_frame: base_link
+  base_footprint_frame: base_footprint
+  laser_frame: laser_frame
+  imu_frame: imu_link

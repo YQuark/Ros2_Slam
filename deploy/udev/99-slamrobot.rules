@@ -1,0 +1,2 @@
+# Copy to /etc/udev/rules.d/99-slamrobot.rules on the Raspberry Pi.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", SYMLINK+="ydlidar", GROUP="dialout", MODE="0660"

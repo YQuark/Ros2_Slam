@@ -1,0 +1,5 @@
+repositories:
+  vendor/ydlidar-sdk:
+    type: git
+    url: https://github.com/YDLIDAR/YDLidar-SDK.git
+    version: 01cdda4f2b36dff2a706d0535c64228d863c7411

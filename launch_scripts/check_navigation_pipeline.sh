@@ -108,7 +108,8 @@ print_topic_status "/odom" "里程计"
 print_topic_status "/amcl_pose" "定位输出"
 print_topic_status "/plan" "全局路径"
 print_topic_status "/local_plan" "局部路径"
-print_topic_status "/cmd_vel" "底盘速度命令"
+print_topic_status "/cmd_vel/nav" "Nav2 速度候选"
+print_topic_status "/cmd_vel/driver" "底盘驱动速度命令"
 echo
 
 log_info "4. 实时消息检查"
@@ -130,7 +131,8 @@ else
     echo "  1. ros2 topic echo /goal_pose --once"
     echo "  2. ros2 topic echo /plan --once"
     echo "  3. ros2 topic echo /local_plan --once"
-    echo "  4. ros2 topic hz /cmd_vel"
+    echo "  4. ros2 topic hz /cmd_vel/nav"
+    echo "  5. ros2 topic hz /cmd_vel/driver"
 fi
 echo
 
@@ -138,4 +140,5 @@ log_info "6. 典型分流"
 echo "  • /goal_pose 没消息: 先查 RViz 2D Goal Pose 是否真的发出目标"
 echo "  • /goal_pose 有消息但 /plan 没有: 查 bt_navigator / planner_server / 全局 costmap"
 echo "  • /plan 有消息但 /local_plan 没有: 查 controller_server / 局部 costmap"
-echo "  • /cmd_vel 有消息但车不动: 查 stm32_bridge / 串口 / 底盘上电 / /odom"
+echo "  • /cmd_vel/nav 有消息但 /cmd_vel/driver 没有: 查 robot_control"
+echo "  • /cmd_vel/driver 有消息但车不动: 查 stm32_bridge / 串口 / 底盘上电 / /odom"

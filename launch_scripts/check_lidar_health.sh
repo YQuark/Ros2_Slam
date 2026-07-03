@@ -16,7 +16,7 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 ROS_WS="/home/robot/ros2_ws"
-PARAM_FILE="$ROS_WS/src/ydlidar_ros2_driver/params/X2.yaml"
+PARAM_FILE="$ROS_WS/src/robot_sensing/config/ydlidar_x2.yaml"
 LIDAR_PORT_OVERRIDE=""
 NODE_EXE="$ROS_WS/install/ydlidar_ros2_driver/lib/ydlidar_ros2_driver/ydlidar_ros2_driver_node"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -38,7 +38,7 @@ usage() {
     cat <<'EOF'
 用法: check_lidar_health.sh [参数文件] [--lidar-port PATH]
 
-默认参数文件: /home/robot/ros2_ws/src/ydlidar_ros2_driver/params/X2.yaml
+默认参数文件: /home/robot/ros2_ws/src/robot_sensing/config/ydlidar_x2.yaml
 默认雷达设备: 参数文件中的 port，正式部署建议使用 /dev/ydlidar
 EOF
 }

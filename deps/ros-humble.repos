@@ -1,0 +1,8 @@
+# ROS Humble dependencies are installed by apt/rosdep, not vendored here.
+# Required apt packages:
+# - ros-humble-slam-toolbox
+# - ros-humble-navigation2
+# - ros-humble-nav2-bringup
+# - ros-humble-robot-localization
+# - ros-humble-rviz2
+repositories: {}

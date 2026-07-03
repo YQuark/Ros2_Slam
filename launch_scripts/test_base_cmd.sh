@@ -30,7 +30,7 @@ Usage: ./test_base_cmd.sh [--base-port PORT] [--rotate-only|--with-linear|--cali
 
 Purpose:
   Isolate upper-computer base control only:
-    ROS2 /cmd_vel -> stm32_bridge -> STM32 -> motors -> /odom
+    ROS2 /cmd_vel/test -> robot_control -> /cmd_vel/driver -> stm32_bridge -> STM32 -> /wheel/odom -> /odom
 
 Defaults:
   /dev/serial0, rotate-only, angular=0.35rad/s, duration=1.5s, cmd_timeout=1.0s
@@ -88,15 +88,19 @@ setup_ros_env
 
 mkdir -p "$BASE_TEST_LOG_DIR"
 STAMP="$(date +%Y%m%d_%H%M%S)"
+CONTROL_LOG="${BASE_TEST_LOG_DIR}/control_${STAMP}.log"
 BRIDGE_LOG="${BASE_TEST_LOG_DIR}/bridge_${STAMP}.log"
+STATE_LOG="${BASE_TEST_LOG_DIR}/state_${STAMP}.log"
 ODOM_LOG="${BASE_TEST_LOG_DIR}/odom_${STAMP}.log"
 CMD_LOG="${BASE_TEST_LOG_DIR}/cmd_${STAMP}.log"
 
+CONTROL_PID=""
 BRIDGE_PID=""
+STATE_PID=""
 ODOM_PID=""
 
 send_stop() {
-    ros2 topic pub --once /cmd_vel geometry_msgs/msg/Twist \
+    ros2 topic pub --once /cmd_vel/test geometry_msgs/msg/Twist \
         "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" >/dev/null 2>&1 || true
 }
 
@@ -109,6 +113,14 @@ cleanup() {
     if [ -n "$BRIDGE_PID" ] && kill -0 "$BRIDGE_PID" 2>/dev/null; then
         kill "$BRIDGE_PID" 2>/dev/null || true
         wait "$BRIDGE_PID" 2>/dev/null || true
+    fi
+    if [ -n "$STATE_PID" ] && kill -0 "$STATE_PID" 2>/dev/null; then
+        kill "$STATE_PID" 2>/dev/null || true
+        wait "$STATE_PID" 2>/dev/null || true
+    fi
+    if [ -n "$CONTROL_PID" ] && kill -0 "$CONTROL_PID" 2>/dev/null; then
+        kill "$CONTROL_PID" 2>/dev/null || true
+        wait "$CONTROL_PID" 2>/dev/null || true
     fi
 }
 
@@ -132,7 +144,7 @@ if [ "$BASE_PORT" != "auto" ] && { [ ! -r "$BASE_PORT" ] || [ ! -w "$BASE_PORT" 
 fi
 
 print_header "Base Command Test"
-log_info "This test starts only stm32_bridge and publishes low-speed /cmd_vel."
+log_info "This test starts robot_control, stm32_bridge and state estimation, then publishes low-speed /cmd_vel/test."
 log_info "Keep the robot lifted or in a clear open area. Press Ctrl-C to abort."
 log_info "base_port=${BASE_PORT}"
 log_info "mode=${BASE_TEST_MODE} duration=${BASE_TEST_DURATION}s publish_hz=${BASE_TEST_PUBLISH_HZ}"
@@ -153,18 +165,33 @@ for ((i=BASE_TEST_COUNTDOWN; i>0; i--)); do
 done
 printf '\n'
 
+ros2 launch robot_control control.launch.py >"$CONTROL_LOG" 2>&1 &
+CONTROL_PID="$!"
+
 ros2 launch stm32_robot_bridge stm32_bridge.launch.py \
     port:="${BASE_PORT}" \
     baudrate:=115200 \
+    cmd_vel_topic:=/cmd_vel/driver \
+    odom_topic:=/wheel/odom \
+    publish_tf:=false \
     cmd_timeout:="${BASE_TEST_CMD_TIMEOUT}" \
     drive_keepalive_sec:="${BASE_TEST_KEEPALIVE}" \
     status_log_interval_sec:=0.5 \
     cmd_log_interval_sec:=0.2 >"$BRIDGE_LOG" 2>&1 &
 BRIDGE_PID="$!"
 
-log_info "Waiting for stm32_bridge..."
+ros2 launch robot_state_estimation state_estimation.launch.py \
+    base_fusion_mode:=none \
+    wheel_odom_topic:=/wheel/odom \
+    odom_topic:=/odom \
+    publish_tf:=true >"$STATE_LOG" 2>&1 &
+STATE_PID="$!"
+
+log_info "Waiting for robot_control, stm32_bridge and state estimation..."
 for _ in $(seq 1 20); do
-    if ros2 node list 2>/dev/null | grep -qx "/stm32_bridge"; then
+    if ros2 node list 2>/dev/null | grep -qx "/cmd_vel_mux" \
+        && ros2 node list 2>/dev/null | grep -qx "/stm32_bridge" \
+        && ros2 node list 2>/dev/null | grep -qx "/wheel_odom_republisher"; then
         break
     fi
     sleep 0.3
@@ -174,11 +201,19 @@ if ! ros2 node list 2>/dev/null | grep -qx "/stm32_bridge"; then
     log_error "stm32_bridge did not start. See: $BRIDGE_LOG"
     exit 1
 fi
+if ! ros2 node list 2>/dev/null | grep -qx "/cmd_vel_mux"; then
+    log_error "cmd_vel_mux did not start. See: $CONTROL_LOG"
+    exit 1
+fi
+if ! ros2 node list 2>/dev/null | grep -qx "/wheel_odom_republisher"; then
+    log_error "wheel_odom_republisher did not start. See: $STATE_LOG"
+    exit 1
+fi
 
 timeout 20s ros2 topic echo /odom >"$ODOM_LOG" 2>&1 &
 ODOM_PID="$!"
 
-log_info "Publishing deterministic /cmd_vel sequence..."
+log_info "Publishing deterministic /cmd_vel/test sequence..."
 python3 "${SCRIPT_DIR}/base_cmd_test_node.py" \
     --mode "${BASE_TEST_MODE}" \
     --linear "${BASE_TEST_LINEAR}" \
@@ -197,6 +232,8 @@ fi
 
 log_success "Base command test finished."
 echo "Bridge log: $BRIDGE_LOG"
+echo "Control log: $CONTROL_LOG"
+echo "State log:  $STATE_LOG"
 echo "Odom log:   $ODOM_LOG"
 echo "Cmd log:    $CMD_LOG"
 echo

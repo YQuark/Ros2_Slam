@@ -1,0 +1,31 @@
+diff --git a/src/ydlidar_ros2_driver_client.cpp b/src/ydlidar_ros2_driver_client.cpp
+index 6f35277..77b2a72 100644
+--- a/src/ydlidar_ros2_driver_client.cpp
++++ b/src/ydlidar_ros2_driver_client.cpp
+@@ -16,3 +16,11 @@
+ static void scanCb(sensor_msgs::msg::LaserScan::SharedPtr scan) {
++  if (scan->time_increment <= 0.0f) {
++    printf("[YDLIDAR WARN]: Skipping scan: time_increment is zero or negative\n");
++    return;
++  }
+   int count = scan->scan_time / scan->time_increment;
++  if (count > static_cast<int>(scan->ranges.size())) {
++    count = static_cast<int>(scan->ranges.size());
++  }
++
+   printf("[YDLIDAR INFO]: I heard a laser scan %s[%d]:\n", scan->header.frame_id.c_str(), count);
+diff --git a/src/ydlidar_ros2_driver_node.cpp b/src/ydlidar_ros2_driver_node.cpp
+index a268a3e..348d2e1 100644
+--- a/src/ydlidar_ros2_driver_node.cpp
++++ b/src/ydlidar_ros2_driver_node.cpp
+@@ -233,1 +233,9 @@
+-      int size = (scan.config.max_angle - scan.config.min_angle)/ scan.config.angle_increment + 1;
++      if (std::abs(scan.config.angle_increment) < 1e-9f) {
++        RCLCPP_WARN(node->get_logger(), "Skipping scan: angle_increment is near zero");
++        continue;
++      }
++      int size = static_cast<int>((scan.config.max_angle - scan.config.min_angle) / scan.config.angle_increment) + 1;
++      if (size <= 0 || size > 100000) {
++        RCLCPP_WARN(node->get_logger(), "Skipping scan: computed size %d is out of valid range", size);
++        continue;
++      }

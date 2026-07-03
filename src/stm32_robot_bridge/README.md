@@ -1,13 +1,13 @@
 # stm32_robot_bridge
 
-`stm32_robot_bridge` 是当前工程的 STM32 底盘串口桥接包。它把 ROS2 `/cmd_vel` 转成下位机 v2 上位机协议，并把下位机主动上报的 STATUS 转成 `/odom`、TF、电池与电流状态。
+`stm32_robot_bridge` 是当前工程的 STM32 底盘串口桥接包。它把 ROS2 `/cmd_vel/driver` 转成下位机 v2 上位机协议，并把下位机主动上报的 STATUS 转成 `/wheel/odom`、电池与电流状态。
 
 ## 包职责
 
-- 订阅 `/cmd_vel`，发送 `SET_VELOCITY` (`0x01`)。
+- 订阅 `/cmd_vel/driver`，发送 `SET_VELOCITY` (`0x01`)。
 - 被动接收下位机主动上报的 `STATUS` (`0x81`)，不发送状态请求。
-- 发布 `/odom`、`/battery_state`、`/motor/left_current`、`/motor/right_current`、`/chassis/status`。
-- 未启用 EKF 时发布 `odom -> base_link` TF；启用 wheel-only EKF 时由 EKF 发布该 TF。
+- 发布 `/wheel/odom`、`/battery_state`、`/motor/left_current`、`/motor/right_current`、`/chassis/status`。
+- 不默认发布 `odom -> base_link` TF；标准 `/odom` 与 TF 由 `robot_state_estimation` 统一发布。
 - 提供 `/chassis/estop` (`std_srvs/SetBool`) 显式触发或解除急停。
 
 当前下位机 v2 STATUS 不包含 IMU 字段，本包不会发布伪造 IMU 数据。
@@ -61,9 +61,9 @@ colcon test --packages-select stm32_robot_bridge --event-handlers console_direct
 实机验收重点：
 
 - 1 秒内收到 v2 STATUS。
-- `/odom` 约 20Hz 更新。
-- `/cmd_vel` 有效期内下位机 `control_source=1`。
-- `/cmd_vel` 超时后 bridge 只发送一次 `enable=0` 释放上位机控制源。
+- `/wheel/odom` 约 20Hz 更新。
+- `/cmd_vel/driver` 有效期内下位机 `control_source=1`。
+- `/cmd_vel/driver` 超时后 bridge 只发送一次 `enable=0` 释放上位机控制源。
 - `/chassis/estop` 触发后 STATUS bit0 置位，解除需显式调用服务发送 `false`。
 
 ## 相关文档

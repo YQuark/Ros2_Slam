@@ -105,7 +105,7 @@ def wait_for_subscriber(node, publisher, timeout):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description='Publish deterministic base /cmd_vel test commands.')
+    parser = argparse.ArgumentParser(description='Publish deterministic base /cmd_vel/test commands.')
     parser.add_argument('--mode', choices=('rotate', 'linear', 'angular_sweep'), default='rotate')
     parser.add_argument('--linear', type=float, default=0.08)
     parser.add_argument('--angular', type=float, default=0.35)
@@ -118,7 +118,7 @@ def main(argv=None):
 
     rclpy.init()
     node = rclpy.create_node('base_cmd_test_publisher')
-    publisher = node.create_publisher(Twist, '/cmd_vel', 10)
+    publisher = node.create_publisher(Twist, '/cmd_vel/test', 10)
     current_phase: Optional[PhaseStats] = None
     phases: List[PhaseStats] = []
 
@@ -166,7 +166,7 @@ def main(argv=None):
             )
 
     if not wait_for_subscriber(node, publisher, args.wait_subscriber_sec):
-        print('ERROR: no /cmd_vel subscriber found', file=sys.stderr, flush=True)
+        print('ERROR: no /cmd_vel/test subscriber found', file=sys.stderr, flush=True)
         publish_stop(node, publisher, args.hz, 0.5)
         node.destroy_node()
         rclpy.shutdown()

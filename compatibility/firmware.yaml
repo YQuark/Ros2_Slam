@@ -1,0 +1,9 @@
+platform_api_version: 1
+firmware:
+  protocol: upper_v2
+  status_payload_bytes: 64
+  imu_data_raw: reserved
+topics:
+  raw_wheel_odom: /wheel/odom
+  standard_odom: /odom
+  driver_command: /cmd_vel/driver

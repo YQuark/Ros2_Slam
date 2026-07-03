@@ -1,0 +1,8 @@
+diff --git a/cmake/install_package.cmake b/cmake/install_package.cmake
+index 0000000..0000000 100644
+--- a/cmake/install_package.cmake
++++ b/cmake/install_package.cmake
+@@ -192,3 +192,2 @@
+             ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Config.cmake
+-            ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}Targets.cmake
+             ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake

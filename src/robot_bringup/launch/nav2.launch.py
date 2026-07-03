@@ -4,9 +4,10 @@ import os
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
+from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch_ros.actions import SetRemap
 
 
 def generate_launch_description():
@@ -20,14 +21,20 @@ def generate_launch_description():
         DeclareLaunchArgument('default_bt_xml_filename', default_value=default_bt_xml),
         DeclareLaunchArgument('map_subscribe_transient_local', default_value='true'),
         DeclareLaunchArgument('autostart', default_value='true'),
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(os.path.join(nav2_share, 'launch', 'navigation_launch.py')),
-            launch_arguments={
-                'use_sim_time': LaunchConfiguration('use_sim_time'),
-                'params_file': LaunchConfiguration('params_file'),
-                'default_bt_xml_filename': LaunchConfiguration('default_bt_xml_filename'),
-                'map_subscribe_transient_local': LaunchConfiguration('map_subscribe_transient_local'),
-                'autostart': LaunchConfiguration('autostart'),
-            }.items(),
+        DeclareLaunchArgument('cmd_vel_topic', default_value='/cmd_vel/nav'),
+        GroupAction(
+            actions=[
+                SetRemap(src='/cmd_vel', dst=LaunchConfiguration('cmd_vel_topic')),
+                IncludeLaunchDescription(
+                    PythonLaunchDescriptionSource(os.path.join(nav2_share, 'launch', 'navigation_launch.py')),
+                    launch_arguments={
+                        'use_sim_time': LaunchConfiguration('use_sim_time'),
+                        'params_file': LaunchConfiguration('params_file'),
+                        'default_bt_xml_filename': LaunchConfiguration('default_bt_xml_filename'),
+                        'map_subscribe_transient_local': LaunchConfiguration('map_subscribe_transient_local'),
+                        'autostart': LaunchConfiguration('autostart'),
+                    }.items(),
+                ),
+            ],
         ),
     ])

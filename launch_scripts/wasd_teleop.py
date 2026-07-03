@@ -25,7 +25,7 @@ WASD 键盘遥控
 class WasdTeleop(Node):
     def __init__(self) -> None:
         super().__init__('wasd_teleop')
-        self.publisher = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.publisher = self.create_publisher(Twist, '/cmd_vel/teleop', 10)
         self.linear_step = 0.10
         self.angular_step = 0.40
         self.linear_speed = 0.20

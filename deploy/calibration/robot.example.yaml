@@ -1,0 +1,16 @@
+platform_api_version: 1
+base:
+  wheel_radius_m: 0.0350
+  wheel_track_width_m: 0.1780
+  max_linear_speed_mps: 0.4
+  max_angular_speed_radps: 1.5
+lidar:
+  frame_id: laser_frame
+  mount:
+    x_m: 0.07
+    y_m: 0.0
+    z_m: 0.13
+    yaw_rad: 1.570796326795
+devices:
+  lidar: /dev/ydlidar
+  base: /dev/serial0

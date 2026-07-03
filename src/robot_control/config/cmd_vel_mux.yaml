@@ -1,0 +1,8 @@
+cmd_vel_mux:
+  ros__parameters:
+    driver_topic: /cmd_vel/driver
+    research_sources: []
+    linear_limit: 0.4
+    angular_limit: 1.5
+    timeout_sec: 0.25
+    publish_hz: 20.0

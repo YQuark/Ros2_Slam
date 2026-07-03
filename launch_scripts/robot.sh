@@ -27,8 +27,8 @@ PRECISION_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping_l
 FAST_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping_fast.yaml"
 DEFAULT_NAV2_MAPPING_PARAMS="${ROS_WS}/src/robot_bringup/config/nav2_mapping_params.yaml"
 DEFAULT_NAV2_BT_XML="${ROS_WS}/src/robot_bringup/behavior_trees/navigate_to_pose_recovery.xml"
-DEFAULT_LIDAR_PARAMS="${ROS_WS}/src/robot_bringup/config/ydlidar_x2.yaml"
-DEFAULT_LIDAR_FALLBACK_PARAMS="${ROS_WS}/src/ydlidar_ros2_driver/params/X2.yaml"
+DEFAULT_LIDAR_PARAMS="${ROS_WS}/src/robot_sensing/config/ydlidar_x2.yaml"
+DEFAULT_LIDAR_FALLBACK_PARAMS="${ROS_WS}/src/vendor/ydlidar_ros2_driver/params/X2.yaml"
 DEFAULT_LIDAR_RVIZ="${ROS_WS}/src/robot_bringup/rviz/lidar_mapping.rviz"
 DEFAULT_SYSTEM_RVIZ="${ROS_WS}/src/robot_bringup/rviz/system.rviz"
 DEFAULT_LIDAR_TF_YAW_RAD="1.570796326795"
@@ -61,7 +61,7 @@ main_usage() {
   navigation    启动导航
   sensor        启动单一传感器
   base          启动 STM32 底盘桥接
-  base-test     只测试上位机 /cmd_vel 控制底盘
+  base-test     只测试上位机 /cmd_vel/test 控制底盘
   full          启动全量观测系统（雷达 + 相机 + 底盘 + 建图）
   check         执行健康检查（lidar 或 mapping）
   save-map      保存当前地图
@@ -85,10 +85,10 @@ EOF
 
 mapping_usage() {
     cat <<'EOF'
-用法: ./robot.sh mapping [camera|lidar] [quality|precision|fast] [--manual|--auto] [--skip-lidar-check] [--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--auto-drive-duration SEC]
+用法: ./robot.sh mapping [lidar] [quality|precision|fast] [--manual] [--skip-lidar-check] [--rviz|--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted]
 
 说明:
-  --manual 默认非自主建图；--auto 使用 Nav2 + frontier_explorer 自动选择未知边界目标，不直接发布 /cmd_vel。
+  --manual 为正式建图入口；旧 --auto/frontier_explorer 已移到 experiments/legacy，不属于默认平台启动链。
   可用 AUTO_MAPPING_GOAL_CLEARANCE_RADIUS / AUTO_MAPPING_GOAL_UNKNOWN_CLEARANCE_RADIUS 临时放宽或收紧贴墙距离。
   lidar 源建图时可用 --lidar-reversion / --lidar-inverted / --lidar-yaw-* 做运行时覆盖。
 EOF
@@ -96,11 +96,11 @@ EOF
 
 navigation_usage() {
     cat <<'EOF'
-用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--no-rviz] [--skip-lidar-check] [--base-port PORT] [--localization-only|--nav2-only]
+用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--rviz|--no-rviz] [--skip-lidar-check] [--base-port PORT] [--localization-only|--nav2-only]
 
 说明:
   map.yaml 省略时默认使用 /home/robot/ros2_maps/latest.yaml。
-  RViz 中先用 2D Pose Estimate 设置当前位置，再用 2D Goal Pose 点目标导航。
+  默认 headless；需要 RViz 时追加 --rviz，再用 2D Pose Estimate 设置当前位置。
   默认正式流程是单阶段 navigation；只有定位未就绪或现场异常时，才回退到下面两个模式。
   --localization-only 只启动雷达、底盘、AMCL 和 RViz，先完成初始定位。
   --nav2-only         在初始定位完成后，单独启动 Nav2 规划和控制节点；会先检查 AMCL 是否就绪。
@@ -385,7 +385,7 @@ run_mapping() {
     local mapping_source="lidar"
     local slam_profile="auto"
     local skip_lidar_check=false
-    local use_rviz=true
+    local use_rviz=false
     local base_mode="none"
     local base_port="${BASE_PORT:-$DEFAULT_BASE_PORT}"
     local has_source=false
@@ -465,6 +465,10 @@ run_mapping() {
                 ;;
             --no-rviz)
                 use_rviz=false
+                shift
+                ;;
+            --rviz)
+                use_rviz=true
                 shift
                 ;;
             --real-base)
@@ -663,7 +667,11 @@ run_mapping() {
         log_info "frontier 安全点: dist=${auto_mapping_frontier_min_distance}-${auto_mapping_frontier_max_distance}m approach=${auto_mapping_goal_approach_offset}-${auto_mapping_goal_approach_max_offset}m clear=${auto_mapping_goal_clearance_radius}m unknown_clear=${auto_mapping_goal_unknown_clearance_radius}m"
         log_info "Nav2 建图参数: ${auto_mapping_nav2_params}"
     fi
-    log_info "RViz 配置: ${rviz_config}"
+    if [ "$use_rviz" = true ]; then
+        log_info "RViz 配置: ${rviz_config}"
+    else
+        log_info "RViz: headless"
+    fi
     echo
 
     ros2 launch robot_bringup system.launch.py \
@@ -717,7 +725,7 @@ run_navigation() {
     local base_cmd_log_interval_sec="${BASE_CMD_LOG_INTERVAL_SEC:-0.0}"
     local base_cmd_timeout="${BASE_CMD_TIMEOUT:-0.25}"
     local base_drive_keepalive_sec="${BASE_DRIVE_KEEPALIVE_SEC:-0.10}"
-    local use_rviz=true
+    local use_rviz=false
     local skip_lidar_check=false
     local lidar_params=""
     local lidar_port=""
@@ -751,6 +759,10 @@ run_navigation() {
                 ;;
             --no-rviz)
                 use_rviz=false
+                shift
+                ;;
+            --rviz)
+                use_rviz=true
                 shift
                 ;;
             --skip-lidar-check)
@@ -998,7 +1010,7 @@ run_sensor() {
             ensure_lidar_port_access "$lidar_port"
             log_info "雷达串口: ${lidar_port}"
             log_info "雷达参数: ${lidar_params}"
-            ros2 launch robot_bringup sensors.launch.py \
+            ros2 launch robot_sensing lidar.launch.py \
                 use_lidar:=true \
                 lidar_params_file:=${lidar_params}
             ;;
@@ -1058,7 +1070,7 @@ run_base() {
 
 run_system() {
     local base_port="${BASE_PORT:-$DEFAULT_BASE_PORT}"
-    local use_rviz=true
+    local use_rviz=false
     local skip_lidar_check=false
     local lidar_params=""
     local lidar_port=""
@@ -1089,6 +1101,10 @@ run_system() {
                 use_rviz=false
                 shift
                 ;;
+            --rviz)
+                use_rviz=true
+                shift
+                ;;
             --lidar-yaw-rad)
                 if [ $# -lt 2 ]; then
                     log_error "✗ --lidar-yaw-rad 需要一个弧度值"
@@ -1106,7 +1122,7 @@ run_system() {
                 shift 2
                 ;;
             -h|--help)
-                echo "用法: ./robot.sh system [--base-port PORT] [--skip-lidar-check] [--no-rviz]"
+                echo "用法: ./robot.sh system [--base-port PORT] [--skip-lidar-check] [--rviz|--no-rviz]"
                 exit 0
                 ;;
             *)

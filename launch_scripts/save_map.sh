@@ -51,7 +51,7 @@ fi
 
 # 在保存前确认 /map 确实有消息可读，避免 map_saver 直接超时
 echo -e "${YELLOW}检查 /map 是否有可用数据(最长等待15秒)...${NC}"
-if ! timeout 15s bash -c "ros2 topic echo /map --qos-durability transient_local --qos-reliability reliable | head -n 5 >/tmp/map_probe.txt"; then
+if ! timeout 15s ros2 topic echo /map --once --qos-durability transient_local --qos-reliability reliable >/tmp/map_probe.txt 2>/tmp/map_probe.err; then
     echo -e "${RED}✗ /map 在15秒内没有可读消息${NC}"
     echo -e "${YELLOW}请保持建图进程运行，并推动机器人移动后重试。${NC}"
     exit 1
@@ -65,7 +65,7 @@ for TRY in 1 2 3; do
         -t /map \
         -f "$MAP_BASENAME" \
         --ros-args \
-        -p save_map_timeout:=15000 \
+        -p save_map_timeout:=15.0 \
         -p map_subscribe_transient_local:=true
     SAVE_RC=$?
     if [ $SAVE_RC -eq 0 ]; then

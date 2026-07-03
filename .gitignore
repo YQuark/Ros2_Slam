@@ -37,6 +37,10 @@ Thumbs.db
 /log
 /logs
 /outputs
+/vendor/
+/src/vendor/
+/robot_data/
+.worktrees/
 CLAUDE.md
 AGENTS.md
 /pc_test_utils
