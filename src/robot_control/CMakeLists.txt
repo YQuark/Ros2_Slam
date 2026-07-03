@@ -19,8 +19,12 @@ install(DIRECTORY
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
+  # 跨包引用：测试文件位于仓库顶层 tests/ 目录，由多个包共享
   ament_add_pytest_test(test_control_policy
     ../../tests/interface/test_control_policy.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
+  ament_add_pytest_test(test_cmd_vel_mux test/test_cmd_vel_mux.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
 endif()

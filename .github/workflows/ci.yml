@@ -1,0 +1,70 @@
+name: ROS2 CI
+
+on:
+  push:
+    branches: [main, ARM]
+  pull_request:
+    branches: [main, ARM]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+    container: osrf/ros:humble-desktop
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory /__w/Ros2_Slam/Ros2_Slam
+
+      - name: Install system deps
+        run: |
+          apt-get update
+          apt-get install -y python3-pip python3-serial
+          pip3 install "pytest<8" pytest-cov
+
+      - name: rosdep install
+        run: |
+          rosdep update
+          rosdep install --from-paths src --ignore-src -r -y \
+            --skip-keys ydlidar_sdk --skip-keys ydlidar_ros2_driver \
+            --skip-keys robot_localization
+
+      - name: colcon build
+        run: |
+          . /opt/ros/humble/setup.sh
+          colcon build --symlink-install \
+            --packages-skip ydlidar_ros2_driver \
+            --packages-skip robot_localization
+
+      - name: colcon test
+        run: |
+          . /opt/ros/humble/setup.sh
+          . install/setup.sh
+          colcon test \
+            --packages-skip ydlidar_ros2_driver \
+            --packages-skip robot_localization \
+            --return-code-on-test-failure
+
+      - name: colcon test-result
+        if: always()
+        run: |
+          . /opt/ros/humble/setup.sh
+          colcon test-result --verbose
+
+      - name: pytest with coverage
+        run: |
+          . /opt/ros/humble/setup.sh
+          . install/setup.sh
+          pytest tests/ src/ \
+            --cov=src/stm32_robot_bridge \
+            --cov=src/robot_control \
+            --cov=src/robot_sensing \
+            --cov=src/robot_state_estimation \
+            --cov-report=term \
+            --cov-report=xml \
+            -v
+
+      - name: repo boundaries check
+        run: python3 scripts/verify/check_repo_boundaries.py

@@ -1,0 +1,22 @@
+[run]
+source =
+    src/stm32_robot_bridge
+    src/robot_control
+    src/robot_sensing
+    src/robot_state_estimation
+
+omit =
+    */test/*
+    */tests/*
+    */vendor/*
+    */experiments/*
+    */third_party/*
+    */YDLidar-SDK/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+    pass
+    except Exception:

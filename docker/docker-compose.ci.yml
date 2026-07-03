@@ -1,0 +1,8 @@
+services:
+  ci:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.ci
+    volumes:
+      - ..:/ros2_ws:rw
+    working_dir: /ros2_ws

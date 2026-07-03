@@ -1,0 +1,36 @@
+FROM osrf/ros:humble-desktop
+
+# 安装 CI 测试所需依赖
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        python3-pip \
+        python3-serial \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN pip3 install --no-cache-dir pytest pytest-cov
+
+# 设置工作目录
+WORKDIR /ros2_ws
+
+# 默认命令：构建并测试
+CMD ["/bin/bash", "-c", "\
+    . /opt/ros/humble/setup.sh && \
+    rosdep update && \
+    rosdep install --from-paths src --ignore-src -r -y \
+        --skip-keys ydlidar_sdk --skip-keys ydlidar_ros2_driver --skip-keys robot_localization && \
+    colcon build --symlink-install \
+        --packages-skip ydlidar_ros2_driver --packages-skip robot_localization && \
+    . install/setup.sh && \
+    colcon test \
+        --packages-skip ydlidar_ros2_driver --packages-skip robot_localization \
+        --return-code-on-test-failure && \
+    colcon test-result --verbose && \
+    pytest tests/ src/ \
+        --cov=src/stm32_robot_bridge \
+        --cov=src/robot_control \
+        --cov=src/robot_sensing \
+        --cov=src/robot_state_estimation \
+        --cov-report=term \
+        --cov-report=xml \
+        -v && \
+    python3 scripts/verify/check_repo_boundaries.py"]
