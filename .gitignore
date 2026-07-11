@@ -1,5 +1,7 @@
 # ROS2 build artifacts
 build/
+!/scripts/build/
+!/scripts/build/build_ros_ws.sh
 install/
 log/
 
@@ -39,6 +41,7 @@ Thumbs.db
 /outputs
 /vendor/
 /src/vendor/
+/src/third_party/
 /robot_data/
 .worktrees/
 CLAUDE.md

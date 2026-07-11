@@ -6,6 +6,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 
 DETECT_BASE_PORT_SCRIPT="${SCRIPT_DIR}/detect_base_port.sh"
+PROTOCOL_PROBE="${SCRIPT_DIR}/chassis_protocol_probe.py"
 BASE_PORT="${ROBOT_BASE_PORT_HINT:-${BASE_PORT:-/dev/serial0}}"
 
 print_header "底盘诊断"
@@ -51,89 +52,7 @@ fi
 
 print_status_summary() {
     local port="$1"
-    python3 - "$port" <<'PY'
-import struct
-import sys
-import time
-
-try:
-    import serial
-except Exception:
-    sys.exit(0)
-
-port = sys.argv[1]
-
-
-def crc8(data: bytes) -> int:
-    crc = 0
-    for byte in data:
-        crc ^= byte
-        for _ in range(8):
-            crc = ((crc << 1) ^ 0x5E) & 0xFF if (crc & 0x80) else (crc << 1) & 0xFF
-    return crc
-
-
-buf = bytearray()
-try:
-    ser = serial.Serial(port, 115200, timeout=0.05, write_timeout=0.05, rtscts=False, dsrdtr=False)
-except Exception:
-    sys.exit(0)
-
-try:
-    deadline = time.monotonic() + 1.2
-    while time.monotonic() < deadline:
-        chunk = ser.read(256)
-        if chunk:
-            buf.extend(chunk)
-        else:
-            time.sleep(0.02)
-        while True:
-            header = -1
-            for i in range(max(0, len(buf) - 1)):
-                if buf[i] == 0xA5 and buf[i + 1] == 0x5A:
-                    header = i
-                    break
-            if header < 0:
-                if buf and buf[-1] == 0xA5:
-                    del buf[:-1]
-                else:
-                    buf.clear()
-                break
-            if header > 0:
-                del buf[:header]
-            if len(buf) < 3:
-                break
-            length = buf[2]
-            if length == 0 or length > 65:
-                del buf[0]
-                continue
-            frame_len = length + 4
-            if len(buf) < frame_len:
-                break
-            body = bytes(buf[2:3 + length])
-            if crc8(body) != buf[frame_len - 1]:
-                del buf[0]
-                continue
-            cmd = buf[3]
-            payload = bytes(buf[4:3 + length])
-            del buf[:frame_len]
-            if cmd != 0x81 or len(payload) != 64 or payload[0] != 2:
-                continue
-            version = payload[0]
-            status_flags = payload[1]
-            control_source = payload[2]
-            enabled_mask = payload[3]
-            error_flags = struct.unpack_from("<I", payload, 4)[0]
-            latched = struct.unpack_from("<I", payload, 8)[0]
-            battery = struct.unpack_from("<H", payload, 12)[0] / 1000.0
-            speed_valid = payload[62]
-            print(f"  protocol={version} control_source={control_source} status_flags=0x{status_flags:02X}")
-            print(f"  enabled_mask=0x{enabled_mask:02X} speed_valid_mask=0x{speed_valid:02X} battery={battery:.2f}V")
-            print(f"  error_flags=0x{error_flags:08X} latched_error_flags=0x{latched:08X}")
-            raise SystemExit(0)
-finally:
-    ser.close()
-PY
+    python3 "$PROTOCOL_PROBE" summary "$port" || true
 }
 
 if [ -n "${DETECTED:-}" ]; then

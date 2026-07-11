@@ -1,9 +1,13 @@
 platform_api_version: 1
 firmware:
   protocol: upper_v2
-  status_payload_bytes: 64
-  imu_data_raw: reserved
+  status_payload_bytes: 65
+  diagnostic_payload_bytes: 28
+  imu_status_payload_bytes: 99
+  imu_data: /imu/data
+  diagnostic_period_ms: 200
 topics:
   raw_wheel_odom: /wheel/odom
   standard_odom: /odom
   driver_command: /cmd_vel/driver
+  diagnostic: /chassis/diagnostic

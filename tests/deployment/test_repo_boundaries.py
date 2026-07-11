@@ -73,14 +73,31 @@ def test_external_ydlidar_sdk_is_hidden_from_colcon() -> None:
     if sdk_package.exists():
         assert (ROOT / "vendor" / "ydlidar-sdk" / "COLCON_IGNORE").is_file()
 
-def test_owned_shell_scripts_use_lf_line_endings() -> None:
+def test_owned_executable_scripts_use_lf_line_endings() -> None:
     script_paths = sorted((ROOT / "launch_scripts").rglob("*.sh"))
     script_paths.extend(sorted((ROOT / "scripts").rglob("*.sh")))
+    script_paths.extend(sorted((ROOT / "launch_scripts").rglob("*.py")))
+    script_paths.extend(sorted((ROOT / "src").glob("*/launch/*.py")))
+    script_paths.append(ROOT / "src" / "stm32_robot_bridge" / "stm32_robot_bridge" / "bridge_node.py")
 
-    offenders = [path.relative_to(ROOT).as_posix() for path in script_paths if b"\r\n" in path.read_bytes()]
+    offenders = [
+        path.relative_to(ROOT).as_posix()
+        for path in script_paths
+        if path.is_file() and b"\r\n" in path.read_bytes()
+    ]
 
     assert offenders == []
 
+
+def test_build_script_sources_ros_with_nounset_disabled() -> None:
+    build_script = (ROOT / "scripts" / "build" / "build_ros_ws.sh").read_text(encoding="utf-8")
+
+    assert "set -euo pipefail" in build_script
+    assert "set +u" in build_script
+    assert "source /opt/ros/humble/setup.bash" in build_script
+    assert "set -u" in build_script
+    assert build_script.index("set +u") < build_script.index("source /opt/ros/humble/setup.bash")
+    assert build_script.index("source /opt/ros/humble/setup.bash") < build_script.rindex("set -u")
 
 def test_gitattributes_keeps_shell_scripts_lf() -> None:
     attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")
@@ -94,6 +111,17 @@ def test_save_map_uses_humble_compatible_map_saver_arguments() -> None:
     assert "| head" not in save_map
     assert "save_map_timeout:=15.0" in save_map
     assert "save_map_timeout:=15000" not in save_map
+
+def test_build_script_is_not_hidden_by_build_artifact_ignore_rule() -> None:
+    result = subprocess.run(
+        ["git", "check-ignore", "scripts/build/build_ros_ws.sh"],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    assert result.returncode == 1
 
 def test_vendor_source_cache_is_git_ignored() -> None:
     result = subprocess.run(

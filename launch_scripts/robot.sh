@@ -33,7 +33,7 @@ DEFAULT_LIDAR_RVIZ="${ROS_WS}/src/robot_bringup/rviz/lidar_mapping.rviz"
 DEFAULT_SYSTEM_RVIZ="${ROS_WS}/src/robot_bringup/rviz/system.rviz"
 DEFAULT_LIDAR_TF_YAW_RAD="1.570796326795"
 DEFAULT_BASE_PORT="/dev/serial0"
-DEFAULT_BASE_WHEEL_TRACK_WIDTH="0.1780"
+DEFAULT_BASE_WHEEL_TRACK_WIDTH="0.1760"
 
 TMP_FILES=()
 

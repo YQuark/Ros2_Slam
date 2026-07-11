@@ -8,9 +8,9 @@ import rclpy
 from geometry_msgs.msg import TransformStamped, Twist
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from sensor_msgs.msg import BatteryState
+from sensor_msgs.msg import BatteryState, Imu
 from std_msgs.msg import Float32, UInt32
-from std_srvs.srv import SetBool
+from std_srvs.srv import SetBool, Trigger
 from tf2_ros import TransformBroadcaster
 
 try:
@@ -20,11 +20,17 @@ except Exception:  # pragma: no cover
 
 try:
     from stm32_robot_bridge.protocol_v2 import (
+        CMD_CLEAR_FAULT,
+        CMD_DIAGNOSTIC,
         CMD_ESTOP,
+        CMD_IMU_STATUS,
+        CMD_LINE_CTRL,
         CMD_SET_VELOCITY,
         CMD_STATUS,
+        DIAGNOSTIC_PAYLOAD_SIZE,
         FRAME_SOF,
         FRAME_SOF2,
+        IMU_STATUS_PAYLOAD_SIZE,
         PROTOCOL_VERSION,
         STATUS_FLAG_ESTOP,
         STATUS_FLAG_FAULT_STOP,
@@ -33,16 +39,26 @@ try:
         FrameParser,
         aggregate_status,
         build_frame,
+        decode_diagnostic_payload,
+        decode_imu_status_payload,
         decode_status_payload,
+        encode_clear_fault_payload,
         encode_estop_payload,
+        encode_line_ctrl_payload,
     )
 except ImportError:  # pragma: no cover - installed script fallback
     from protocol_v2 import (
+        CMD_CLEAR_FAULT,
+        CMD_DIAGNOSTIC,
         CMD_ESTOP,
+        CMD_IMU_STATUS,
+        CMD_LINE_CTRL,
         CMD_SET_VELOCITY,
         CMD_STATUS,
+        DIAGNOSTIC_PAYLOAD_SIZE,
         FRAME_SOF,
         FRAME_SOF2,
+        IMU_STATUS_PAYLOAD_SIZE,
         PROTOCOL_VERSION,
         STATUS_FLAG_ESTOP,
         STATUS_FLAG_FAULT_STOP,
@@ -51,16 +67,30 @@ except ImportError:  # pragma: no cover - installed script fallback
         FrameParser,
         aggregate_status,
         build_frame,
+        decode_diagnostic_payload,
+        decode_imu_status_payload,
         decode_status_payload,
+        encode_clear_fault_payload,
         encode_estop_payload,
+        encode_line_ctrl_payload,
     )
 
 
 DEFAULT_BASE_PORT = "/dev/serial0"
+GRAVITY_MPS2 = 9.80665
 
 
 def _wrap_angle(angle: float) -> float:
     return math.atan2(math.sin(angle), math.cos(angle))
+
+
+def _normalize_quaternion(values):
+    if len(values) != 4 or not all(math.isfinite(float(value)) for value in values):
+        return None
+    norm = math.sqrt(sum(float(value) * float(value) for value in values))
+    if norm <= 1e-9:
+        return None
+    return tuple(float(value) / norm for value in values)
 
 
 class STM32Bridge(Node):
@@ -74,6 +104,8 @@ class STM32Bridge(Node):
         self.declare_parameter("frame_id", "odom")
         self.declare_parameter("child_frame_id", "base_link")
         self.declare_parameter("publish_tf", False)
+        self.declare_parameter("imu_topic", "/imu/data")
+        self.declare_parameter("imu_frame_id", "imu_link")
         self.declare_parameter("cmd_timeout", 0.25)
         self.declare_parameter("control_hz", 20.0)
         self.declare_parameter("status_hz", 100.0)
@@ -82,7 +114,8 @@ class STM32Bridge(Node):
         self.declare_parameter("drive_keepalive_sec", 0.10)
         self.declare_parameter("startup_settle_sec", 0.20)
         self.declare_parameter("wheel_radius", 0.0350)
-        self.declare_parameter("wheel_track_width", 0.1780)
+        self.declare_parameter("wheel_track_width", 0.1760)
+        self.declare_parameter("drive_mode", "differential")
         self.declare_parameter("odom_linear_scale", 1.0)
         self.declare_parameter("odom_angular_scale", 1.0)
         self.declare_parameter("odom_angular_sign", 1.0)
@@ -98,6 +131,8 @@ class STM32Bridge(Node):
         self.frame_id = self.get_parameter("frame_id").value
         self.child_frame_id = self.get_parameter("child_frame_id").value
         self.publish_tf = bool(self.get_parameter("publish_tf").value)
+        self.imu_topic = str(self.get_parameter("imu_topic").value)
+        self.imu_frame_id = str(self.get_parameter("imu_frame_id").value)
         self.cmd_timeout = float(self.get_parameter("cmd_timeout").value)
         self.control_hz = float(self.get_parameter("control_hz").value)
         self.status_hz = float(self.get_parameter("status_hz").value)
@@ -107,6 +142,7 @@ class STM32Bridge(Node):
         self.startup_settle_sec = float(self.get_parameter("startup_settle_sec").value)
         self.wheel_radius = float(self.get_parameter("wheel_radius").value)
         self.wheel_track_width = float(self.get_parameter("wheel_track_width").value)
+        self.drive_mode = str(self.get_parameter("drive_mode").value)
         self.odom_linear_scale = float(self.get_parameter("odom_linear_scale").value)
         self.odom_angular_scale = float(self.get_parameter("odom_angular_scale").value)
         self.odom_angular_sign = 1.0 if float(self.get_parameter("odom_angular_sign").value) >= 0.0 else -1.0
@@ -141,6 +177,8 @@ class STM32Bridge(Node):
         self.control_source = 0
         self.motor_enabled_mask = 0
         self.motor_speed_valid_mask = 0
+        self.encoder_anomaly_mask = 0
+        self.comm_health_flags = 0
         self.feedback_error_flags = 0
         self.feedback_latched_error_flags = 0
         self.feedback_battery_voltage = 0.0
@@ -162,9 +200,13 @@ class STM32Bridge(Node):
         self.battery_pub = self.create_publisher(BatteryState, "/battery_state", 10)
         self.left_current_pub = self.create_publisher(Float32, "/motor/left_current", 10)
         self.right_current_pub = self.create_publisher(Float32, "/motor/right_current", 10)
+        self.imu_pub = self.create_publisher(Imu, self.imu_topic, 20)
+        self.diag_pub = self.create_publisher(UInt32, "/chassis/diagnostic", 10)
 
         self.create_subscription(Twist, self.cmd_vel_topic, self.on_cmd_vel, 20)
         self.create_service(SetBool, "/chassis/estop", self.on_estop)
+        self.create_service(Trigger, "/chassis/clear_fault", self.on_clear_fault)
+        self.create_service(SetBool, "/chassis/line_ctrl", self.on_line_ctrl)
 
         self.create_timer(1.0 / max(self.control_hz, 1.0), self.control_loop)
         self.create_timer(1.0 / max(self.status_hz, 1.0), self.status_poll)
@@ -174,6 +216,7 @@ class STM32Bridge(Node):
             "STM32 bridge v2 started: "
             f"port={self.port} baud={self.baudrate} protocol={PROTOCOL_VERSION} "
             f"wheel_track_width={self.wheel_track_width:.4f} wheel_radius={self.wheel_radius:.4f} "
+            f"drive_mode={self.drive_mode} "
             f"publish_tf={self.publish_tf}"
         )
 
@@ -301,16 +344,33 @@ class STM32Bridge(Node):
             return False
 
     def on_estop(self, request: SetBool.Request, response: SetBool.Response) -> SetBool.Response:
+        """Handle /chassis/estop service.
+
+        NOTE: The STM32 firmware intentionally ignores estop=0 from remote
+        sources (USART3/ESP12F). ESTOP release is local-only via USART1
+        debug console. See firmware docs/upper-protocol-v2.md.
+        Reject estop=0 locally so callers cannot mistake a transmitted but
+        ignored frame for a successful release.
+        """
+        enabled = bool(request.data)
+        if not enabled:
+            response.success = False
+            response.message = (
+                "remote estop release is unsupported; "
+                "use local USART1 debug console 'estop 0'"
+            )
+            self.get_logger().warn("Rejected remote ESTOP release; use local USART1 console: 'estop 0'")
+            return response
+
         if not self.ensure_serial():
             response.success = False
             response.message = "serial not connected"
             return response
-        enabled = bool(request.data)
-        sent = self.write_frame(CMD_ESTOP, encode_estop_payload(enabled))
+        sent = self.write_frame(CMD_ESTOP, encode_estop_payload(True))
         response.success = sent
-        response.message = "estop triggered" if enabled and sent else "estop released" if sent else "send failed"
+        response.message = "estop triggered" if sent else "send failed"
         if sent:
-            self.get_logger().warn("Sent ESTOP=1 to STM32" if enabled else "Sent ESTOP=0 to STM32")
+            self.get_logger().warn("Sent ESTOP=1 to STM32")
         return response
 
     def on_cmd_vel(self, msg: Twist) -> None:
@@ -358,9 +418,18 @@ class STM32Bridge(Node):
             self.handle_frame(cmd, payload)
 
     def handle_frame(self, cmd: int, payload: bytes) -> None:
-        if cmd != CMD_STATUS:
-            self.get_logger().debug(f"Unknown frame cmd=0x{cmd:02X} len={len(payload)}")
+        if cmd == CMD_STATUS:
+            self.handle_status_frame(payload)
             return
+        if cmd == CMD_IMU_STATUS:
+            self.handle_imu_status_frame(payload)
+            return
+        if cmd == CMD_DIAGNOSTIC:
+            self.handle_diagnostic_frame(payload)
+            return
+        self.get_logger().debug(f"Unknown frame cmd=0x{cmd:02X} len={len(payload)}")
+
+    def handle_status_frame(self, payload: bytes) -> None:
         if len(payload) != STATUS_PAYLOAD_SIZE:
             self.warn_periodic("bad_status_len", f"Discard STATUS payload len={len(payload)} expected={STATUS_PAYLOAD_SIZE}")
             return
@@ -371,13 +440,15 @@ class STM32Bridge(Node):
             self.warn_periodic("bad_status_version", f"Discard STATUS protocol version={version} expected={PROTOCOL_VERSION}")
             return
 
-        agg = aggregate_status(status, self.wheel_track_width)
+        agg = aggregate_status(status, self.wheel_track_width, drive_mode=self.drive_mode)
         self.last_status_ts = self.get_clock().now()
         self.protocol_version = status.version
         self.status_flags = status.status_flags
         self.control_source = status.control_source
         self.motor_enabled_mask = status.motor_enabled_mask
         self.motor_speed_valid_mask = status.motor_speed_valid_mask
+        self.encoder_anomaly_mask = status.encoder_anomaly_mask
+        self.comm_health_flags = status.comm_health_flags
         self.feedback_error_flags = status.error_flags
         self.feedback_latched_error_flags = status.latched_error_flags
         self.feedback_battery_voltage = status.battery_voltage
@@ -396,6 +467,96 @@ class STM32Bridge(Node):
 
         self.publish_auxiliary_topics()
         self.log_status_summary()
+
+    def handle_imu_status_frame(self, payload: bytes) -> None:
+        if len(payload) != IMU_STATUS_PAYLOAD_SIZE:
+            self.warn_periodic("bad_imu_status_len", f"Discard IMU_STATUS payload len={len(payload)} expected={IMU_STATUS_PAYLOAD_SIZE}")
+            return
+
+        imu = decode_imu_status_payload(payload)
+        if imu is None:
+            version = payload[0] if payload else -1
+            self.warn_periodic("bad_imu_status_version", f"Discard IMU_STATUS protocol version={version} expected={PROTOCOL_VERSION}")
+            return
+
+        msg = Imu()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.imu_frame_id
+
+        q = _normalize_quaternion(imu.quaternion)
+        if q is None:
+            msg.orientation_covariance[0] = -1.0
+        else:
+            msg.orientation.x = q[0]
+            msg.orientation.y = q[1]
+            msg.orientation.z = q[2]
+            msg.orientation.w = q[3]
+
+        msg.angular_velocity.x = math.radians(imu.gyro_corrected_dps[0])
+        msg.angular_velocity.y = math.radians(imu.gyro_corrected_dps[1])
+        msg.angular_velocity.z = math.radians(imu.gyro_corrected_dps[2])
+        msg.linear_acceleration.x = imu.accel_g[0] * GRAVITY_MPS2
+        msg.linear_acceleration.y = imu.accel_g[1] * GRAVITY_MPS2
+        msg.linear_acceleration.z = imu.accel_g[2] * GRAVITY_MPS2
+
+        self.imu_pub.publish(msg)
+
+    def handle_diagnostic_frame(self, payload: bytes) -> None:
+        if len(payload) != DIAGNOSTIC_PAYLOAD_SIZE:
+            self.warn_periodic("bad_diag_len", f"Discard DIAGNOSTIC payload len={len(payload)} expected={DIAGNOSTIC_PAYLOAD_SIZE}")
+            return
+
+        diag = decode_diagnostic_payload(payload)
+        if diag is None:
+            version = payload[0] if payload else -1
+            self.warn_periodic("bad_diag_version", f"Discard DIAGNOSTIC protocol version={version} expected={PROTOCOL_VERSION}")
+            return
+
+        # Publish diagnostic summary on /chassis/diagnostic topic
+        self.diag_pub.publish(UInt32(data=diag.post_error_flags))
+
+        # Log noteworthy diagnostic events
+        if diag.post_done and diag.post_error_flags != 0:
+            self.warn_periodic("post_errors", f"STM32 POST errors: 0x{diag.post_error_flags:08X}")
+        if diag.adc_invalid_reason_flags != 0:
+            self.warn_periodic("adc_invalid", f"STM32 ADC invalid: 0x{diag.adc_invalid_reason_flags:08X}")
+        if diag.task_timeout_mask != 0:
+            self.warn_periodic("task_timeout", f"STM32 task timeout mask: 0x{diag.task_timeout_mask:04X}")
+        self.get_logger().debug(
+            f"DIAGNOSTIC: uptime={diag.uptime_ms}ms reset_reason=0x{diag.reset_reason_flags:08X} "
+            f"imu_quality=0x{diag.imu_quality_flags:08X}"
+        )
+
+    def on_clear_fault(self, request, response):
+        """Handle /chassis/clear_fault service (std_srvs/Trigger).
+
+        Sends CLEAR_FAULT (0x04) with zero-length payload.
+        NOTE: Cannot clear ESTOP; that requires local USART1 console.
+        """
+        if not self.ensure_serial():
+            response.success = False
+            response.message = "serial not connected"
+            return response
+        sent = self.write_frame(CMD_CLEAR_FAULT, encode_clear_fault_payload())
+        response.success = sent
+        response.message = "clear_fault sent" if sent else "send failed"
+        if sent:
+            self.get_logger().info("Sent CLEAR_FAULT to STM32")
+        return response
+
+    def on_line_ctrl(self, request: SetBool.Request, response: SetBool.Response) -> SetBool.Response:
+        """Handle /chassis/line_ctrl service (std_srvs/SetBool)."""
+        if not self.ensure_serial():
+            response.success = False
+            response.message = "serial not connected"
+            return response
+        enabled = bool(request.data)
+        sent = self.write_frame(CMD_LINE_CTRL, encode_line_ctrl_payload(enabled))
+        response.success = sent
+        response.message = f"line_ctrl {'enabled' if enabled else 'disabled'}" if sent else "send failed"
+        if sent:
+            self.get_logger().info(f"Sent LINE_CTRL={'ON' if enabled else 'OFF'} to STM32")
+        return response
 
     def publish_auxiliary_topics(self) -> None:
         if self.last_status_ts is None:

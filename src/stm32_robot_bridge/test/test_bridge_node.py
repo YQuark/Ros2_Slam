@@ -27,6 +27,7 @@ _mock_geometry_msgs = MagicMock(name="geometry_msgs")
 _mock_nav_msgs = MagicMock(name="nav_msgs")
 _mock_nav_msgs_msg = MagicMock(name="nav_msgs.msg")
 _mock_sensor_msgs = MagicMock(name="sensor_msgs")
+_mock_sensor_msgs_msg = MagicMock(name="sensor_msgs.msg")
 _mock_std_msgs = MagicMock(name="std_msgs")
 _mock_std_srvs = MagicMock(name="std_srvs")
 _mock_tf2_ros = MagicMock(name="tf2_ros")
@@ -40,7 +41,7 @@ sys.modules["geometry_msgs.msg"] = MagicMock()
 sys.modules["nav_msgs"] = _mock_nav_msgs
 sys.modules["nav_msgs.msg"] = _mock_nav_msgs_msg
 sys.modules["sensor_msgs"] = _mock_sensor_msgs
-sys.modules["sensor_msgs.msg"] = MagicMock()
+sys.modules["sensor_msgs.msg"] = _mock_sensor_msgs_msg
 sys.modules["std_msgs"] = _mock_std_msgs
 sys.modules["std_msgs.msg"] = MagicMock()
 sys.modules["std_srvs"] = _mock_std_srvs
@@ -77,7 +78,7 @@ PARAM_DEFAULTS = {
     "drive_keepalive_sec": 0.10,
     "startup_settle_sec": 0.20,
     "wheel_radius": 0.0350,
-    "wheel_track_width": 0.1780,
+    "wheel_track_width": 0.1760,
     "odom_linear_scale": 1.0,
     "odom_angular_scale": 1.0,
     "odom_angular_sign": 1.0,
@@ -162,7 +163,21 @@ class _FakeOdometry:
         )
 
 
+class _FakeImu:
+    """Minimal Imu substitute with mutable vector fields."""
+
+    def __init__(self):
+        self.header = SimpleNamespace(stamp=None, frame_id="")
+        self.orientation = SimpleNamespace(x=0.0, y=0.0, z=0.0, w=1.0)
+        self.angular_velocity = SimpleNamespace(x=0.0, y=0.0, z=0.0)
+        self.linear_acceleration = SimpleNamespace(x=0.0, y=0.0, z=0.0)
+        self.orientation_covariance = [0.0] * 9
+        self.angular_velocity_covariance = [0.0] * 9
+        self.linear_acceleration_covariance = [0.0] * 9
+
+
 _mock_nav_msgs_msg.Odometry = _FakeOdometry
+_mock_sensor_msgs_msg.Imu = _FakeImu
 
 # ---------------------------------------------------------------------------
 # 导入被测试模块（mock 环境就绪后）
@@ -191,9 +206,11 @@ def make_status_payload(
     targets=(0, 130, 350, 0),
     outputs=(0, 501, -502, 0),
     speed_valid_mask=0b0110,
+    encoder_anomaly_mask=0xA5,
+    comm_health_flags=0x5A,
 ) -> bytes:
-    """构造 64 字节 STATUS payload。"""
-    payload = bytearray(64)
+    """Construct a STATUS payload."""
+    payload = bytearray(65)
     payload[0] = version
     payload[1] = status_flags
     payload[2] = control_source
@@ -207,9 +224,46 @@ def make_status_payload(
     struct.pack_into("<4h", payload, 46, *targets)
     struct.pack_into("<4h", payload, 54, *outputs)
     payload[62] = speed_valid_mask
-    payload[63] = 0xAA
+    payload[63] = encoder_anomaly_mask
+    payload[64] = comm_health_flags
     return bytes(payload)
 
+
+def make_imu_status_payload(
+    *,
+    version=2,
+    accel=(0.1, -0.2, 0.3),
+    gyro=(90.0, -45.0, 180.0),
+    euler=(10.0, -20.0, 30.0),
+    quaternion=(0.5, 0.5, -0.5, 0.5),  # wire order [w, x, y, z]; decode remaps to [x, y, z, w]
+    timestamp_ms=123456,
+    sensor_time=654321,
+    sample_count=42,
+    quality_flags=0,
+    quality_counters=(1, 2, 3, 4, 5, 6, 7),
+    status_flags=0x0B,
+    temperature_c=25,
+) -> bytes:
+    payload = bytearray(99)
+    payload[0] = version
+    offset = 1
+    for values in (accel, gyro, euler, quaternion):
+        for value in values:
+            struct.pack_into("<f", payload, offset, value)
+            offset += 4
+    struct.pack_into("<I", payload, offset, timestamp_ms)
+    offset += 4
+    struct.pack_into("<I", payload, offset, sensor_time)
+    offset += 4
+    struct.pack_into("<I", payload, offset, sample_count)
+    offset += 4
+    struct.pack_into("<I", payload, offset, quality_flags)
+    offset += 4
+    struct.pack_into("<7I", payload, offset, *quality_counters)
+    offset += 28
+    payload[offset] = status_flags
+    payload[offset + 1] = temperature_c & 0xFF
+    return bytes(payload)
 
 def make_bridge(**param_overrides):
     """创建 STM32Bridge 实例的工厂函数。"""
@@ -263,14 +317,16 @@ class TestDeadzone:
 class TestBridgeParameterDefaults:
     """验证 bridge_node 声明的所有参数及其默认值。"""
 
-    def test_all_28_parameters_are_declared(self):
+    def test_all_26_parameters_are_declared(self):
         bridge = make_bridge()
         declared = set(bridge._declared_params.keys())
-        assert len(declared) == 23, f"Expected 23 parameters, got {len(declared)}: {sorted(declared)}"
+        assert len(declared) == 26, f"Expected 26 parameters, got {len(declared)}: {sorted(declared)}"
         assert "port" in declared
         assert "wheel_radius" in declared
         assert "wheel_track_width" in declared
         assert "publish_tf" in declared
+        assert "imu_topic" in declared
+        assert "imu_frame_id" in declared
 
     def test_parameter_default_values(self):
         bridge = make_bridge()
@@ -283,7 +339,9 @@ class TestBridgeParameterDefaults:
         assert bridge.control_hz == 20.0
         assert bridge.status_hz == 100.0
         assert bridge.wheel_radius == 0.0350
-        assert bridge.wheel_track_width == 0.1780
+        assert bridge.wheel_track_width == 0.1760
+        assert bridge.imu_topic == "/imu/data"
+        assert bridge.imu_frame_id == "imu_link"
 
     def test_publishers_and_subscriptions_are_created(self):
         bridge = make_bridge()
@@ -292,6 +350,7 @@ class TestBridgeParameterDefaults:
         assert bridge.battery_pub is not None
         assert bridge.left_current_pub is not None
         assert bridge.right_current_pub is not None
+        assert bridge.imu_pub is not None
         # 订阅和服务已创建（通过 Node.create_subscription/create_service）
         assert bridge.has_seen_cmd_vel is False  # 初始状态
 
@@ -395,6 +454,32 @@ class TestFrameHandling:
         bridge.handle_frame(0x81, payload)
         bridge.chassis_status_pub.publish.assert_not_called()
 
+
+    def test_valid_imu_status_frame_publishes_imu_data_with_unit_conversions(self):
+        bridge = make_bridge()
+        payload = make_imu_status_payload()
+
+        bridge.handle_frame(_real_protocol.CMD_IMU_STATUS, payload)
+
+        bridge.imu_pub.publish.assert_called_once()
+        imu_msg = bridge.imu_pub.publish.call_args[0][0]
+        assert imu_msg.header.frame_id == "imu_link"
+        assert math.isclose(imu_msg.linear_acceleration.x, 0.1 * 9.80665, rel_tol=1e-6)
+        assert math.isclose(imu_msg.linear_acceleration.y, -0.2 * 9.80665, rel_tol=1e-6)
+        assert math.isclose(imu_msg.linear_acceleration.z, 0.3 * 9.80665, rel_tol=1e-6)
+        assert math.isclose(imu_msg.angular_velocity.x, math.radians(90.0), rel_tol=1e-6)
+        assert math.isclose(imu_msg.angular_velocity.y, math.radians(-45.0), rel_tol=1e-6)
+        assert math.isclose(imu_msg.angular_velocity.z, math.radians(180.0), rel_tol=1e-6)
+        # wire [w=0.5, x=0.5, y=-0.5, z=0.5] → ROS [x=0.5, y=-0.5, z=0.5, w=0.5]
+        assert math.isclose(imu_msg.orientation.x, 0.5, rel_tol=1e-6)
+        assert math.isclose(imu_msg.orientation.y, -0.5, rel_tol=1e-6)
+        assert math.isclose(imu_msg.orientation.z, 0.5, rel_tol=1e-6)
+        assert math.isclose(imu_msg.orientation.w, 0.5, rel_tol=1e-6)
+
+    def test_imu_status_bad_length_is_discarded(self):
+        bridge = make_bridge()
+        bridge.handle_frame(_real_protocol.CMD_IMU_STATUS, make_imu_status_payload()[:-1])
+        bridge.imu_pub.publish.assert_not_called()
     def test_estop_and_fault_stop_bits_persist_in_status_flags(self):
         bridge = make_bridge()
         payload = make_status_payload(status_flags=0x03)  # ESTOP + FAULT_STOP
@@ -408,12 +493,12 @@ class TestFrameHandling:
             odom_angular_sign=-1.0,
         )
         # speeds=(0, 100, 300, 0) → left=0.1, right=0.3
-        # vx = (0.1+0.3)/2 = 0.2, wz = (0.3-0.1)/0.178 ≈ 1.1236
+        # vx = (0.1+0.3)/2 = 0.2, wz = (0.3-0.1)/0.176 ≈ 1.1364
         payload = make_status_payload(speeds=(0, 100, 300, 0))
         bridge.handle_frame(0x81, payload)
 
         expected_vx = 0.2 * 1.2
-        expected_wz = ((0.3 - 0.1) / 0.178) * 0.8 * (-1.0)
+        expected_wz = ((0.3 - 0.1) / 0.176) * 0.8 * (-1.0)
         assert math.isclose(bridge.feedback_vx, expected_vx, rel_tol=1e-4)
         assert math.isclose(bridge.feedback_wz, expected_wz, rel_tol=1e-4)
 
@@ -739,3 +824,97 @@ class TestLoggingHelpers:
 
         bridge.warn_periodic("key_a", "msg 2")
         assert bridge._logger.warn.call_count == 2
+
+
+class TestDiagnosticFrame:
+    def make_diagnostic_payload(
+        self,
+        version=2,
+        schema_version=1,
+        post_done=1,
+        imu_status_flags=0x0B,
+        post_error_flags=0,
+        adc_invalid_reason_flags=0,
+        task_timeout_mask=0,
+        imu_quality_flags=0,
+        reset_reason_flags=0,
+        uptime_ms=10000,
+    ) -> bytes:
+        import struct as _struct
+        payload = bytearray(28)
+        payload[0] = version
+        payload[1] = schema_version
+        payload[2] = post_done
+        payload[3] = imu_status_flags
+        _struct.pack_into("<I", payload, 4, post_error_flags)
+        _struct.pack_into("<I", payload, 8, adc_invalid_reason_flags)
+        _struct.pack_into("<H", payload, 12, task_timeout_mask)
+        _struct.pack_into("<I", payload, 16, imu_quality_flags)
+        _struct.pack_into("<I", payload, 20, reset_reason_flags)
+        _struct.pack_into("<I", payload, 24, uptime_ms)
+        return bytes(payload)
+
+    def test_diagnostic_frame_is_handled(self):
+        bridge = make_bridge()
+        payload = self.make_diagnostic_payload()
+        bridge.handle_frame(_real_protocol.CMD_DIAGNOSTIC, payload)
+        # diagnostic publisher should have been called
+        bridge.diag_pub.publish.assert_called()
+
+    def test_diagnostic_bad_length_is_discarded(self):
+        bridge = make_bridge()
+        bridge.handle_frame(_real_protocol.CMD_DIAGNOSTIC, b"\x02" * 27)
+        bridge.diag_pub.publish.assert_not_called()
+
+    def test_diagnostic_bad_version_is_discarded(self):
+        bridge = make_bridge()
+        payload = self.make_diagnostic_payload(version=1)
+        bridge.handle_frame(_real_protocol.CMD_DIAGNOSTIC, payload)
+        bridge.diag_pub.publish.assert_not_called()
+
+    def test_diagnostic_post_errors_log_warning(self):
+        bridge = make_bridge()
+        bridge._logger.warn.reset_mock()
+        payload = self.make_diagnostic_payload(post_error_flags=0xDEAD)
+        bridge.handle_frame(_real_protocol.CMD_DIAGNOSTIC, payload)
+        assert bridge._logger.warn.call_count >= 1
+
+
+class TestClearFaultService:
+    def test_clear_fault_sends_frame(self):
+        bridge = make_bridge()
+        bridge.serial = MagicMock()
+        response = SimpleNamespace(success=False, message="")
+        bridge.on_clear_fault(SimpleNamespace(), response)
+        assert response.success is True
+        bridge.serial.write.assert_called()
+
+
+class TestEstopService:
+    def test_estop_release_is_rejected_without_writing_a_frame(self):
+        bridge = make_bridge()
+        bridge.serial = MagicMock()
+        bridge._logger.warn.reset_mock()
+        response = SimpleNamespace(success=False, message="")
+        bridge.on_estop(SimpleNamespace(data=False), response)
+        assert response.success is False
+        assert "unsupported" in response.message.lower()
+        bridge.serial.write.assert_not_called()
+        assert bridge._logger.warn.call_count == 1
+
+
+class TestImuQuaternionRemap:
+    def test_imu_orientation_with_distinct_quaternion_values(self):
+        """Wire [w, x, y, z] = [1, 0, 0, 0] → ROS orientation identity [x=0, y=0, z=0, w=1]."""
+        bridge = make_bridge()
+        # Use identity quaternion — already unit-norm, avoids normalization skew
+        payload = make_imu_status_payload(quaternion=(1.0, 0.0, 0.0, 0.0))
+        bridge.handle_frame(_real_protocol.CMD_IMU_STATUS, payload)
+        call_args = bridge.imu_pub.publish.call_args
+        assert call_args is not None
+        imu_msg = call_args[0][0]
+        # Wire [w=1, x=0, y=0, z=0] → ROS [x=0, y=0, z=0, w=1]
+        assert math.isclose(imu_msg.orientation.x, 0.0, abs_tol=1e-6)
+        assert math.isclose(imu_msg.orientation.y, 0.0, abs_tol=1e-6)
+        assert math.isclose(imu_msg.orientation.z, 0.0, abs_tol=1e-6)
+        assert math.isclose(imu_msg.orientation.w, 1.0, abs_tol=1e-6)

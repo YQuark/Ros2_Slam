@@ -311,7 +311,7 @@ def generate_launch_description():
         DeclareLaunchArgument('base_fusion_mode', default_value='none'),
         DeclareLaunchArgument('base_status_hz', default_value='100.0'),
         DeclareLaunchArgument('base_wheel_radius', default_value='0.0350'),
-        DeclareLaunchArgument('base_wheel_track_width', default_value='0.1780'),
+        DeclareLaunchArgument('base_wheel_track_width', default_value='0.1760'),
         DeclareLaunchArgument('base_odom_linear_scale', default_value='1.0'),
         DeclareLaunchArgument('base_odom_angular_scale', default_value='1.0'),
         DeclareLaunchArgument('base_odom_angular_sign', default_value='1.0'),

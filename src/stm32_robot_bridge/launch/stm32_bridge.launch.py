@@ -17,7 +17,7 @@ def generate_launch_description():
         DeclareLaunchArgument('publish_tf', default_value='false'),
         DeclareLaunchArgument('status_hz', default_value='100.0'),
         DeclareLaunchArgument('wheel_radius', default_value='0.0350'),
-        DeclareLaunchArgument('wheel_track_width', default_value='0.1780'),
+        DeclareLaunchArgument('wheel_track_width', default_value='0.1760'),
         DeclareLaunchArgument('odom_linear_scale', default_value='1.0'),
         DeclareLaunchArgument('odom_angular_scale', default_value='1.0'),
         DeclareLaunchArgument('odom_angular_sign', default_value='1.0'),

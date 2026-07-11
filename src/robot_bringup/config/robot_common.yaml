@@ -21,26 +21,27 @@ robot:
     cmd_timeout_sec: 0.25
     drive_keepalive_sec: 0.10
 
-    # Kinematic parameters (estimated, pending physical measurement)
-    wheel_radius_m: 0.0350      # 下位机当前真实默认值
-    wheel_base_m: 0.125         # 待实测确认
-    encoder_counts_per_rev: 2464 # 估计值 11*4*56, 待 TIM 编码器模式确认
-    left_encoder_sign: 1        # 待实测
-    right_encoder_sign: 1       # 待实测
-    left_motor_sign: 1          # 待实测
-    right_motor_sign: 1         # 待实测
+    # =========================================================================
+    # 运动学参数（上位机实际使用的仅 wheel_track_width 和 wheel_radius）
+    #
+    # MCU 通过串口协议上报 m/s 轮速，已内置 encoder_dir / motor_dir 修正。
+    # 编码器 CPR、方向、电机方向、PID、电流限速等全部在 STM32 固件闭环，
+    # 上位机无需关心。wheel_track_width 用于 protocol_v2.py 计算 wz：
+    #   wz = (right_speed - left_speed) / wheel_track_width
+    # wheel_radius 不参与任何计算，仅日志输出。
+    # =========================================================================
 
-    # Speed limits (protocol encoding only, not navigation limits)
-    max_linear_speed_mps: 1.20
-    max_angular_speed_radps: 19.27
+    wheel_radius_m: 0.0350          # [已实测] 轮径 70mm
+    wheel_track_width_m: 0.176      # [已实测] 有效轮距 176mm（机械 181.5mm）
 
-    # TODO: 以下参数待机械定型后填入
-    # chassis_length_m: TBD
-    # chassis_width_m: TBD
-    # chassis_height_m: TBD
-    # ground_clearance_m: TBD
-    # lidar_mount_x: TBD
-    # lidar_mount_y: TBD
-    # lidar_mount_z: TBD
-    # lidar_mount_yaw: TBD
-    # footprint: TBD (当前 nav2 临时值 [[±0.11, ±0.075]])
+    # =========================================================================
+    # 机械尺寸 & TF — 以下参数待实测后填入
+    # =========================================================================
+    chassis_length_m: 0.0           # [待实测] 底盘总长 (m)
+    chassis_width_m: 0.0            # [待实测] 底盘总宽 (m)
+    chassis_height_m: 0.0           # [待实测] 底盘高度 (m)
+    lidar_mount_x: 0.07             # [待实测] 雷达 X 偏移，当前为临时值
+    lidar_mount_y: 0.0              # [待实测] 雷达 Y 偏移
+    lidar_mount_z: 0.13             # [待实测] 雷达 Z 偏移，当前为临时值
+    lidar_mount_yaw: 1.571          # [待实测] 雷达 yaw (rad)，π/2 为临时值
+    footprint: ""                   # [待实测] 格式 "[[x1,y1],[x2,y2],...]"，当前 nav2 临时值 [[±0.11,±0.075]]

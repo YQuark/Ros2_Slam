@@ -1,7 +1,9 @@
 platform_api_version: 1
 base:
+  # 轮子直径 70mm → 半径 0.035m
   wheel_radius_m: 0.0350
-  wheel_track_width_m: 0.1780
+  # 有效轮距 176mm（机械实测 181.5mm，有效值补偿轮胎变形与接触面偏移）
+  wheel_track_width_m: 0.1760
   max_linear_speed_mps: 0.4
   max_angular_speed_radps: 1.5
 lidar:
