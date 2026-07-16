@@ -5,6 +5,7 @@ import argparse
 import datetime as dt
 import hashlib
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -14,7 +15,7 @@ from benchmark_bags import build_record_plan, load_catalog
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CATALOG = ROOT / "config" / "benchmarks" / "rosbag_datasets.yaml"
+DEFAULT_CATALOG = ROOT / "verification" / "configs" / "benchmarks" / "rosbag-datasets-v0.4.0.yaml"
 
 
 def git_value(*args: str) -> str:
@@ -46,7 +47,10 @@ def main() -> int:
     run_id = args.run_id or now.strftime("%Y%m%dT%H%M%SZ")
     output_root = args.output_root or Path(catalog["default_output_root"])
     plan = build_record_plan(catalog, args.dataset, output_root=output_root, run_id=run_id)
-    calibration = ROOT / "src" / "robot_bringup" / "config" / "robot_calibration.yaml"
+    effective_config_value = os.environ.get("ROBOT_EFFECTIVE_CONFIG", "")
+    effective_config = Path(effective_config_value)
+    if not effective_config_value or not effective_config.is_file():
+        raise SystemExit("ROBOT_EFFECTIVE_CONFIG is required; start through bin/robot")
     manifest = {
         "schema_version": 1,
         "dataset": args.dataset,
@@ -54,7 +58,8 @@ def main() -> int:
         "started_utc": now.isoformat(),
         "upper_commit": git_value("rev-parse", "HEAD"),
         "upper_dirty": bool(git_value("status", "--porcelain")),
-        "calibration_sha256": file_sha256(calibration),
+        "config_sha256": file_sha256(effective_config),
+        "effective_config": str(effective_config),
         "procedure": catalog["datasets"][args.dataset]["procedure"],
         "command": list(plan.command),
     }

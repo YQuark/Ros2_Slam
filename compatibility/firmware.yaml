@@ -1,42 +1,36 @@
-platform_api_version: 2
-
+schema_version: 2
+platform_api_version: 3
 upper:
   branch: ARM
-  baseline_commit: 2c9718e7a62cbb0d1905e759073871d25621dba9
-  release: v0.3.0
-
-firmware:
-  repository: Yaoser-x/SlamRobot_Chassis_Control
-  branch: main
-  tag: v1.0.0-beta4
-  commit: a4ae10d592e840e979dd35c8a9b2ff2f5dd107e4
-
+  baseline_commit: b70721c0e8e8bf3aa5c76debc0b806474a546a26
+  release: v0.4.0
+  wire_protocols_supported: [3]
 protocol:
-  name: upper_v2
-  version: 2
-  status_payload_bytes: 65
+  name: upper_v3
+  version: 3
+  hello_payload_bytes: 34
+  velocity_payload_bytes: 23
+  status_payload_bytes: 92
   diagnostic_payload_bytes: 28
   imu_status_payload_bytes: 99
-
+  required_capabilities: 31
+firmware:
+  repository: Yaoser-x/SlamRobot_Chassis_Control
+  compatible_commit: null
+  compatible_tag: null
+  status: awaiting_v3_implementation
+  implementation_spec: docs/interfaces/upper-protocol-v3.md
+incompatible_firmware:
+  - tag: v1.0.0-beta4
+    commit: a4ae10d592e840e979dd35c8a9b2ff2f5dd107e4
+    protocol: upper_v2
+    reason: v0.4.0 intentionally removed the v2 runtime path
 timing:
   mux_source_timeout_ms: 250
   bridge_command_timeout_ms: 150
   bridge_keepalive_ms: 50
+  command_ack_timeout_ms: 150
   bridge_status_timeout_ms: 250
-  bridge_odom_max_dt_ms: 250
-  firmware_upper_timeout_ms: 200
-  deprecated_firmware_chassis_timeout_ms: 500
-
-topics:
-  raw_wheel_odom: /wheel/odom
-  standard_odom: /odom
-  chassis_command: /chassis/command
-  legacy_driver_command: /cmd_vel/driver
-  imu_data: /imu/data
-  chassis_state: /chassis/state
-  diagnostic: /diagnostics
-  legacy_diagnostic_summary: /chassis/diagnostic
-
-verified:
-  date: "2026-07-15"
-  hil_report: reports/hil/v0.3.0.md
+  required_firmware_upper_timeout_ms: 200
+release_compatible: false
+release_blocker: No firmware commit implements and passes upper protocol v3 HIL.

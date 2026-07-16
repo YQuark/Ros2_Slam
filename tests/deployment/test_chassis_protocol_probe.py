@@ -1,13 +1,23 @@
 import importlib.util
 from pathlib import Path
+import struct
+
+from stm32_robot_bridge.framing import build_frame
+from stm32_robot_bridge.protocol_v3 import ACK_APPLIED, CMD_STATUS, STATUS_PAYLOAD_SIZE
 
 
 ROOT = Path(__file__).resolve().parents[2]
 PROBE_PATH = ROOT / "launch_scripts" / "chassis_protocol_probe.py"
-STATUS_GOLDEN_FRAME = bytes.fromhex(
-    "a55a4281020f030f78563412efcdab903930e2040cfe010030f801000000feffffffffffff7f"
-    "000000806400b0046009fffffa0006ffdc0524fa64009cffe80318fc050a156d"
-)
+
+
+def status_frame():
+    payload = bytearray(STATUS_PAYLOAD_SIZE)
+    payload[0:4] = bytes((3, 0, 2, 0x0F))
+    struct.pack_into("<H", payload, 12, 12345)
+    payload[62:65] = bytes((0x0F, 0, 0x15))
+    struct.pack_into("<IIQII", payload, 65, 7, 350, 99, 5, 5)
+    payload[91] = ACK_APPLIED
+    return build_frame(CMD_STATUS, payload)
 
 
 def load_probe_module():
@@ -26,23 +36,26 @@ class ChunkedSerial:
         return self.chunks.pop(0) if self.chunks else b""
 
 
-def test_probe_decodes_firmware_golden_status_across_serial_chunks():
+def test_probe_decodes_v3_status_across_serial_chunks():
     probe = load_probe_module()
+    frame = status_frame()
     serial_port = ChunkedSerial(
         [
-            b"garbage" + STATUS_GOLDEN_FRAME[:3],
-            STATUS_GOLDEN_FRAME[3:31],
-            STATUS_GOLDEN_FRAME[31:],
+            b"garbage" + frame[:3],
+            frame[3:31],
+            frame[31:],
         ]
     )
 
     status = probe.find_status(serial_port, timeout_sec=0.2)
 
     assert status is not None
-    assert status.version == 2
-    assert status.control_source == 3
+    assert status.version == 3
+    assert status.control_source == 2
     assert status.battery_voltage == 12.345
     assert status.comm_health_flags == 0x15
+    assert status.status_sequence == 7
+    assert status.last_received_session_id == 99
 
 
 def test_chassis_shell_diagnostics_share_the_protocol_probe():

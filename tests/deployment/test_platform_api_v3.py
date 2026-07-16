@@ -1,0 +1,55 @@
+from pathlib import Path
+
+import yaml
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_platform_api_v3_and_wire_contract_are_explicit():
+    assert (ROOT / "PLATFORM_API_VERSION").read_text(encoding="utf-8").strip() == "3"
+    contract = yaml.safe_load(
+        (ROOT / "compatibility" / "firmware.yaml").read_text(encoding="utf-8")
+    )
+    platform = yaml.safe_load(
+        (ROOT / "src/robot_config/config/platform.yaml").read_text(encoding="utf-8")
+    )
+    assert contract["platform_api_version"] == 3
+    assert contract["upper"]["wire_protocols_supported"] == [3]
+    assert contract["firmware"]["status"] == "awaiting_v3_implementation"
+    assert platform["platform"]["topics"]["chassis_command"] == "chassis/command"
+
+
+def test_robot_interfaces_define_session_ack_and_firmware_identity():
+    package = ROOT / "src" / "robot_interfaces"
+    command = (package / "msg" / "ChassisCommand.msg").read_text(encoding="utf-8")
+    for declaration in ("bool enable", "uint8 source", "uint64 session_id", "uint32 sequence"):
+        assert declaration in command
+    state = (package / "msg" / "ChassisState.msg").read_text(encoding="utf-8")
+    for declaration in (
+        "uint64 wire_session_id",
+        "uint32 firmware_applied_sequence",
+        "float32 slip_score",
+        "string config_sha256",
+    ):
+        assert declaration in state
+    firmware = (package / "msg" / "FirmwareInfo.msg").read_text(encoding="utf-8")
+    assert "string firmware_commit" in firmware
+    assert "uint32 capabilities" in firmware
+
+
+def test_v3_runtime_is_effective_config_driven_and_legacy_twist_is_off():
+    mux = yaml.safe_load(
+        (ROOT / "src/robot_control/config/cmd_vel_mux.yaml").read_text(encoding="utf-8")
+    )
+    assert mux["cmd_vel_mux"]["ros__parameters"]["publish_legacy_twist"] is False
+    launch = (ROOT / "src/stm32_robot_bridge/launch/stm32_bridge.launch.py").read_text(
+        encoding="utf-8"
+    )
+    cmake = (ROOT / "src/stm32_robot_bridge/CMakeLists.txt").read_text(encoding="utf-8")
+    assert "ROBOT_EFFECTIVE_PARAMS" in launch
+    assert "bridge_node_v3.py" in cmake
+    assert "RENAME bridge_node" in cmake
+    assert "stm32_robot_bridge/protocol_v2.py" not in cmake
+    assert "stm32_robot_bridge/bridge_node.py" not in cmake
+    assert "enable_legacy_cmd_vel" not in launch

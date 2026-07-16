@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>robot_bringup</name>
-  <version>0.3.0</version>
+  <version>0.4.0</version>
   <description>System bringup orchestration for platform, mapping and navigation profiles.</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>MIT</license>
@@ -16,6 +16,7 @@
   <exec_depend>robot_control</exec_depend>
   <exec_depend>robot_state_estimation</exec_depend>
   <exec_depend>stm32_robot_bridge</exec_depend>
+  <exec_depend>robot_config</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>rviz2</exec_depend>
 

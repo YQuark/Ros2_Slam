@@ -9,6 +9,7 @@ find_package(std_msgs REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ChassisCommand.msg"
   "msg/ChassisState.msg"
+  "msg/FirmwareInfo.msg"
   DEPENDENCIES geometry_msgs std_msgs
 )
 

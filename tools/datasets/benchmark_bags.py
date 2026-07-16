@@ -1,4 +1,4 @@
-"""Shared planning and validation logic for the v0.3.0 rosbag benchmark set."""
+"""Shared planning and validation logic for the versioned rosbag benchmark set."""
 
 from pathlib import Path
 from typing import Any, Dict, NamedTuple, Tuple

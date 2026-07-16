@@ -8,4 +8,5 @@ std_msgs/Header header
 geometry_msgs/Twist twist
 bool enable
 uint8 source
+uint64 session_id
 uint32 sequence

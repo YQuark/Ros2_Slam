@@ -1,0 +1,8 @@
+profile:
+  name: no_loop_closure_experimental
+  status: experimental
+overlay:
+  slam_toolbox:
+    ros__parameters:
+      do_loop_closing: false
+      enable_interactive_mode: false

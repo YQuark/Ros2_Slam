@@ -28,9 +28,9 @@ def test_module_coverage_gate_enforces_core_and_total_thresholds():
     passing = coverage(
         {
             "control_policy.py": 90.0,
-            "protocol_v2.py": 91.0,
+            "protocol_v3.py": 91.0,
             "odometry.py": 99.0,
-            "bridge_node.py": 85.0,
+            "bridge_core.py": 85.0,
         },
         total=75.0,
     )
@@ -39,13 +39,13 @@ def test_module_coverage_gate_enforces_core_and_total_thresholds():
     failing = coverage(
         {
             "control_policy.py": 89.9,
-            "protocol_v2.py": 91.0,
+            "protocol_v3.py": 91.0,
             "odometry.py": 99.0,
-            "bridge_node.py": 84.9,
+            "bridge_core.py": 84.9,
         },
         total=74.9,
     )
     failures = module.coverage_failures(failing)
     assert any("control_policy.py" in failure for failure in failures)
-    assert any("bridge_node.py" in failure for failure in failures)
+    assert any("bridge_core.py" in failure for failure in failures)
     assert any("TOTAL" in failure for failure in failures)

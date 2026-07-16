@@ -19,12 +19,12 @@ from robot_control.control_policy import (
 def test_source_config_exposes_only_whitelisted_research_topics() -> None:
     sources = SourceConfig(research_sources=("avoidance", "mpc")).topic_map()
 
-    assert sources["teleop"] == "/cmd_vel/teleop"
-    assert sources["nav"] == "/cmd_vel/nav"
-    assert sources["test"] == "/cmd_vel/test"
-    assert sources["research/avoidance"] == "/cmd_vel/research/avoidance"
-    assert sources["research/mpc"] == "/cmd_vel/research/mpc"
-    assert "/cmd_vel/research/unknown" not in sources.values()
+    assert sources["teleop"] == "cmd_vel/teleop"
+    assert sources["nav"] == "cmd_vel/nav"
+    assert sources["test"] == "cmd_vel/test"
+    assert sources["research/avoidance"] == "cmd_vel/research/avoidance"
+    assert sources["research/mpc"] == "cmd_vel/research/mpc"
+    assert "cmd_vel/research/unknown" not in sources.values()
 
 
 def test_mux_prefers_manual_sources_and_clamps_output() -> None:

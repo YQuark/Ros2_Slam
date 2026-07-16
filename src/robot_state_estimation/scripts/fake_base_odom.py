@@ -12,23 +12,23 @@ from tf2_ros import TransformBroadcaster
 
 class FakeBaseOdom(Node):
     def __init__(self):
-        super().__init__('fake_base_odom')
+        super().__init__("fake_base_odom")
 
-        self.declare_parameter('chassis_command_topic', '/chassis/command')
-        self.declare_parameter('odom_topic', '/odom')
-        self.declare_parameter('frame_id', 'odom')
-        self.declare_parameter('child_frame_id', 'base_link')
-        self.declare_parameter('publish_tf', True)
-        self.declare_parameter('publish_hz', 30.0)
-        self.declare_parameter('cmd_timeout', 0.25)
+        self.declare_parameter("chassis_command_topic", "chassis/command")
+        self.declare_parameter("odom_topic", "odom")
+        self.declare_parameter("frame_id", "odom")
+        self.declare_parameter("child_frame_id", "base_link")
+        self.declare_parameter("publish_tf", True)
+        self.declare_parameter("publish_hz", 30.0)
+        self.declare_parameter("cmd_timeout", 0.25)
 
-        self.chassis_command_topic = self.get_parameter('chassis_command_topic').value
-        self.odom_topic = self.get_parameter('odom_topic').value
-        self.frame_id = self.get_parameter('frame_id').value
-        self.child_frame_id = self.get_parameter('child_frame_id').value
-        self.publish_tf = bool(self.get_parameter('publish_tf').value)
-        self.publish_hz = float(self.get_parameter('publish_hz').value)
-        self.cmd_timeout = float(self.get_parameter('cmd_timeout').value)
+        self.chassis_command_topic = self.get_parameter("chassis_command_topic").value
+        self.odom_topic = self.get_parameter("odom_topic").value
+        self.frame_id = self.get_parameter("frame_id").value
+        self.child_frame_id = self.get_parameter("child_frame_id").value
+        self.publish_tf = bool(self.get_parameter("publish_tf").value)
+        self.publish_hz = float(self.get_parameter("publish_hz").value)
+        self.cmd_timeout = float(self.get_parameter("cmd_timeout").value)
 
         self.x = 0.0
         self.y = 0.0
@@ -40,12 +40,14 @@ class FakeBaseOdom(Node):
 
         self.odom_pub = self.create_publisher(Odometry, self.odom_topic, 20)
         self.tf_br = TransformBroadcaster(self) if self.publish_tf else None
-        self.create_subscription(ChassisCommand, self.chassis_command_topic, self._on_chassis_command, 20)
+        self.create_subscription(
+            ChassisCommand, self.chassis_command_topic, self._on_chassis_command, 20
+        )
         self.create_timer(1.0 / max(self.publish_hz, 1.0), self._on_timer)
 
         self.get_logger().info(
-            f'fake_base_odom started: {self.chassis_command_topic} -> {self.odom_topic}, '
-            f'hz={self.publish_hz:.1f} cmd_timeout={self.cmd_timeout:.2f}s'
+            f"fake_base_odom started: {self.chassis_command_topic} -> {self.odom_topic}, "
+            f"hz={self.publish_hz:.1f} cmd_timeout={self.cmd_timeout:.2f}s"
         )
 
     def _on_chassis_command(self, msg: ChassisCommand):
@@ -118,5 +120,5 @@ def main():
         rclpy.shutdown()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

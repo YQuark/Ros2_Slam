@@ -13,7 +13,14 @@ set -u
 
 python3 -m pytest tests/integration/test_pty_fake_stm32.py -v
 
-if ! grep -Fqx 'Overall status: PASS' reports/hil/v0.3.0.md; then
-    echo 'Physical HIL report is not PASS: reports/hil/v0.3.0.md' >&2
-    exit 1
-fi
+python3 - <<'PY'
+from pathlib import Path
+import yaml
+
+report = yaml.safe_load(Path('verification/reports/hil/v0.4.0.yaml').read_text(encoding='utf-8'))
+if report.get('result') != 'PASS':
+    raise SystemExit('Physical HIL report is not PASS: verification/reports/hil/v0.4.0.yaml')
+for key in ('upper_commit', 'firmware_commit', 'hardware_revision', 'config_sha256'):
+    if report.get(key) in (None, ''):
+        raise SystemExit(f'HIL report is missing {key}')
+PY

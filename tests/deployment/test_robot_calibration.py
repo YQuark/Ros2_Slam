@@ -1,40 +1,32 @@
 from pathlib import Path
 
-import yaml
+from robot_config.compiler import load_effective_config, ros_parameters
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CALIBRATION = ROOT / "src" / "robot_bringup" / "config" / "robot_calibration.yaml"
+CONFIG_ROOT = ROOT / "src/robot_config/config"
 
 
-def test_robot_calibration_is_versioned_and_records_provenance():
-    calibration = yaml.safe_load(CALIBRATION.read_text(encoding="utf-8"))
-    assert calibration["schema_version"] == 1
-    assert calibration["calibration_version"]
-    assert calibration["platform_api_version"] == 2
-    assert calibration["status"] == "provisional"
-    assert calibration["provenance"]["upper_commit"]
-    assert calibration["provenance"]["firmware_commit"]
+def test_robot_calibration_is_versioned_provisional_and_executable():
+    effective = load_effective_config(CONFIG_ROOT)
+    assert effective["schema_version"] == 1
+    assert effective["platform_api_version"] == 3
+    assert effective["calibration"]["version"]
+    assert effective["calibration"]["status"] == "provisional"
+    assert effective["calibration"]["drive"]["encoder_counts_per_revolution"] > 0
+    assert len(effective["config_sha256"]) == 64
 
 
-def test_runtime_defaults_match_canonical_calibration():
-    calibration = yaml.safe_load(CALIBRATION.read_text(encoding="utf-8"))
-    mux = yaml.safe_load(
-        (ROOT / "src" / "robot_control" / "config" / "cmd_vel_mux.yaml").read_text(
-            encoding="utf-8"
-        )
-    )["cmd_vel_mux"]["ros__parameters"]
-    common = yaml.safe_load(
-        (ROOT / "src" / "robot_bringup" / "config" / "robot_common.yaml").read_text(
-            encoding="utf-8"
-        )
-    )["robot"]["ros__parameters"]
-
-    assert mux["linear_limit"] == calibration["motion"]["soft_max_linear_mps"]
-    assert mux["angular_limit"] == calibration["motion"]["soft_max_angular_radps"]
-    assert mux["max_linear_accel"] == calibration["motion"]["max_linear_accel_mps2"]
-    assert mux["max_angular_accel"] == calibration["motion"]["max_angular_accel_radps2"]
-    assert mux["max_linear_jerk"] == calibration["motion"]["max_linear_jerk_mps3"]
-    assert mux["max_angular_jerk"] == calibration["motion"]["max_angular_jerk_radps3"]
-    assert common["wheel_radius_m"] == calibration["drive"]["wheel_radius_m"]
-    assert common["wheel_track_width_m"] == calibration["drive"]["wheel_track_width_m"]
+def test_effective_ros_parameters_are_derived_from_canonical_calibration():
+    effective = load_effective_config(CONFIG_ROOT)
+    params = ros_parameters(effective)
+    mux = params["cmd_vel_mux"]["ros__parameters"]
+    bridge = params["stm32_bridge"]["ros__parameters"]
+    assert mux["linear_limit"] == effective["motion"]["soft_max_linear_mps"]
+    assert mux["max_linear_jerk"] == effective["motion"]["max_linear_jerk_mps3"]
+    assert bridge["wheel_radius"] == effective["calibration"]["drive"]["wheel_radius_m"]
+    assert (
+        bridge["encoder_counts_per_revolution"]
+        == effective["calibration"]["drive"]["encoder_counts_per_revolution"]
+    )
+    assert bridge["config_sha256"] == effective["config_sha256"]

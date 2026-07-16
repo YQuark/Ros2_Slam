@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>robot_interfaces</name>
-  <version>0.3.0</version>
+  <version>0.4.0</version>
   <description>Versioned platform command and state interfaces for Ros2_Slam.</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>Apache-2.0</license>

@@ -1,0 +1,19 @@
+schema_version: 1
+platform_api_version: 3
+release: v0.4.0
+release_mode: false
+unsafe_development_mode: true
+protocol:
+  name: upper_v3
+  version: 3
+  required_capabilities: 31
+platform:
+  frames: {map: map, odom: odom, base: base_link, imu: imu_link, laser: laser_frame}
+  topics:
+    chassis_command: chassis/command
+    chassis_state: chassis/state
+    firmware_info: chassis/firmware_info
+    wheel_odom: wheel/odom
+    odom: odom
+    imu: imu/data
+    diagnostics: diagnostics

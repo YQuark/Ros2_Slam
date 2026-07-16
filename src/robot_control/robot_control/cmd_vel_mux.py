@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import secrets
 from typing import Dict
 
 import rclpy
@@ -20,6 +21,8 @@ class CmdVelMuxNode(Node):
     def __init__(self) -> None:
         super().__init__("cmd_vel_mux")
 
+        self.declare_parameter("config_sha256", "development-uncompiled")
+        self.declare_parameter("unsafe_development_mode", True)
         self.declare_parameter("research_sources", [])
         self.declare_parameter("linear_limit", 0.4)
         self.declare_parameter("angular_limit", 1.5)
@@ -32,9 +35,9 @@ class CmdVelMuxNode(Node):
         self.declare_parameter("motion_limiter_max_dt", 0.1)
         self.declare_parameter("timeout_sec", 0.25)
         self.declare_parameter("publish_hz", 20.0)
-        self.declare_parameter("chassis_command_topic", "/chassis/command")
+        self.declare_parameter("chassis_command_topic", "chassis/command")
         self.declare_parameter("publish_legacy_twist", False)
-        self.declare_parameter("legacy_driver_topic", "/cmd_vel/driver")
+        self.declare_parameter("legacy_driver_topic", "cmd_vel/driver")
 
         research_sources = [str(value) for value in self.get_parameter("research_sources").value]
         self.source_config = SourceConfig(research_sources=research_sources)
@@ -57,12 +60,15 @@ class CmdVelMuxNode(Node):
             else None
         )
         self.sequence = 0
+        self.session_id = 0
         self.motion_limiter = MotionLimiter(
             max_linear_accel=float(self.get_parameter("max_linear_accel").value),
             max_angular_accel=float(self.get_parameter("max_angular_accel").value),
             max_linear_jerk=float(self.get_parameter("max_linear_jerk").value),
             max_angular_jerk=float(self.get_parameter("max_angular_jerk").value),
             max_dt_sec=float(self.get_parameter("motion_limiter_max_dt").value),
+            max_linear_velocity=float(self.get_parameter("linear_limit").value),
+            max_angular_velocity=float(self.get_parameter("angular_limit").value),
         )
         self.last_active = False
         self.last_source = "idle"
@@ -112,14 +118,18 @@ class CmdVelMuxNode(Node):
                 self._publish_release()
             return
 
+        if not self.last_active:
+            self.session_id = secrets.randbits(64) or 1
+            self.sequence = 0
+
         limited = self.motion_limiter.limit(selected.command, now_sec=now_sec)
-        self._publish_command(
-            SelectedCommand(source=selected.source, command=limited, active=True)
-        )
+        self._publish_command(SelectedCommand(source=selected.source, command=limited, active=True))
         self.last_active = True
         self.last_source = selected.source
 
     def _publish_release(self) -> None:
+        if self.session_id == 0:
+            self.session_id = secrets.randbits(64) or 1
         self.motion_limiter.reset()
         selected = SelectedCommand(source="idle", command=Command(0.0, 0.0), active=False)
         self._publish_command(selected)
@@ -134,6 +144,7 @@ class CmdVelMuxNode(Node):
         msg.twist.angular.z = selected.command.angular_z
         msg.enable = selected.active
         msg.source = self._source_id(selected.source)
+        msg.session_id = self.session_id
         msg.sequence = self.sequence
         self.publisher.publish(msg)
 

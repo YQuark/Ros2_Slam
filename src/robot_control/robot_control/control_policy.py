@@ -50,12 +50,12 @@ class SourceConfig:
 
     def topic_map(self) -> Dict[str, str]:
         topics = {
-            "teleop": "/cmd_vel/teleop",
-            "nav": "/cmd_vel/nav",
-            "test": "/cmd_vel/test",
+            "teleop": "cmd_vel/teleop",
+            "nav": "cmd_vel/nav",
+            "test": "cmd_vel/test",
         }
         for name in self.research_sources:
-            topics[f"research/{name}"] = f"/cmd_vel/research/{name}"
+            topics[f"research/{name}"] = f"cmd_vel/research/{name}"
         return topics
 
     def priorities(self) -> Dict[str, int]:
@@ -144,12 +144,18 @@ class MotionLimiter:
         max_linear_jerk: float,
         max_angular_jerk: float,
         max_dt_sec: float = 0.1,
+        max_linear_velocity: float = 1.0e9,
+        max_angular_velocity: float = 1.0e9,
     ) -> None:
         self.max_linear_accel = abs(require_finite(max_linear_accel, "max_linear_accel"))
         self.max_angular_accel = abs(require_finite(max_angular_accel, "max_angular_accel"))
         self.max_linear_jerk = abs(require_finite(max_linear_jerk, "max_linear_jerk"))
         self.max_angular_jerk = abs(require_finite(max_angular_jerk, "max_angular_jerk"))
         self.max_dt_sec = abs(require_finite(max_dt_sec, "max_dt_sec"))
+        self.max_linear_velocity = abs(require_finite(max_linear_velocity, "max_linear_velocity"))
+        self.max_angular_velocity = abs(
+            require_finite(max_angular_velocity, "max_angular_velocity")
+        )
         self.reset()
 
     def reset(self) -> None:
@@ -180,6 +186,7 @@ class MotionLimiter:
             self.max_linear_accel,
             self.max_linear_jerk,
             dt,
+            self.max_linear_velocity,
         )
         angular, self._angular_accel = self._step_axis(
             self.current.angular_z,
@@ -188,23 +195,37 @@ class MotionLimiter:
             self.max_angular_accel,
             self.max_angular_jerk,
             dt,
+            self.max_angular_velocity,
         )
         self.current = Command(linear, angular)
         return self.current
 
     @staticmethod
-    def _step_axis(current, target, acceleration, max_accel, max_jerk, dt):
+    def _step_axis(current, target, acceleration, max_accel, max_jerk, dt, max_velocity=1.0e9):
+        target = _clamp(target, -max_velocity, max_velocity)
         desired_accel = _clamp((target - current) / dt, -max_accel, max_accel)
         acceleration = _clamp(
             desired_accel,
             acceleration - max_jerk * dt,
             acceleration + max_jerk * dt,
         )
-        step = acceleration * dt
+        # If continuing to accelerate would leave too little distance to unwind
+        # acceleration under the jerk bound, begin braking early.
         remaining = target - current
-        if remaining == 0.0 or (step * remaining > 0.0 and abs(step) > abs(remaining)):
-            return target, 0.0
-        return current + step, acceleration
+        if max_jerk > 0.0 and acceleration * remaining > 0.0:
+            unwind_time = abs(acceleration) / max_jerk
+            braking_distance = 0.5 * abs(acceleration) * unwind_time
+            if abs(remaining) <= braking_distance + abs(acceleration) * dt:
+                acceleration = _clamp(
+                    0.0,
+                    acceleration - max_jerk * dt,
+                    acceleration + max_jerk * dt,
+                )
+        velocity = current + acceleration * dt
+        if abs(velocity) > max_velocity:
+            velocity = _clamp(velocity, -max_velocity, max_velocity)
+            acceleration = (velocity - current) / dt
+        return velocity, acceleration
 
 
 def _clamp(value: float, low: float, high: float) -> float:

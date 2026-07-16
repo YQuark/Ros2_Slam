@@ -5,6 +5,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROS_WS="${ROS_WS:-/home/robot/ros2_ws}"
 
+if [ -z "${ROBOT_EFFECTIVE_PARAMS:-}" ] && [ -x "${ROS_WS}/bin/robot" ]; then
+    echo "[DEPRECATED] launch_scripts/robot.sh 将在 v0.5.0 删除，请改用 bin/robot。" >&2
+    exec "${ROS_WS}/bin/robot" "$@"
+fi
+
 # shellcheck source=/home/robot/ros2_ws/launch_scripts/lib/common.sh
 source "${SCRIPT_DIR}/lib/common.sh"
 
@@ -22,9 +27,9 @@ KEYBOARD_CONTROL_SCRIPT="${SCRIPT_DIR}/keyboard_control.sh"
 BASE_TEST_SCRIPT="${SCRIPT_DIR}/test_base_cmd.sh"
 
 DEFAULT_MAP="/home/robot/ros2_maps/latest.yaml"
-DEFAULT_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping.yaml"
-PRECISION_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping_lidar_precision.yaml"
-FAST_SLAM_PARAMS="${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping_fast.yaml"
+DEFAULT_SLAM_PARAMS="${ROBOT_SLAM_PARAMS_QUALITY:-${ROS_WS}/src/robot_bringup/config/slam_toolbox_mapping.yaml}"
+PRECISION_SLAM_PARAMS="${ROBOT_SLAM_PARAMS_PRECISION:-}"
+FAST_SLAM_PARAMS="${ROBOT_SLAM_PARAMS_FAST:-}"
 DEFAULT_NAV2_MAPPING_PARAMS="${ROS_WS}/src/robot_bringup/config/nav2_mapping_params.yaml"
 DEFAULT_NAV2_BT_XML="${ROS_WS}/src/robot_bringup/behavior_trees/navigate_to_pose_recovery.xml"
 DEFAULT_LIDAR_PARAMS="${ROS_WS}/src/robot_sensing/config/ydlidar_x2.yaml"
@@ -54,7 +59,7 @@ register_tmp_file() {
 
 main_usage() {
     cat <<'EOF'
-统一入口: ./robot.sh <command> [args]
+统一入口: ./bin/robot <command> [args]
 
 命令:
   mapping       启动建图
@@ -71,21 +76,21 @@ main_usage() {
   help          查看帮助
 
 示例:
-  ./robot.sh mapping lidar --manual --real-base
-  ./robot.sh save-map my_map
-  ./robot.sh navigation --real-base --ekf-base
-  ./robot.sh navigation /home/robot/ros2_maps/my_map.yaml --real-base
-  ./robot.sh base-test --rotate-only
-  ./robot.sh base-test --calibrate-angular
-  ./robot.sh sensor lidar
-  ./robot.sh check lidar
-  ./robot.sh doctor
+  ./bin/robot mapping lidar --manual --real-base
+  ./bin/robot save-map my_map
+  ./bin/robot navigation --real-base --ekf-base
+  ./bin/robot navigation /home/robot/ros2_maps/my_map.yaml --real-base
+  ./bin/robot base-test --rotate-only
+  ./bin/robot base-test --calibrate-angular
+  ./bin/robot sensor lidar
+  ./bin/robot check lidar
+  ./bin/robot doctor
 EOF
 }
 
 mapping_usage() {
     cat <<'EOF'
-用法: ./robot.sh mapping [lidar] [quality|precision|fast] [--manual] [--skip-lidar-check] [--rviz|--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted]
+用法: ./bin/robot mapping [lidar] [quality|precision|fast] [--manual] [--skip-lidar-check] [--rviz|--no-rviz] [--real-base|--fake-base] [--ekf-base] [--base-port PORT] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted]
 
 说明:
   --manual 为正式建图入口；旧 --auto/frontier_explorer 已移到 experiments/legacy，不属于默认平台启动链。
@@ -96,7 +101,7 @@ EOF
 
 navigation_usage() {
     cat <<'EOF'
-用法: ./robot.sh navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--rviz|--no-rviz] [--skip-lidar-check] [--base-port PORT] [--localization-only|--nav2-only]
+用法: ./bin/robot navigation [map.yaml] [--real-base|--fake-base] [--ekf-base] [--lidar-port PATH] [--lidar-yaw-rad RAD|--lidar-yaw-deg DEG] [--lidar-reversion|--no-lidar-reversion] [--lidar-inverted|--no-lidar-inverted] [--rviz|--no-rviz] [--skip-lidar-check] [--base-port PORT] [--localization-only|--nav2-only]
 
 说明:
   map.yaml 省略时默认使用 /home/robot/ros2_maps/latest.yaml。
@@ -723,8 +728,8 @@ run_navigation() {
     local base_odom_angular_sign="${BASE_ODOM_ANGULAR_SIGN:-1.0}"
     local base_status_log_interval_sec="${BASE_STATUS_LOG_INTERVAL_SEC:-5.0}"
     local base_cmd_log_interval_sec="${BASE_CMD_LOG_INTERVAL_SEC:-0.0}"
-    local base_cmd_timeout="${BASE_CMD_TIMEOUT:-0.25}"
-    local base_drive_keepalive_sec="${BASE_DRIVE_KEEPALIVE_SEC:-0.10}"
+    local base_cmd_timeout="${BASE_CMD_TIMEOUT:-0.15}"
+    local base_drive_keepalive_sec="${BASE_DRIVE_KEEPALIVE_SEC:-0.05}"
     local use_rviz=false
     local skip_lidar_check=false
     local lidar_params=""
@@ -737,7 +742,7 @@ run_navigation() {
     local base_port_explicit=false
     local localization_only=false
     local nav2_only=false
-    local nav2_params_file="${ROS_WS}/src/robot_bringup/config/nav2_params_robot.yaml"
+    local nav2_params_file="${ROBOT_NAV2_PARAMS:-${ROS_WS}/src/robot_bringup/config/nav2_params_robot.yaml}"
     local nav2_bt_xml_file="${DEFAULT_NAV2_BT_XML}"
     local map_file_explicit=false
     local arg=""

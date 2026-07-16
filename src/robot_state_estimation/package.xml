@@ -1,6 +1,6 @@
 <package format="3">
   <name>robot_state_estimation</name>
-  <version>0.3.0</version>
+  <version>0.4.0</version>
   <description>Wheel odometry and optional EKF state estimation for the robot platform.</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>Apache-2.0</license>

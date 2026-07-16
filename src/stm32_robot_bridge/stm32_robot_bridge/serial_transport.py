@@ -22,6 +22,8 @@ class TransportStats:
     rx_unknown_cmd: int = 0
     rx_resync_bytes: int = 0
     serial_reconnects: int = 0
+    rx_queue_drops: int = 0
+    tx_queue_drops: int = 0
 
 
 def open_serial_port(serial_module, resolved_port: str, baudrate: int):
@@ -67,9 +69,7 @@ def write_all(device, frame: bytes, stats: Optional[TransportStats] = None) -> i
         if written is None:
             if stats is not None:
                 stats.tx_short_writes += 1
-            raise SerialShortWrite(
-                f"expected={len(frame)}, written={offset}, last_write=None"
-            )
+            raise SerialShortWrite(f"expected={len(frame)}, written={offset}, last_write=None")
         try:
             written = int(written)
         except (TypeError, ValueError) as exc:
@@ -81,9 +81,7 @@ def write_all(device, frame: bytes, stats: Optional[TransportStats] = None) -> i
         if written <= 0 or written > len(remaining):
             if stats is not None:
                 stats.tx_short_writes += 1
-            raise SerialShortWrite(
-                f"expected={len(frame)}, written={offset}, last_write={written}"
-            )
+            raise SerialShortWrite(f"expected={len(frame)}, written={offset}, last_write={written}")
         if written < len(remaining) and stats is not None:
             stats.tx_short_writes += 1
         offset += written

@@ -154,7 +154,7 @@ class TestCmdVelMuxNode:
         assert node.get_parameter("max_angular_jerk").value == 6.0
         assert node.get_parameter("timeout_sec").value == 0.25
         assert node.get_parameter("publish_hz").value == 20.0
-        assert node.get_parameter("chassis_command_topic").value == "/chassis/command"
+        assert node.get_parameter("chassis_command_topic").value == "chassis/command"
         assert node.get_parameter("publish_legacy_twist").value is False
 
     def test_research_sources_default_to_empty(self):

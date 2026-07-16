@@ -13,7 +13,7 @@
 当前体系只有两层推荐入口：
 
 1. 技术入口：`src/robot_bringup/launch/system.launch.py`
-2. 运维入口：`launch_scripts/robot.sh`
+2. 运维入口：`bin/robot`
 
 如果你还在使用 `start_mapping.sh`、`start_navigation.sh` 等脚本，可以继续使用；它们只是兼容包装，不承载主逻辑。
 

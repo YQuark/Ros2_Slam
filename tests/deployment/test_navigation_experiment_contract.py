@@ -5,7 +5,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG = ROOT / "config" / "experiments" / "nav2_acceptance.yaml"
+CONFIG = ROOT / "verification" / "configs" / "experiments" / "nav2-acceptance-v0.4.0.yaml"
 MODULE = ROOT / "tools" / "experiments" / "navigation_gate.py"
 
 

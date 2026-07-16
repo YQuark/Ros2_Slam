@@ -1,0 +1,10 @@
+schema_version: 1
+release: v0.4.0
+result: NOT_RUN
+upper_commit: b70721c0e8e8bf3aa5c76debc0b806474a546a26
+firmware_commit: null
+hardware_revision: null
+config_sha256: null
+started_at: null
+metrics: {}
+blocker: Compatible upper-v3 firmware does not exist yet.

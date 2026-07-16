@@ -11,7 +11,7 @@ from benchmark_bags import load_catalog, validate_metadata
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CATALOG = ROOT / "config" / "benchmarks" / "rosbag_datasets.yaml"
+DEFAULT_CATALOG = ROOT / "verification" / "configs" / "benchmarks" / "rosbag-datasets-v0.4.0.yaml"
 
 
 def main() -> int:

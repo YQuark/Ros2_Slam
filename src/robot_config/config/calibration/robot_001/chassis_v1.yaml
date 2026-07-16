@@ -1,0 +1,14 @@
+calibration:
+  schema_version: 1
+  version: 2026-07-15-initial
+  status: provisional
+  drive:
+    wheel_radius_m: 0.0350
+    wheel_track_width_m: 0.1760
+    encoder_counts_per_revolution: 2464.0
+    odom_linear_scale: 1.0
+    odom_angular_scale: 1.0
+    odom_angular_sign: 1.0
+  odom_covariance:
+    wheel_variance_floor_m2: 0.000025
+    wheel_variance_per_meter: 0.0025

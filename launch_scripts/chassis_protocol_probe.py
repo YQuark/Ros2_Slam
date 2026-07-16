@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Passive upper_v2 STATUS probe shared by chassis shell diagnostics."""
+"""Passive upper-v3 STATUS probe shared by chassis shell diagnostics."""
 
 from __future__ import annotations
 
@@ -11,18 +11,14 @@ from typing import Optional, Tuple
 
 
 try:
-    from stm32_robot_bridge.protocol_v2 import (
-        CMD_STATUS,
-        FrameParser,
-        StatusPayload,
-        decode_status_payload,
-    )
+    from stm32_robot_bridge.framing import FrameParser
+    from stm32_robot_bridge.protocol_v3 import CMD_STATUS, StatusPayload, decode_status_payload
 except ImportError:
     workspace_root = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(workspace_root / "src" / "stm32_robot_bridge"))
-    from stm32_robot_bridge.protocol_v2 import (  # type: ignore[no-redef]
+    from stm32_robot_bridge.framing import FrameParser  # type: ignore[no-redef]
+    from stm32_robot_bridge.protocol_v3 import (  # type: ignore[no-redef]
         CMD_STATUS,
-        FrameParser,
         StatusPayload,
         decode_status_payload,
     )
@@ -94,10 +90,16 @@ def print_summary(status: StatusPayload) -> None:
         f"  error_flags=0x{status.error_flags:08X} "
         f"latched_error_flags=0x{status.latched_error_flags:08X}"
     )
+    print(
+        f"  status_sequence={status.status_sequence} "
+        f"sample_timestamp_ms={status.sample_timestamp_ms} "
+        f"ack_session={status.last_received_session_id} "
+        f"ack_sequence={status.last_applied_sequence}"
+    )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Probe passive STM32 upper_v2 STATUS frames")
+    parser = argparse.ArgumentParser(description="Probe passive STM32 upper-v3 STATUS frames")
     parser.add_argument("mode", choices=("probe", "summary"))
     parser.add_argument("port")
     parser.add_argument("--timeout", type=float, default=1.2)

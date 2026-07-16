@@ -5,7 +5,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG = ROOT / "config" / "experiments" / "slam_sweep.yaml"
+CONFIG = ROOT / "verification" / "configs" / "experiments" / "slam-sweep-v0.4.0.yaml"
 MODULE = ROOT / "tools" / "experiments" / "experiment_gate.py"
 
 
@@ -20,8 +20,11 @@ def test_slam_sweep_covers_requested_parameters_datasets_and_metrics():
     config = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
 
     assert config["schema_version"] == 1
-    assert config["strategy"] == "one_factor_at_a_time"
-    assert set(config["datasets"]) == {"bag_04_square", "bag_05_figure8", "bag_06_mapping"}
+    assert config["strategy"] == "latin_hypercube_then_interaction"
+    assert config["seed"] == 42
+    assert config["coarse_candidate_count"] == 32
+    assert set(config["training_datasets"]) == {"bag_04_square", "bag_05_figure8"}
+    assert set(config["validation_datasets"]) == {"bag_06_mapping"}
     assert set(config["parameter_axes"]) == {
         "minimum_travel_distance",
         "minimum_travel_heading",
@@ -43,25 +46,28 @@ def test_slam_sweep_covers_requested_parameters_datasets_and_metrics():
     }
 
 
-def test_one_factor_matrix_has_baseline_and_each_non_baseline_value_once():
-    module = load_module()
-    config = module.load_experiment(CONFIG)
-
-    candidates = module.generate_one_factor_candidates(config)
-
-    expected_count = 1 + sum(len(values) - 1 for values in config["parameter_axes"].values())
-    assert len(candidates) == expected_count
-    assert candidates[0]["id"] == "baseline"
-    assert len({candidate["id"] for candidate in candidates}) == len(candidates)
+def test_latin_hypercube_is_deterministic_and_covers_each_axis():
+    spec = importlib.util.spec_from_file_location(
+        "latin_hypercube", ROOT / "tools/experiments/latin_hypercube.py"
+    )
+    lhs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(lhs)
+    config = yaml.safe_load(CONFIG.read_text(encoding="utf-8"))
+    first = lhs.generate_lhs(
+        config["parameter_axes"], config["coarse_candidate_count"], config["seed"]
+    )
+    second = lhs.generate_lhs(
+        config["parameter_axes"], config["coarse_candidate_count"], config["seed"]
+    )
+    assert first == second
+    assert len(first) == 32
+    assert all(set(candidate["parameters"]) == set(config["parameter_axes"]) for candidate in first)
 
 
 def test_strict_gate_rejects_missing_or_out_of_limit_metric():
     module = load_module()
     config = module.load_experiment(CONFIG)
-    passing = {
-        metric: rule["limit"]
-        for metric, rule in config["acceptance"].items()
-    }
+    passing = {metric: rule["limit"] for metric, rule in config["acceptance"].items()}
 
     assert module.evaluate_metrics(config, passing).passed is True
 

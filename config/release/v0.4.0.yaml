@@ -1,0 +1,4 @@
+schema_version: 1
+deprecated: true
+canonical_manifest: verification/configs/release/v0.4.0.yaml
+remove_after: v0.4.x

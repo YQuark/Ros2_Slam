@@ -2,7 +2,7 @@
 
 import math
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -129,6 +129,138 @@ class DifferentialOdometry:
 
         self.pose = integrate_midpoint(self.pose, vx, wz, dt)
         return OdometryUpdate(self.pose, vx, wz, dt, True, True)
+
+
+@dataclass(frozen=True)
+class EncoderOdometryUpdate:
+    pose: Pose2D
+    vx: float
+    wz: float
+    dt: float
+    trusted: bool
+    integrated: bool
+    left_distance: float
+    right_distance: float
+    pose_covariance: Tuple[float, ...]
+
+
+def signed_int32_delta(current: int, previous: int) -> int:
+    """Two's-complement modulo delta with half-range ordering."""
+    return ((int(current) - int(previous) + (1 << 31)) & 0xFFFFFFFF) - (1 << 31)
+
+
+class EncoderOdometry:
+    """Count-increment odometry with 3x3 Jacobian covariance propagation."""
+
+    def __init__(
+        self,
+        *,
+        wheel_radius_m: float,
+        track_width_m: float,
+        counts_per_revolution: float,
+        max_dt_sec: float = 0.25,
+        linear_scale: float = 1.0,
+        angular_scale: float = 1.0,
+        angular_sign: float = 1.0,
+        wheel_variance_floor_m2: float = 0.000025,
+        wheel_variance_per_meter: float = 0.0025,
+    ) -> None:
+        self.meters_per_count = 2.0 * math.pi * float(wheel_radius_m) / float(counts_per_revolution)
+        self.track_width_m = max(float(track_width_m), 1e-6)
+        self.max_dt_sec = float(max_dt_sec)
+        self.linear_scale = float(linear_scale)
+        self.angular_scale = float(angular_scale)
+        self.angular_sign = 1.0 if angular_sign >= 0.0 else -1.0
+        self.wheel_variance_floor_m2 = float(wheel_variance_floor_m2)
+        self.wheel_variance_per_meter = float(wheel_variance_per_meter)
+        self.pose = Pose2D()
+        self.covariance = [[0.0] * 3 for _ in range(3)]
+        self.last_counts: Optional[Tuple[int, int, int, int]] = None
+        self.last_sample_time_sec: Optional[float] = None
+
+    def reset_sample_baseline(self) -> None:
+        self.last_counts = None
+        self.last_sample_time_sec = None
+
+    def update(
+        self,
+        counts: Tuple[int, int, int, int],
+        *,
+        sample_time_sec: float,
+        valid_mask: int = 0x0F,
+        anomaly_mask: int = 0,
+        slip_multiplier: float = 1.0,
+        hard_max_speed_mps: float = 0.45,
+    ) -> EncoderOdometryUpdate:
+        counts = (int(counts[0]), int(counts[1]), int(counts[2]), int(counts[3]))
+        if self.last_counts is None or self.last_sample_time_sec is None:
+            self.last_counts, self.last_sample_time_sec = counts, float(sample_time_sec)
+            return self._result(0.0, 0.0, 0.0, False, False, 0.0, 0.0)
+        dt = float(sample_time_sec) - self.last_sample_time_sec
+        previous = self.last_counts
+        self.last_counts, self.last_sample_time_sec = counts, float(sample_time_sec)
+        if dt <= 0.0 or dt > self.max_dt_sec:
+            return self._result(0.0, 0.0, dt, False, False, 0.0, 0.0)
+        deltas = tuple(signed_int32_delta(now, old) for now, old in zip(counts, previous))
+        max_counts = (abs(float(hard_max_speed_mps)) * dt * 1.2 / self.meters_per_count) + 2.0
+        healthy = [
+            bool(valid_mask & (1 << i))
+            and not bool(anomaly_mask & (1 << i))
+            and abs(deltas[i]) <= max_counts
+            for i in range(4)
+        ]
+        if not all(healthy):
+            return self._result(0.0, 0.0, dt, False, False, 0.0, 0.0)
+        left = 0.5 * (deltas[0] + deltas[1]) * self.meters_per_count * self.linear_scale
+        right = 0.5 * (deltas[2] + deltas[3]) * self.meters_per_count * self.linear_scale
+        ds = 0.5 * (left + right)
+        dtheta = (right - left) / self.track_width_m * self.angular_scale * self.angular_sign
+        yaw_mid = self.pose.yaw + 0.5 * dtheta
+        self.pose = Pose2D(
+            self.pose.x + ds * math.cos(yaw_mid),
+            self.pose.y + ds * math.sin(yaw_mid),
+            wrap_angle(self.pose.yaw + dtheta),
+        )
+        self._propagate_covariance(left, right, ds, dtheta, yaw_mid, slip_multiplier)
+        return self._result(ds / dt, dtheta / dt, dt, True, True, left, right)
+
+    def _propagate_covariance(self, left, right, ds, dtheta, yaw_mid, slip_multiplier):
+        f = [
+            [1.0, 0.0, -ds * math.sin(yaw_mid)],
+            [0.0, 1.0, ds * math.cos(yaw_mid)],
+            [0.0, 0.0, 1.0],
+        ]
+        g = [
+            [
+                0.5 * math.cos(yaw_mid) + ds * math.sin(yaw_mid) / (2.0 * self.track_width_m),
+                0.5 * math.cos(yaw_mid) - ds * math.sin(yaw_mid) / (2.0 * self.track_width_m),
+            ],
+            [
+                0.5 * math.sin(yaw_mid) - ds * math.cos(yaw_mid) / (2.0 * self.track_width_m),
+                0.5 * math.sin(yaw_mid) + ds * math.cos(yaw_mid) / (2.0 * self.track_width_m),
+            ],
+            [-1.0 / self.track_width_m, 1.0 / self.track_width_m],
+        ]
+        q = [
+            self.wheel_variance_floor_m2 + self.wheel_variance_per_meter * abs(left),
+            self.wheel_variance_floor_m2 + self.wheel_variance_per_meter * abs(right),
+        ]
+        q = [value * max(float(slip_multiplier), 1.0) for value in q]
+        fp = [
+            [sum(f[i][k] * self.covariance[k][j] for k in range(3)) for j in range(3)]
+            for i in range(3)
+        ]
+        propagated = [
+            [sum(fp[i][k] * f[j][k] for k in range(3)) for j in range(3)] for i in range(3)
+        ]
+        for i in range(3):
+            for j in range(3):
+                propagated[i][j] += sum(g[i][k] * q[k] * g[j][k] for k in range(2))
+        self.covariance = propagated
+
+    def _result(self, vx, wz, dt, trusted, integrated, left, right):
+        flat = tuple(self.covariance[i][j] for i in range(3) for j in range(3))
+        return EncoderOdometryUpdate(self.pose, vx, wz, dt, trusted, integrated, left, right, flat)
 
 
 def wrap_angle(angle: float) -> float:

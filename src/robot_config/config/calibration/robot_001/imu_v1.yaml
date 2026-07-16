@@ -1,0 +1,7 @@
+calibration:
+  imu:
+    use_orientation: false
+    orientation_stddev: 0.2
+    angular_velocity_stddev: [0.02, 0.02, 0.02]
+    linear_acceleration_stddev: [0.2, 0.2, 0.2]
+    status: provisional_pending_allan

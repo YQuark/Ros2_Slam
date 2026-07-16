@@ -1,0 +1,39 @@
+safety:
+  timing:
+    mux_source_timeout_sec: 0.25
+    bridge_command_timeout_sec: 0.15
+    drive_keepalive_sec: 0.05
+    firmware_upper_timeout_sec: 0.20
+    status_timeout_sec: 0.25
+    command_ack_timeout_sec: 0.15
+    max_command_age_sec: 0.15
+motion:
+  soft_max_linear_mps: 0.40
+  soft_max_angular_radps: 1.50
+  hard_max_linear_mps: 0.45
+  hard_max_angular_radps: 1.50
+  max_linear_accel_mps2: 0.50
+  max_angular_accel_radps2: 1.50
+  max_linear_jerk_mps3: 2.0
+  max_angular_jerk_radps3: 6.0
+motion_supervisor:
+  enabled: true
+  wheel_pair_warn_mps: 0.10
+  wheel_pair_critical_mps: 0.25
+  tracking_warn_mps: 0.10
+  tracking_critical_mps: 0.30
+  tracking_min_target_mps: 0.08
+  yaw_warn_radps: 0.25
+  yaw_critical_radps: 1.0
+  zero_command_linear_mps: 0.01
+  zero_command_angular_radps: 0.02
+  unexpected_linear_mps: 0.05
+  unexpected_angular_radps: 0.25
+  warn_score: 0.40
+  degraded_score: 0.60
+  critical_score: 0.85
+  critical_hold_sec: 0.50
+  clear_score: 0.30
+  clear_hold_sec: 1.0
+  degraded_min_scale: 0.25
+  covariance_max_multiplier: 10.0

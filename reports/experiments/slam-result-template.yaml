@@ -1,23 +1,4 @@
 schema_version: 1
-experiment: v0.3.0-slam-sweep
-candidate_id: baseline
-dataset_runs:
-  - bag_04_square/<run-id>
-  - bag_05_figure8/<run-id>
-  - bag_06_mapping/<run-id>
-upper_commit: "<commit>"
-calibration_sha256: "<sha256>"
-metrics:
-  closure_position_error_m: null
-  closure_yaw_error_rad: null
-  wall_ghost_width_p95_m: null
-  false_loop_closures: null
-  map_node_count: null
-  cpu_p95_percent: null
-  memory_peak_mb: null
-  tf_latency_p95_sec: null
-  scan_drop_rate_percent: null
-evidence:
-  map: "<path>"
-  cpu_log: "<path>"
-  notes: "<operator notes>"
+deprecated: true
+canonical_template: verification/reports/experiments/slam-result-template.yaml
+remove_after: v0.4.x

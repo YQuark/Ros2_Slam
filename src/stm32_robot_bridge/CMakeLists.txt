@@ -4,16 +4,25 @@ project(stm32_robot_bridge)
 find_package(ament_cmake REQUIRED)
 find_package(ament_cmake_python REQUIRED)
 
-ament_python_install_package(stm32_robot_bridge)
+ament_get_python_install_dir(PYTHON_INSTALL_DIR)
+install(FILES
+  stm32_robot_bridge/__init__.py
+  stm32_robot_bridge/bridge_core.py
+  stm32_robot_bridge/bridge_state.py
+  stm32_robot_bridge/framing.py
+  stm32_robot_bridge/imu_converter.py
+  stm32_robot_bridge/motion_supervisor.py
+  stm32_robot_bridge/odometry.py
+  stm32_robot_bridge/protocol_v3.py
+  stm32_robot_bridge/serial_transport.py
+  stm32_robot_bridge/transport_supervisor.py
+  DESTINATION ${PYTHON_INSTALL_DIR}/${PROJECT_NAME}
+)
 
 install(PROGRAMS
-  stm32_robot_bridge/bridge_node.py
+  stm32_robot_bridge/bridge_node_v3.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME bridge_node
-)
-install(FILES
-  stm32_robot_bridge/protocol_v2.py
-  DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY launch
@@ -22,16 +31,13 @@ install(DIRECTORY launch
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
-  ament_add_pytest_test(test_protocol_v2 test/test_protocol_v2.py
+  ament_add_pytest_test(test_protocol_v3 test/test_protocol_v3.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
-  ament_add_pytest_test(test_bridge_node test/test_bridge_node.py
+  ament_add_pytest_test(test_v3_components test/test_v3_components.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
-  ament_add_pytest_test(test_bridge_components test/test_bridge_components.py
-    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
-  )
-  ament_add_pytest_test(test_bridge_safety test/test_bridge_safety.py
+  ament_add_pytest_test(test_bridge_core_v3 test/test_bridge_core_v3.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
 endif()

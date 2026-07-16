@@ -1,0 +1,7 @@
+std_msgs/Header header
+uint8 protocol_version
+uint8 schema_version
+uint32 capabilities
+string firmware_commit
+uint32 hardware_revision
+uint32 parameter_crc32

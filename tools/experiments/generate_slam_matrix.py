@@ -8,11 +8,12 @@ from pathlib import Path
 
 import yaml
 
-from experiment_gate import generate_one_factor_candidates, load_experiment
+from experiment_gate import load_experiment
+from latin_hypercube import generate_lhs
 
 
 ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_CONFIG = ROOT / "config" / "experiments" / "slam_sweep.yaml"
+DEFAULT_CONFIG = ROOT / "verification" / "configs" / "experiments" / "slam-sweep-v0.4.0.yaml"
 
 
 def main() -> int:
@@ -24,12 +25,18 @@ def main() -> int:
     experiment = load_experiment(args.experiment)
     baseline_path = ROOT / experiment["baseline_params"]
     baseline = yaml.safe_load(baseline_path.read_text(encoding="utf-8"))
-    candidates = generate_one_factor_candidates(experiment)
+    candidates = generate_lhs(
+        experiment["parameter_axes"],
+        count=int(experiment["coarse_candidate_count"]),
+        seed=int(experiment["seed"]),
+    )
     args.output.mkdir(parents=True, exist_ok=True)
     manifest = {
         "schema_version": 1,
         "experiment": experiment["name"],
-        "datasets": experiment["datasets"],
+        "training_datasets": experiment["training_datasets"],
+        "validation_datasets": experiment["validation_datasets"],
+        "validation_is_holdout": True,
         "candidates": [],
     }
     for candidate in candidates:

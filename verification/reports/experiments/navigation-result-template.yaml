@@ -1,0 +1,19 @@
+schema_version: 1
+experiment: v0.4.0-nav2-acceptance
+candidate_id: baseline
+bag: bag_07_navigation/<run-id>
+upper_commit: "<commit>"
+calibration_sha256: "<sha256>"
+# 必须填写 10 个目标各 5 条。以下对象复制 50 次并替换 target_id 与实测值。
+runs:
+  - target_id: target_01
+    repetition: 1
+    success: null
+    position_error_m: null
+    yaw_error_rad: null
+    recovery_count: null
+    collision: null
+    manual_intervention: null
+    unexpected_motion: null
+    duration_sec: null
+    notes: ""

@@ -5,6 +5,9 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$ROOT"
 
 python3 -m pytest \
+  src/stm32_robot_bridge/test/test_protocol_v3.py \
+  src/stm32_robot_bridge/test/test_bridge_core_v3.py \
+  src/stm32_robot_bridge/test/test_v3_components.py \
   src/stm32_robot_bridge/test/test_protocol_v2.py \
   tests/protocol/test_firmware_golden_vectors.py \
   -q

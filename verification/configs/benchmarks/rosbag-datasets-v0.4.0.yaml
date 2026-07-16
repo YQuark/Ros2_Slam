@@ -1,0 +1,45 @@
+schema_version: 1
+release: v0.4.0
+default_output_root: /home/robot/robot_data/benchmarks/v0.4.0
+storage_id: sqlite3
+
+required_topics:
+  - /scan
+  - /wheel/odom
+  - /imu/data
+  - /odom
+  - /tf
+  - /tf_static
+  - /cmd_vel/nav
+  - /chassis/command
+  - /diagnostics
+
+datasets:
+  bag_01_static:
+    minimum_duration_sec: 600
+    repetitions: 1
+    procedure: "底盘断使能并静止 10 分钟，保持全部传感器和状态估计节点运行。"
+  bag_02_straight:
+    minimum_duration_sec: 60
+    repetitions: 6
+    procedure: "按低/中/高速度分别正向和反向直行，记录外部实测距离。"
+  bag_03_rotation:
+    minimum_duration_sec: 60
+    repetitions: 2
+    procedure: "顺时针与逆时针各连续原地旋转 5 圈，记录外部实测角度。"
+  bag_04_square:
+    minimum_duration_sec: 90
+    repetitions: 3
+    procedure: "沿固定方形路线闭环行驶三次，起终点使用同一外部基准。"
+  bag_05_figure8:
+    minimum_duration_sec: 90
+    repetitions: 3
+    procedure: "沿固定 8 字路线行驶三次，覆盖左右转和交叉点。"
+  bag_06_mapping:
+    minimum_duration_sec: 300
+    repetitions: 1
+    procedure: "完整覆盖测试场地并完成至少一次真实闭环。"
+  bag_07_navigation:
+    minimum_duration_sec: 600
+    repetitions: 50
+    procedure: "固定 10 个目标点，每点重复 5 次并记录成功、误差、恢复和接管。"

@@ -1,0 +1,28 @@
+schema_version: 1
+release: v0.4.0
+required_evidence:
+  - fault_time
+  - last_valid_command_time
+  - release_frame_time
+  - motor_stop_time
+  - firmware_control_source_transition
+  - diagnostics_transition
+  - automatic_recovery
+  - config_sha256
+scenarios:
+  - {id: unplug_stm32_serial, expected: firmware watchdog stops motors within 200 ms}
+  - {id: kill_cmd_vel_mux, expected: bridge command timeout sends disable}
+  - {id: kill_bridge, expected: firmware watchdog stops motors}
+  - {id: stop_nav2, expected: mux source timeout then bridge release}
+  - {id: stop_teleop, expected: mux source timeout then bridge release}
+  - {id: stm32_reset, expected: new HELLO and ACK required before drive}
+  - {id: upper_restart, expected: new session and three startup releases}
+  - {id: crc_corruption, expected: frame rejected and parser resynchronizes}
+  - {id: status_stall, expected: release and disable-enable rearm}
+  - {id: imu_stall, expected: IMU error does not reset encoder baseline}
+  - {id: estop, expected: local release and new rearm edge required}
+  - {id: fault_stop, expected: new rearm edge required}
+  - {id: replay_old_session, expected: firmware rejects stale session}
+  - {id: duplicate_sequence, expected: keepalive does not reapply target}
+  - {id: out_of_order_sequence, expected: firmware rejects and reports reason}
+  - {id: motion_supervisor_critical, expected: covariance then slowdown then release}

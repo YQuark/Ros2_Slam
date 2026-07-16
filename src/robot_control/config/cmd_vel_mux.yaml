@@ -1,8 +1,8 @@
 cmd_vel_mux:
   ros__parameters:
-    chassis_command_topic: /chassis/command
+    chassis_command_topic: chassis/command
     publish_legacy_twist: false
-    legacy_driver_topic: /cmd_vel/driver
+    legacy_driver_topic: cmd_vel/driver
     research_sources: []
     linear_limit: 0.4
     angular_limit: 1.5

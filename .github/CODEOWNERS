@@ -1,0 +1,6 @@
+/src/robot_interfaces/ @Yaoser-x
+/src/robot_control/ @Yaoser-x
+/src/stm32_robot_bridge/ @Yaoser-x
+/src/robot_config/ @Yaoser-x
+/compatibility/ @Yaoser-x
+/verification/configs/release/ @Yaoser-x

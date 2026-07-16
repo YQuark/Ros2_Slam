@@ -43,16 +43,21 @@ jobs:
         run: |
           ruff check .
           black --check \
-            tools/datasets tools/experiments scripts/verify tests/integration \
+            tools/datasets tools/experiments verification/runners scripts/verify tests/integration \
             tests/deployment/test_coverage_gate.py \
             tests/deployment/test_release_contract.py \
             src/robot_control/robot_control/control_policy.py \
-            src/stm32_robot_bridge/stm32_robot_bridge/odometry.py
+            src/robot_config/robot_config \
+            src/stm32_robot_bridge/stm32_robot_bridge/odometry.py \
+            src/stm32_robot_bridge/stm32_robot_bridge/protocol_v3.py \
+            src/stm32_robot_bridge/stm32_robot_bridge/bridge_core.py
           mypy tools scripts/verify \
             src/robot_control/robot_control/control_policy.py \
             src/stm32_robot_bridge/stm32_robot_bridge/bridge_state.py \
             src/stm32_robot_bridge/stm32_robot_bridge/command_guard.py \
             src/stm32_robot_bridge/stm32_robot_bridge/odometry.py \
+            src/stm32_robot_bridge/stm32_robot_bridge/protocol_v3.py \
+            src/stm32_robot_bridge/stm32_robot_bridge/bridge_core.py \
             src/stm32_robot_bridge/stm32_robot_bridge/protocol_v2.py \
             src/stm32_robot_bridge/stm32_robot_bridge/serial_transport.py
           yamllint .

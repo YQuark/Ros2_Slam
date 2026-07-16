@@ -6,7 +6,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG_PATH = ROOT / "config" / "benchmarks" / "rosbag_datasets.yaml"
+CONFIG_PATH = ROOT / "verification" / "configs" / "benchmarks" / "rosbag-datasets-v0.4.0.yaml"
 MODULE_PATH = ROOT / "tools" / "datasets" / "benchmark_bags.py"
 
 

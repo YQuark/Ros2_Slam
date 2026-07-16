@@ -4,6 +4,16 @@
 
 ## [Unreleased]
 
+### v0.4.0 implementation
+
+- Platform API 与 upper wire protocol 升级为 v3；运行时移除 v2 fallback，引入 session、sequence、ACK、HELLO 身份与能力门。
+- 新增 `robot_config` 单一事实源编译器、跨参数校验、effective config 与 SHA-256 运行清单。
+- bridge 改为 ROS adapter、纯 `BridgeCore`、有界独立串口 I/O、显式 QoS 和 fail-closed 状态快照。
+- 采用 encoder count 增量 SE(2) 里程计和协方差传播；IMU 改为字段级质量与 affine MCU 时钟估计。
+- MotionLimiter 同时约束速度/加速度/jerk；MotionSupervisor 按一致性逐级提高协方差、降速并 release。
+- SLAM profile 改为 base + overlay，实验升级为 LHS 粗搜索、交互筛选和独立验证集；fallback 重命名为未认证 example。
+- 验证与发布证据迁移到 `verification` 机器格式。v3 firmware、HIL、实车和标定仍为 NOT_RUN/provisional，因此 v0.4.0 发布保持阻塞。
+
 ### Added
 
 - 建立上位机 v0.3.0 的固件兼容矩阵、统一验证入口和版本化验收报告。

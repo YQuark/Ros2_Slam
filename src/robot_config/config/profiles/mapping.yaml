@@ -1,0 +1,4 @@
+runtime:
+  mode: mapping
+  fusion_mode: wheel
+  slam_profile: quality

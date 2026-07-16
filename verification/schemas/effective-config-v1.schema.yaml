@@ -1,0 +1,34 @@
+$schema: https://json-schema.org/draft/2020-12/schema
+title: Effective robot configuration v1
+type: object
+required:
+  - schema_version
+  - platform_api_version
+  - protocol
+  - platform
+  - safety
+  - motion
+  - motion_supervisor
+  - hardware
+  - calibration
+  - robot_id
+  - profile
+  - config_sha256
+properties:
+  schema_version: {const: 1}
+  platform_api_version: {const: 3}
+  protocol:
+    type: object
+    required: [name, version, required_capabilities]
+    properties:
+      version: {const: 3}
+  robot_id: {type: string, minLength: 1}
+  profile: {enum: [mapping, navigation, diagnostics]}
+  config_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+  platform: {type: object}
+  safety: {type: object}
+  motion: {type: object}
+  motion_supervisor: {type: object}
+  hardware: {type: object}
+  calibration: {type: object}
+additionalProperties: true

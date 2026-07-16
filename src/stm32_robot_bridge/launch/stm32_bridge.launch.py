@@ -1,81 +1,46 @@
 #!/usr/bin/env python3
+import os
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
-def generate_launch_description():
-    return LaunchDescription([
-        DeclareLaunchArgument('port', default_value='/dev/serial0'),
-        DeclareLaunchArgument('baudrate', default_value='115200'),
-        DeclareLaunchArgument('chassis_command_topic', default_value='/chassis/command'),
-        DeclareLaunchArgument('enable_legacy_cmd_vel', default_value='false'),
-        DeclareLaunchArgument('legacy_cmd_vel_topic', default_value='/cmd_vel/driver'),
-        DeclareLaunchArgument('odom_topic', default_value='/wheel/odom'),
-        DeclareLaunchArgument('cmd_timeout', default_value='0.15'),
-        DeclareLaunchArgument('drive_keepalive_sec', default_value='0.05'),
-        DeclareLaunchArgument('status_timeout', default_value='0.25'),
-        DeclareLaunchArgument('hard_max_linear_mps', default_value='0.45'),
-        DeclareLaunchArgument('hard_max_angular_radps', default_value='1.50'),
-        DeclareLaunchArgument('max_command_age_sec', default_value='0.15'),
-        DeclareLaunchArgument('publish_tf', default_value='false'),
-        DeclareLaunchArgument('status_hz', default_value='100.0'),
-        DeclareLaunchArgument('wheel_radius', default_value='0.0350'),
-        DeclareLaunchArgument('wheel_track_width', default_value='0.1760'),
-        DeclareLaunchArgument('odom_linear_scale', default_value='1.0'),
-        DeclareLaunchArgument('odom_angular_scale', default_value='1.0'),
-        DeclareLaunchArgument('odom_angular_sign', default_value='1.0'),
-        DeclareLaunchArgument('odom_max_dt_sec', default_value='0.25'),
-        DeclareLaunchArgument('imu_use_orientation', default_value='false'),
-        DeclareLaunchArgument('imu_orientation_stddev', default_value='0.2'),
-        DeclareLaunchArgument('imu_angular_velocity_stddev_x', default_value='0.02'),
-        DeclareLaunchArgument('imu_angular_velocity_stddev_y', default_value='0.02'),
-        DeclareLaunchArgument('imu_angular_velocity_stddev_z', default_value='0.02'),
-        DeclareLaunchArgument('imu_linear_acceleration_stddev_x', default_value='0.2'),
-        DeclareLaunchArgument('imu_linear_acceleration_stddev_y', default_value='0.2'),
-        DeclareLaunchArgument('imu_linear_acceleration_stddev_z', default_value='0.2'),
-        DeclareLaunchArgument('imu_clock_offset_alpha', default_value='0.02'),
-        DeclareLaunchArgument('status_log_interval_sec', default_value='0.0'),
-        DeclareLaunchArgument('cmd_log_interval_sec', default_value='0.0'),
+def _compose(context):
+    params_file = LaunchConfiguration("params_file").perform(context).strip()
+    allow_uncompiled = (
+        LaunchConfiguration("allow_uncompiled_config").perform(context).lower() == "true"
+    )
+    parameters = []
+    if params_file:
+        if not os.path.isfile(params_file):
+            raise RuntimeError(f"effective ROS params file does not exist: {params_file}")
+        parameters.append(params_file)
+    elif not allow_uncompiled:
+        raise RuntimeError("effective params are required; start through bin/robot")
+    parameters.append({"port": LaunchConfiguration("port")})
+    return [
         Node(
-            package='stm32_robot_bridge',
-            executable='bridge_node',
-            name='stm32_bridge',
-            output='screen',
-            parameters=[{
-                'port': LaunchConfiguration('port'),
-                'baudrate': LaunchConfiguration('baudrate'),
-                'chassis_command_topic': LaunchConfiguration('chassis_command_topic'),
-                'enable_legacy_cmd_vel': LaunchConfiguration('enable_legacy_cmd_vel'),
-                'legacy_cmd_vel_topic': LaunchConfiguration('legacy_cmd_vel_topic'),
-                'odom_topic': LaunchConfiguration('odom_topic'),
-                'cmd_timeout': LaunchConfiguration('cmd_timeout'),
-                'drive_keepalive_sec': LaunchConfiguration('drive_keepalive_sec'),
-                'status_timeout': LaunchConfiguration('status_timeout'),
-                'hard_max_linear_mps': LaunchConfiguration('hard_max_linear_mps'),
-                'hard_max_angular_radps': LaunchConfiguration('hard_max_angular_radps'),
-                'max_command_age_sec': LaunchConfiguration('max_command_age_sec'),
-                'publish_tf': LaunchConfiguration('publish_tf'),
-                'status_hz': LaunchConfiguration('status_hz'),
-                'wheel_radius': LaunchConfiguration('wheel_radius'),
-                'wheel_track_width': LaunchConfiguration('wheel_track_width'),
-                'odom_linear_scale': LaunchConfiguration('odom_linear_scale'),
-                'odom_angular_scale': LaunchConfiguration('odom_angular_scale'),
-                'odom_angular_sign': LaunchConfiguration('odom_angular_sign'),
-                'odom_max_dt_sec': LaunchConfiguration('odom_max_dt_sec'),
-                'imu.use_orientation': LaunchConfiguration('imu_use_orientation'),
-                'imu.orientation_stddev': LaunchConfiguration('imu_orientation_stddev'),
-                'imu.angular_velocity_stddev.x': LaunchConfiguration('imu_angular_velocity_stddev_x'),
-                'imu.angular_velocity_stddev.y': LaunchConfiguration('imu_angular_velocity_stddev_y'),
-                'imu.angular_velocity_stddev.z': LaunchConfiguration('imu_angular_velocity_stddev_z'),
-                'imu.linear_acceleration_stddev.x': LaunchConfiguration('imu_linear_acceleration_stddev_x'),
-                'imu.linear_acceleration_stddev.y': LaunchConfiguration('imu_linear_acceleration_stddev_y'),
-                'imu.linear_acceleration_stddev.z': LaunchConfiguration('imu_linear_acceleration_stddev_z'),
-                'imu.clock_offset_alpha': LaunchConfiguration('imu_clock_offset_alpha'),
-                'status_log_interval_sec': LaunchConfiguration('status_log_interval_sec'),
-                'cmd_log_interval_sec': LaunchConfiguration('cmd_log_interval_sec'),
-            }],
-        ),
-    ])
+            package="stm32_robot_bridge",
+            executable="bridge_node",
+            name="stm32_bridge",
+            namespace=LaunchConfiguration("namespace"),
+            output="screen",
+            parameters=parameters,
+        )
+    ]
+
+
+def generate_launch_description():
+    return LaunchDescription(
+        [
+            DeclareLaunchArgument(
+                "params_file", default_value=os.environ.get("ROBOT_EFFECTIVE_PARAMS", "")
+            ),
+            DeclareLaunchArgument("port", default_value="/dev/serial0"),
+            DeclareLaunchArgument("namespace", default_value=""),
+            DeclareLaunchArgument("allow_uncompiled_config", default_value="false"),
+            OpaqueFunction(function=_compose),
+        ]
+    )

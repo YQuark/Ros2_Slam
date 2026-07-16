@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>stm32_robot_bridge</name>
-  <version>0.3.0</version>
-  <description>ROS2 bridge for YQuark STM32_Robot serial protocol</description>
+  <version>0.4.0</version>
+  <description>Fail-closed ROS 2 adapter for the STM32 upper protocol v3.</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>MIT</license>
 
@@ -10,14 +10,15 @@
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
   <exec_depend>rclpy</exec_depend>
-  <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>diagnostic_msgs</exec_depend>
   <exec_depend>builtin_interfaces</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>robot_interfaces</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
-  <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <exec_depend>python3-serial</exec_depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
