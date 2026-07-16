@@ -1,8 +1,17 @@
 cmd_vel_mux:
   ros__parameters:
-    driver_topic: /cmd_vel/driver
+    chassis_command_topic: /chassis/command
+    publish_legacy_twist: false
+    legacy_driver_topic: /cmd_vel/driver
     research_sources: []
     linear_limit: 0.4
     angular_limit: 1.5
+    input_linear_abs_max: 5.0
+    input_angular_abs_max: 20.0
+    max_linear_accel: 0.5
+    max_angular_accel: 1.5
+    max_linear_jerk: 2.0
+    max_angular_jerk: 6.0
+    motion_limiter_max_dt: 0.1
     timeout_sec: 0.25
     publish_hz: 20.0

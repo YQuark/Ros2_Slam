@@ -28,6 +28,12 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_bridge_node test/test_bridge_node.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
+  ament_add_pytest_test(test_bridge_components test/test_bridge_components.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
+  ament_add_pytest_test(test_bridge_safety test/test_bridge_safety.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
 endif()
 
 ament_package()

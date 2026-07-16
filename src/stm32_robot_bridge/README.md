@@ -1,12 +1,13 @@
 # stm32_robot_bridge
 
-`stm32_robot_bridge` 是当前工程的 STM32 底盘串口桥接包。它把 ROS2 `/cmd_vel/driver` 转成下位机 v2 上位机协议，并把下位机主动上报的 STATUS/IMU_STATUS 转成 `/wheel/odom`、电池、电流与 IMU 状态。
+`stm32_robot_bridge` 是当前工程的 STM32 底盘串口桥接包。它把 ROS2 `/chassis/command` 转成下位机 v2 上位机协议，并把下位机主动上报的 STATUS/IMU_STATUS 转成 `/wheel/odom`、电池、电流与 IMU 状态。
 
 ## 包职责
 
-- 订阅 `/cmd_vel/driver`，发送 `SET_VELOCITY` (`0x01`)。
+- 默认订阅显式控制接口 `/chassis/command`，发送 `SET_VELOCITY` (`0x01`)。
+- `/cmd_vel/driver` 仅在 `enable_legacy_cmd_vel:=true` 时兼容订阅。
 - 被动接收下位机主动上报的 `STATUS` (`0x81`) 和 `IMU_STATUS` (`0x83`)，不发送状态请求。
-- 发布 `/wheel/odom`、`/battery_state`、`/motor/left_current`、`/motor/right_current`、`/chassis/status`、`/imu/data`。
+- 发布 `/wheel/odom`、`/battery_state`、`/motor/left_current`、`/motor/right_current`、`/chassis/state`、`/imu/data` 和标准 `/diagnostics`。
 - 不默认发布 `odom -> base_link` TF；标准 `/odom` 与 TF 由 `robot_state_estimation` 统一发布。
 - 提供 `/chassis/estop` (`std_srvs/SetBool`) 显式触发急停；`false` 会被 bridge 拒绝，解除只能通过本地 USART1 控制台执行。
 
@@ -63,8 +64,9 @@ colcon test --packages-select stm32_robot_bridge --event-handlers console_direct
 - 1 秒内收到 v2 STATUS。
 - `/wheel/odom` 约 20Hz 更新。
 - BMI270 在线时 `/imu/data` 可读取到 `sensor_msgs/Imu`。
-- `/cmd_vel/driver` 有效期内下位机 `control_source=1`。
-- `/cmd_vel/driver` 超时后 bridge 只发送一次 `enable=0` 释放上位机控制源。
+- `/diagnostics` 包含 serial、protocol、control、chassis、imu 五个组件。
+- `/chassis/command.enable=true` 且命令有效期内下位机 `control_source=1`。
+- 收到 `enable=false` 或命令超时后 bridge 发送 `enable=0` 释放上位机控制源。
 - `/chassis/estop` 触发后 STATUS bit0 置位；服务的 `false` 请求会返回失败，解除需使用本地 USART1 控制台 `estop 0`。
 
 ## 相关文档

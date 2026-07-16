@@ -18,8 +18,18 @@ robot:
 
     # Serial
     baudrate: 115200
-    cmd_timeout_sec: 0.25
-    drive_keepalive_sec: 0.10
+    cmd_timeout_sec: 0.15
+    drive_keepalive_sec: 0.05
+    status_timeout_sec: 0.25
+    hard_max_linear_mps: 0.45
+    hard_max_angular_radps: 1.50
+    odom_max_dt_sec: 0.25
+
+    # IMU 初始保守值，必须由静态 bag/Allan 分析替换后才能作为正式标定结果。
+    imu_use_orientation: false
+    imu_orientation_stddev: 0.2
+    imu_angular_velocity_stddev: [0.02, 0.02, 0.02]
+    imu_linear_acceleration_stddev: [0.2, 0.2, 0.2]
 
     # =========================================================================
     # 运动学参数（上位机实际使用的仅 wheel_track_width 和 wheel_radius）

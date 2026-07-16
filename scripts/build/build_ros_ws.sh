@@ -22,6 +22,6 @@ source_ros_setup() {
 source_ros_setup
 export CMAKE_PREFIX_PATH="/opt/slamrobot/vendor/ydlidar-sdk:${CMAKE_PREFIX_PATH:-}"
 rosdep install --from-paths src --ignore-src -r -y --skip-keys ydlidar_sdk
-colcon build --symlink-install
-colcon test --packages-skip ydlidar_ros2_driver --return-code-on-test-failure
+colcon build --base-paths src --symlink-install
+colcon test --base-paths src --packages-skip ydlidar_ros2_driver --return-code-on-test-failure
 colcon test-result --verbose

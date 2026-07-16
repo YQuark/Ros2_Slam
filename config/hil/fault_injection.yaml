@@ -1,0 +1,24 @@
+schema_version: 1
+release: v0.3.0
+required_evidence:
+  - fault_time
+  - last_valid_command_time
+  - release_frame_time
+  - motor_stop_time
+  - firmware_control_source_transition
+  - diagnostics_transition
+  - automatic_recovery
+scenarios:
+  - {id: unplug_stm32_serial, expected: "release or firmware timeout stops motors"}
+  - {id: kill_cmd_vel_mux, expected: "bridge command timeout sends one enable=0"}
+  - {id: kill_bridge, expected: "firmware UPPER timeout stops motors"}
+  - {id: stop_nav2, expected: "mux source timeout then bridge release"}
+  - {id: stop_teleop, expected: "mux source timeout then bridge release"}
+  - {id: all_sources_timeout, expected: "active-to-idle release then silence"}
+  - {id: stm32_reset, expected: "WAIT_STATUS prevents drive until valid STATUS"}
+  - {id: upper_restart, expected: "startup releases three times then waits for STATUS"}
+  - {id: crc_corruption, expected: "bad frame rejected and parser recovers"}
+  - {id: status_stall, expected: "STATUS timeout sends release and enters WAIT_STATUS"}
+  - {id: imu_stall, expected: "IMU diagnostic error without corrupt odom"}
+  - {id: estop, expected: "drive blocked until fault clears and disable-enable edge"}
+  - {id: fault_stop, expected: "drive blocked until fault clears and disable-enable edge"}

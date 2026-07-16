@@ -41,17 +41,6 @@
 - 默认导航流程：`./robot.sh navigation ...`
 - 两阶段导航：仅作为回退和诊断模式
 
-## 与 AGENTS.md 的对应关系
-
-AGENTS.md 中引用的英文文件名已归档至 [archive/](./archive/)。当前中文文件名与 AGENTS.md 中描述的内容对应关系如下：
-
-| AGENTS.md 中的文件 | 当前文件 | 说明 |
-|-------------------|----------|------|
-| `00_project_scope.md` | `00-项目范围.md` | 项目范围和平台约束 |
-| `04_chassis_bridge_protocol.md` | `04-串口桥接协议.md` | v1 协议完整定义 |
-| `05_navigation.md` | `05b-导航拆解调试.md` | 导航调试流程 |
-| `99_troubleshooting.md` | `07-运维与排障.md` | 排障指南 |
-
 ## 归档文档
 
 历史计划、需求文档和早期英文命名文档已移至 [archive/](./archive/)。

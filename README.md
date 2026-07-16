@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 雷达建图 | 已支持 | `YDLIDAR X2 -> /scan -> slam_toolbox` |
 | 摄像头建图 | 后续扩展 | 摄像头默认不进入当前激光 SLAM 主链路 |
-| 真实底盘导航 | 待联调 | `Nav2 -> /cmd_vel/nav -> robot_control -> /cmd_vel/driver -> stm32_robot_bridge -> STM32`，需要现场验证 |
+| 真实底盘导航 | 待联调 | `Nav2 -> /cmd_vel/nav -> robot_control -> /chassis/command -> stm32_robot_bridge -> STM32`，需要现场验证 |
 | 虚拟底盘联调 | 已支持 | `base_mode:=fake` |
 | 串口自动识别 | 已支持 | 自动区分底盘串口与雷达串口 |
 | 底盘 EKF 融合 | 显式开关 | 默认使用 bridge odom，EKF 不默认启用 |

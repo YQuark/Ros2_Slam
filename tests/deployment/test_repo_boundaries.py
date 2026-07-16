@@ -33,6 +33,7 @@ def test_runtime_and_vendor_sources_are_not_tracked() -> None:
 
 def test_platform_packages_exist_and_bringup_defaults_to_headless() -> None:
     for package_name in (
+        "robot_interfaces",
         "robot_description",
         "robot_sensing",
         "robot_state_estimation",
@@ -50,7 +51,7 @@ def test_platform_packages_exist_and_bringup_defaults_to_headless() -> None:
     assert "get_package_share_directory('robot_state_estimation')" in system_launch
 
 
-def test_stm32_bridge_uses_driver_command_and_raw_wheel_odom_defaults() -> None:
+def test_stm32_bridge_uses_explicit_command_and_raw_wheel_odom_defaults() -> None:
     bridge_node = (
         ROOT / "src" / "stm32_robot_bridge" / "stm32_robot_bridge" / "bridge_node.py"
     ).read_text(encoding="utf-8")
@@ -58,9 +59,11 @@ def test_stm32_bridge_uses_driver_command_and_raw_wheel_odom_defaults() -> None:
         ROOT / "src" / "stm32_robot_bridge" / "launch" / "stm32_bridge.launch.py"
     ).read_text(encoding="utf-8")
 
-    assert 'declare_parameter("cmd_vel_topic", "/cmd_vel/driver")' in bridge_node
+    assert 'declare_parameter("chassis_command_topic", "/chassis/command")' in bridge_node
+    assert 'declare_parameter("enable_legacy_cmd_vel", False)' in bridge_node
     assert 'declare_parameter("odom_topic", "/wheel/odom")' in bridge_node
-    assert "DeclareLaunchArgument('cmd_vel_topic', default_value='/cmd_vel/driver')" in launch_file
+    assert "DeclareLaunchArgument('chassis_command_topic', default_value='/chassis/command')" in launch_file
+    assert "DeclareLaunchArgument('enable_legacy_cmd_vel', default_value='false')" in launch_file
     assert "DeclareLaunchArgument('odom_topic', default_value='/wheel/odom')" in launch_file
 
 
@@ -98,6 +101,20 @@ def test_build_script_sources_ros_with_nounset_disabled() -> None:
     assert "set -u" in build_script
     assert build_script.index("set +u") < build_script.index("source /opt/ros/humble/setup.bash")
     assert build_script.index("source /opt/ros/humble/setup.bash") < build_script.rindex("set -u")
+
+
+def test_colcon_entrypoints_only_discover_packages_under_src() -> None:
+    entrypoints = (
+        ROOT / ".github" / "workflows" / "ci.yml",
+        ROOT / "scripts" / "build" / "build_ros_ws.sh",
+        ROOT / "scripts" / "verify" / "verify_upper.sh",
+    )
+
+    for path in entrypoints:
+        content = path.read_text(encoding="utf-8")
+        assert "colcon build --base-paths src" in content, path
+        assert "colcon test --base-paths src" in content, path
+
 
 def test_gitattributes_keeps_shell_scripts_lf() -> None:
     attributes = (ROOT / ".gitattributes").read_text(encoding="utf-8")

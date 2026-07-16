@@ -1,13 +1,42 @@
-platform_api_version: 1
+platform_api_version: 2
+
+upper:
+  branch: ARM
+  baseline_commit: 2c9718e7a62cbb0d1905e759073871d25621dba9
+  release: v0.3.0
+
 firmware:
-  protocol: upper_v2
+  repository: Yaoser-x/SlamRobot_Chassis_Control
+  branch: main
+  tag: v1.0.0-beta4
+  commit: a4ae10d592e840e979dd35c8a9b2ff2f5dd107e4
+
+protocol:
+  name: upper_v2
+  version: 2
   status_payload_bytes: 65
   diagnostic_payload_bytes: 28
   imu_status_payload_bytes: 99
-  imu_data: /imu/data
-  diagnostic_period_ms: 200
+
+timing:
+  mux_source_timeout_ms: 250
+  bridge_command_timeout_ms: 150
+  bridge_keepalive_ms: 50
+  bridge_status_timeout_ms: 250
+  bridge_odom_max_dt_ms: 250
+  firmware_upper_timeout_ms: 200
+  deprecated_firmware_chassis_timeout_ms: 500
+
 topics:
   raw_wheel_odom: /wheel/odom
   standard_odom: /odom
-  driver_command: /cmd_vel/driver
-  diagnostic: /chassis/diagnostic
+  chassis_command: /chassis/command
+  legacy_driver_command: /cmd_vel/driver
+  imu_data: /imu/data
+  chassis_state: /chassis/state
+  diagnostic: /diagnostics
+  legacy_diagnostic_summary: /chassis/diagnostic
+
+verified:
+  date: "2026-07-15"
+  hil_report: reports/hil/v0.3.0.md

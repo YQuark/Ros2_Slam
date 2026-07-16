@@ -94,7 +94,7 @@ def make_status_payload(
     targets=(0, 130, 350, 0),
     outputs=(0, 501, -502, 0),
     speed_valid_mask=0b0110,
-    encoder_anomaly_mask=0xA5,
+    encoder_anomaly_mask=0,
     comm_health_flags=0x5A,
 ) -> bytes:
     payload = bytearray(STATUS_PAYLOAD_SIZE)
@@ -210,6 +210,7 @@ def test_decode_status_payload_checks_fixed_size_version_offsets_and_units():
         currents=(10, 111, 222, 333),
         targets=(-90, 130, 350, -570),
         outputs=(-1, 501, -502, 999),
+        encoder_anomaly_mask=0xA5,
     )
 
     status = decode_status_payload(payload)
@@ -319,6 +320,18 @@ def test_aggregate_status_marks_odom_untrusted_when_side_missing_or_speed_invali
     assert aggregate_status(missing_side, wheel_track_width=0.176).vx_mps == 0.0
     assert aggregate_status(invalid_speed, wheel_track_width=0.176).odom_trusted is False
     assert aggregate_status(invalid_speed, wheel_track_width=0.176).wz_radps == 0.0
+
+
+def test_aggregate_status_marks_odom_untrusted_for_enabled_encoder_anomaly():
+    status = decode_status_payload(
+        make_status_payload(
+            enabled_mask=0b0110,
+            speed_valid_mask=0b0110,
+            encoder_anomaly_mask=0b0010,
+        )
+    )
+
+    assert aggregate_status(status, wheel_track_width=0.176).odom_trusted is False
 
 
 def test_aggregate_status_drive_mode_differential_default_is_unchanged():

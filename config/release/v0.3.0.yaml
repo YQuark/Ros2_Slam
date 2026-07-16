@@ -1,0 +1,18 @@
+schema_version: 1
+release: v0.3.0
+platform_api_version: 2
+software_gates:
+  pytest_minimum_count: 196
+  coverage_total_percent: 75
+  bridge_core_percent: 85
+  control_protocol_odometry_percent: 90
+hardware_gates:
+  hil_report: reports/hil/v0.3.0.md
+  vehicle_report: reports/vehicle/v0.3.0.md
+  calibration: src/robot_bringup/config/robot_calibration.yaml
+  vehicle_dynamics: reports/calibration/v0.3.0-vehicle-dynamics.yaml
+release_materials:
+  changelog: CHANGELOG.md
+  compatibility: compatibility/firmware.yaml
+  upgrade_and_rollback: docs/releases/v0.3.0.md
+  known_limitations: docs/releases/v0.3.0.md

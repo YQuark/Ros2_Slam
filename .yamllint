@@ -1,0 +1,21 @@
+extends: default
+
+ignore: |
+  build/
+  install/
+  log/
+  vendor/
+  src/vendor/
+  firmware-contract/
+
+rules:
+  document-start: disable
+  line-length:
+    max: 140
+  truthy:
+    allowed-values: ["true", "false", "on"]
+  comments:
+    min-spaces-from-content: 1
+  brackets:
+    min-spaces-inside: 0
+    max-spaces-inside: 1

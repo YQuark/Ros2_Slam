@@ -16,7 +16,9 @@ FORBIDDEN = (
 
 
 def main() -> int:
-    result = subprocess.run(["git", "ls-files"], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE)
+    result = subprocess.run(
+        ["git", "ls-files"], cwd=ROOT, check=True, text=True, stdout=subprocess.PIPE
+    )
     offenders = [
         path
         for path in result.stdout.splitlines()

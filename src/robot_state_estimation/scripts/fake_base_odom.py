@@ -3,9 +3,10 @@
 import math
 
 import rclpy
-from geometry_msgs.msg import TransformStamped, Twist
+from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
+from robot_interfaces.msg import ChassisCommand
 from tf2_ros import TransformBroadcaster
 
 
@@ -13,7 +14,7 @@ class FakeBaseOdom(Node):
     def __init__(self):
         super().__init__('fake_base_odom')
 
-        self.declare_parameter('cmd_vel_topic', '/cmd_vel/driver')
+        self.declare_parameter('chassis_command_topic', '/chassis/command')
         self.declare_parameter('odom_topic', '/odom')
         self.declare_parameter('frame_id', 'odom')
         self.declare_parameter('child_frame_id', 'base_link')
@@ -21,7 +22,7 @@ class FakeBaseOdom(Node):
         self.declare_parameter('publish_hz', 30.0)
         self.declare_parameter('cmd_timeout', 0.25)
 
-        self.cmd_vel_topic = self.get_parameter('cmd_vel_topic').value
+        self.chassis_command_topic = self.get_parameter('chassis_command_topic').value
         self.odom_topic = self.get_parameter('odom_topic').value
         self.frame_id = self.get_parameter('frame_id').value
         self.child_frame_id = self.get_parameter('child_frame_id').value
@@ -39,17 +40,17 @@ class FakeBaseOdom(Node):
 
         self.odom_pub = self.create_publisher(Odometry, self.odom_topic, 20)
         self.tf_br = TransformBroadcaster(self) if self.publish_tf else None
-        self.create_subscription(Twist, self.cmd_vel_topic, self._on_cmd_vel, 20)
+        self.create_subscription(ChassisCommand, self.chassis_command_topic, self._on_chassis_command, 20)
         self.create_timer(1.0 / max(self.publish_hz, 1.0), self._on_timer)
 
         self.get_logger().info(
-            f'fake_base_odom started: {self.cmd_vel_topic} -> {self.odom_topic}, '
+            f'fake_base_odom started: {self.chassis_command_topic} -> {self.odom_topic}, '
             f'hz={self.publish_hz:.1f} cmd_timeout={self.cmd_timeout:.2f}s'
         )
 
-    def _on_cmd_vel(self, msg: Twist):
-        self.vx = float(msg.linear.x)
-        self.wz = float(msg.angular.z)
+    def _on_chassis_command(self, msg: ChassisCommand):
+        self.vx = float(msg.twist.linear.x) if msg.enable else 0.0
+        self.wz = float(msg.twist.angular.z) if msg.enable else 0.0
         self.last_cmd_time = self.get_clock().now()
 
     def _on_timer(self):

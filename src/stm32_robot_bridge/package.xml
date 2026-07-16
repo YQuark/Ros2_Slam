@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>stm32_robot_bridge</name>
-  <version>0.0.1</version>
+  <version>0.3.0</version>
   <description>ROS2 bridge for YQuark STM32_Robot serial protocol</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>MIT</license>
@@ -11,7 +11,10 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>diagnostic_msgs</exec_depend>
+  <exec_depend>builtin_interfaces</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>robot_interfaces</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
   <exec_depend>std_srvs</exec_depend>
   <exec_depend>tf2_ros</exec_depend>

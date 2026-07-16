@@ -1,6 +1,6 @@
 <package format="3">
   <name>robot_control</name>
-  <version>0.1.0</version>
+  <version>0.3.0</version>
   <description>Platform command arbitration and safety limiting for the robot base.</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>Apache-2.0</license>
@@ -10,6 +10,7 @@
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>robot_interfaces</exec_depend>
 
   <test_depend>ament_cmake_pytest</test_depend>
 

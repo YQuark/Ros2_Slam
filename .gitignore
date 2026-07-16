@@ -14,6 +14,11 @@ log/
 *.pyc
 *.pyo
 __pycache__/
+.coverage
+coverage.json
+coverage.xml
+.mypy_cache/
+.ruff_cache/
 
 # IDE
 .vscode/
@@ -45,5 +50,4 @@ Thumbs.db
 /robot_data/
 .worktrees/
 CLAUDE.md
-AGENTS.md
 /pc_test_utils

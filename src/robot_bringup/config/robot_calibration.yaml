@@ -1,0 +1,59 @@
+schema_version: 1
+calibration_version: "2026-07-15-initial"
+platform_api_version: 2
+status: provisional
+
+provenance:
+  date: "2026-07-15"
+  upper_commit: 2c9718e7a62cbb0d1905e759073871d25621dba9
+  firmware_commit: a4ae10d592e840e979dd35c8a9b2ff2f5dd107e4
+  report: reports/calibration/v0.3.0-initial.md
+
+drive:
+  wheel_radius_m: 0.0350
+  wheel_track_width_m: 0.1760
+  odom_linear_scale: 1.0
+  odom_angular_scale: 1.0
+  odom_angular_sign: 1.0
+  scale_status: measured_pending_report
+  motor_encoder_direction_status: unverified
+
+odom_covariance:
+  linear_base_stddev: 0.05
+  linear_speed_gain: 0.08
+  linear_turn_gain: 0.03
+  linear_dt_gain: 0.10
+  angular_base_stddev: 0.10
+  angular_turn_gain: 0.08
+  angular_speed_gain: 0.04
+  wheel_disagreement_gain: 0.30
+  status: conservative_initial
+
+motion:
+  soft_max_linear_mps: 0.40
+  soft_max_angular_radps: 1.50
+  hard_max_linear_mps: 0.45
+  hard_max_angular_radps: 1.50
+  max_linear_accel_mps2: 0.50
+  max_angular_accel_radps2: 1.50
+  max_linear_jerk_mps3: 2.0
+  max_angular_jerk_radps3: 6.0
+  input_linear_abs_max_mps: 5.0
+  input_angular_abs_max_radps: 20.0
+  status: conservative_initial
+
+imu:
+  use_orientation: false
+  orientation_stddev: 0.2
+  angular_velocity_stddev: [0.02, 0.02, 0.02]
+  linear_acceleration_stddev: [0.2, 0.2, 0.2]
+  status: conservative_initial_pending_allan
+
+lidar:
+  mount_xyz_m: [0.07, 0.0, 0.13]
+  mount_yaw_rad: 1.571
+  status: unverified
+
+footprint:
+  points_m: [[0.11, 0.075], [0.11, -0.075], [-0.11, -0.075], [-0.11, 0.075]]
+  status: provisional

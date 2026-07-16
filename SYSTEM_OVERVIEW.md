@@ -1,6 +1,6 @@
 # 系统架构索引
 
-`SYSTEM_OVERVIEW.md` 作为仓库根目录入口保留。当前 ARM 迁移以 `AGENTS.md` 中的 Raspberry Pi 4B + ROS2 Humble + YDLIDAR X2 + STM32 两轮差速底盘为约束。
+`SYSTEM_OVERVIEW.md` 作为仓库根目录入口保留。当前平台为 Raspberry Pi 4B + ROS2 Humble + YDLIDAR X2 + STM32 两轮差速底盘。
 
 建议按以下顺序阅读：
 

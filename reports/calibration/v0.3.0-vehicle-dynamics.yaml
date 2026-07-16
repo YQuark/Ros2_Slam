@@ -1,0 +1,21 @@
+schema_version: 1
+release: v0.3.0
+status: measurement_required
+upper_commit: "<commit>"
+firmware_commit: a4ae10d592e840e979dd35c8a9b2ff2f5dd107e4
+calibration_sha256: "<sha256>"
+conditions:
+  surface: "<surface>"
+  battery_voltage_v: null
+  payload_kg: null
+measurements:
+  minimum_stable_linear_mps: null
+  minimum_stable_angular_radps: null
+  startup_deadband_mps: null
+  braking_distance_m: null
+  maximum_stable_linear_accel_mps2: null
+  maximum_stable_angular_accel_radps2: null
+evidence:
+  bag: bag_02_straight/<run-id>
+  analysis: "<path>"
+  notes: ""

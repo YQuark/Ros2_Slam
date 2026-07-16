@@ -171,9 +171,17 @@ def encode_estop_payload(enabled: bool) -> bytes:
     return bytes([1 if enabled else 0])
 
 
+@dataclass
+class ParserStats:
+    crc_errors: int = 0
+    bad_length: int = 0
+    resync_bytes: int = 0
+
+
 class FrameParser:
     def __init__(self) -> None:
         self._buffer = bytearray()
+        self.stats = ParserStats()
 
     def feed(self, chunk: bytes) -> List[Tuple[int, bytes]]:
         self._buffer.extend(chunk)
@@ -182,15 +190,18 @@ class FrameParser:
         while True:
             header_index = self._find_header()
             if header_index < 0:
-                self._retain_possible_header_tail()
+                self.stats.resync_bytes += self._retain_possible_header_tail()
                 break
             if header_index > 0:
+                self.stats.resync_bytes += header_index
                 del self._buffer[:header_index]
             if len(self._buffer) < 3:
                 break
 
             length = self._buffer[2]
             if length == 0 or length > MAX_LENGTH:
+                self.stats.bad_length += 1
+                self.stats.resync_bytes += 1
                 del self._buffer[0]
                 continue
 
@@ -201,6 +212,8 @@ class FrameParser:
             body = bytes(self._buffer[2:3 + length])
             received_crc = self._buffer[frame_len - 1]
             if crc8(body) != received_crc:
+                self.stats.crc_errors += 1
+                self.stats.resync_bytes += 1
                 del self._buffer[0]
                 continue
 
@@ -217,11 +230,14 @@ class FrameParser:
                 return index
         return -1
 
-    def _retain_possible_header_tail(self) -> None:
+    def _retain_possible_header_tail(self) -> int:
         if self._buffer and self._buffer[-1] == FRAME_SOF:
+            removed = len(self._buffer) - 1
             del self._buffer[:-1]
-        else:
-            self._buffer.clear()
+            return removed
+        removed = len(self._buffer)
+        self._buffer.clear()
+        return removed
 
 
 def decode_status_payload(payload: bytes) -> Optional[StatusPayload]:
@@ -334,7 +350,9 @@ def aggregate_status(status: StatusPayload, wheel_track_width: float, drive_mode
     left_present = len(left_indices) > 0
     right_present = len(right_indices) > 0
     speed_valid = all((status.motor_speed_valid_mask & (1 << index)) != 0 for index in left_indices + right_indices)
-    odom_trusted = left_present and right_present and speed_valid
+    enabled_mask = status.motor_enabled_mask
+    encoder_healthy = (status.encoder_anomaly_mask & enabled_mask) == 0
+    odom_trusted = left_present and right_present and speed_valid and encoder_healthy
 
     left_speed = _average(status.motor_speed_mps, left_indices)
     right_speed = _average(status.motor_speed_mps, right_indices)
@@ -387,6 +405,11 @@ class CommandStream:
         self.target_wz = float(wz)
         self.last_command_time = float(now_sec)
         self.release_sent = False
+
+    def clear_command(self) -> None:
+        self.target_vx = 0.0
+        self.target_wz = 0.0
+        self.last_command_time = None
 
     def tick(self, now_sec: float, send_payload: Callable[[bytes], object]) -> bool:
         now_sec = float(now_sec)

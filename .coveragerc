@@ -14,6 +14,8 @@ omit =
     */YDLidar-SDK/*
 
 [report]
+fail_under = 75
+show_missing = true
 exclude_lines =
     pragma: no cover
     if __name__ == .__main__.:

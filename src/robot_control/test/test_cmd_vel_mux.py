@@ -4,6 +4,7 @@
 """
 
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -27,6 +28,30 @@ sys.modules["geometry_msgs.msg"] = MagicMock()
 sys.modules["sensor_msgs"] = _mock_sensor_msgs
 sys.modules["sensor_msgs.msg"] = MagicMock()
 
+
+class _FakeChassisCommand:
+    SOURCE_NONE = 0
+    SOURCE_TELEOP = 1
+    SOURCE_TEST = 2
+    SOURCE_NAV = 3
+    SOURCE_RESEARCH = 4
+
+    def __init__(self):
+        self.header = SimpleNamespace(stamp=None)
+        self.twist = SimpleNamespace(
+            linear=SimpleNamespace(x=0.0),
+            angular=SimpleNamespace(z=0.0),
+        )
+        self.enable = False
+        self.source = self.SOURCE_NONE
+        self.sequence = 0
+
+
+_mock_robot_interfaces_msg = MagicMock()
+_mock_robot_interfaces_msg.ChassisCommand = _FakeChassisCommand
+sys.modules["robot_interfaces"] = MagicMock()
+sys.modules["robot_interfaces.msg"] = _mock_robot_interfaces_msg
+
 # ---------------------------------------------------------------------------
 # Mock Node 基类
 # ---------------------------------------------------------------------------
@@ -40,6 +65,8 @@ class MockNode:
     def __init__(self, node_name: str = "", **kwargs):
         self._node_name = node_name
         self._declared_params = {}
+        self._clock = MagicMock()
+        self._clock.now.return_value.nanoseconds = 0
 
     def declare_parameter(self, name, value=None):
         self._declared_params[name] = value
@@ -58,9 +85,7 @@ class MockNode:
         return MagicMock()
 
     def get_clock(self):
-        mock = MagicMock()
-        mock.now.return_value.nanoseconds = 0
-        return mock
+        return self._clock
 
     def create_publisher(self, msg_type, topic, qos_profile):
         return MagicMock()
@@ -121,8 +146,16 @@ class TestCmdVelMuxNode:
         node = make_mux()
         assert node.get_parameter("linear_limit").value == 0.4
         assert node.get_parameter("angular_limit").value == 1.5
+        assert node.get_parameter("input_linear_abs_max").value == 5.0
+        assert node.get_parameter("input_angular_abs_max").value == 20.0
+        assert node.get_parameter("max_linear_accel").value == 0.5
+        assert node.get_parameter("max_angular_accel").value == 1.5
+        assert node.get_parameter("max_linear_jerk").value == 2.0
+        assert node.get_parameter("max_angular_jerk").value == 6.0
         assert node.get_parameter("timeout_sec").value == 0.25
         assert node.get_parameter("publish_hz").value == 20.0
+        assert node.get_parameter("chassis_command_topic").value == "/chassis/command"
+        assert node.get_parameter("publish_legacy_twist").value is False
 
     def test_research_sources_default_to_empty(self):
         node = make_mux()
@@ -141,8 +174,8 @@ class TestCmdVelMuxNode:
         assert "research/avoidance" in sources
 
     def test_driver_topic_is_configurable(self):
-        node = make_mux(driver_topic="/cmd_vel/custom")
-        assert node.get_parameter("driver_topic").value == "/cmd_vel/custom"
+        node = make_mux(chassis_command_topic="/chassis/custom")
+        assert node.get_parameter("chassis_command_topic").value == "/chassis/custom"
 
 
 class TestCmdVelMuxPublish:
@@ -153,24 +186,94 @@ class TestCmdVelMuxPublish:
 
         node = make_mux()
         node.mux.update("teleop", Command(linear_x=0.3, angular_z=0.1), now_sec=1.0)
+        node.get_clock().now.return_value.nanoseconds = int(1.0e9)
 
         node._publish_selected()
 
         node.publisher.publish.assert_called_once()
         msg = node.publisher.publish.call_args[0][0]
-        assert msg.linear.x == 0.3
-        assert msg.angular.z == 0.1
+        assert msg.twist.linear.x == 0.0
+        assert msg.twist.angular.z == 0.0
+        assert msg.enable is True
+        assert msg.source == _FakeChassisCommand.SOURCE_TELEOP
+        assert msg.sequence == 1
 
-    def test_publishes_stop_when_no_active_source(self):
+        node.get_clock().now.return_value.nanoseconds = int(1.05e9)
+        node._publish_selected()
+        ramped = node.publisher.publish.call_args[0][0]
+        assert 0.0 < ramped.twist.linear.x < 0.3
+        assert 0.0 < ramped.twist.angular.z < 0.1
+
+    def test_idle_does_not_publish_continuously(self):
         node = make_mux()
-        # 无活跃源 → idle → (0, 0)
 
+        node._publish_selected()
+        node._publish_selected()
+
+        node.publisher.publish.assert_not_called()
+
+    def test_active_to_idle_publishes_one_release_then_silent(self):
+        from robot_control.control_policy import Command
+
+        node = make_mux()
+        node.mux.update("teleop", Command(0.3, 0.1), now_sec=0.0)
+        node._publish_selected()
+        node.publisher.reset_mock()
+        node.get_clock().now.return_value.nanoseconds = int(0.30 * 1e9)
+
+        node._publish_selected()
         node._publish_selected()
 
         node.publisher.publish.assert_called_once()
         msg = node.publisher.publish.call_args[0][0]
-        assert msg.linear.x == 0.0
-        assert msg.angular.z == 0.0
+        assert msg.enable is False
+        assert msg.source == _FakeChassisCommand.SOURCE_NONE
+        assert node.motion_limiter.current.linear_x == 0.0
+
+    def test_new_source_after_idle_resumes(self):
+        node = make_mux()
+        callback = node._make_callback("nav")
+        msg = MagicMock()
+        msg.linear.x = 0.2
+        msg.angular.z = 0.0
+
+        callback(msg)
+
+        published = node.publisher.publish.call_args[0][0]
+        assert published.enable is True
+        assert published.source == _FakeChassisCommand.SOURCE_NAV
+
+    def test_high_priority_timeout_falls_back_without_release(self):
+        from robot_control.control_policy import Command
+
+        node = make_mux()
+        node.mux.update("teleop", Command(0.2, 0.0), now_sec=0.10)
+        node.mux.update("nav", Command(0.1, 0.0), now_sec=0.20)
+        node.get_clock().now.return_value.nanoseconds = int(0.20e9)
+        node._publish_selected()
+        node.publisher.reset_mock()
+        node.get_clock().now.return_value.nanoseconds = int(0.36e9)
+
+        node._publish_selected()
+
+        published = node.publisher.publish.call_args[0][0]
+        assert published.enable is True
+        assert published.source == _FakeChassisCommand.SOURCE_NAV
+
+    def test_legacy_twist_is_not_published_by_default(self):
+        node = make_mux()
+
+        node._publish_selected()
+
+        assert node.legacy_publisher is None
+
+    def test_legacy_twist_can_be_enabled_explicitly(self):
+        node = make_mux(publish_legacy_twist=True)
+        node.last_active = True
+
+        node._publish_selected()
+
+        node.legacy_publisher.publish.assert_called_once()
 
 
 class TestCmdVelMuxCallback:
@@ -191,3 +294,50 @@ class TestCmdVelMuxCallback:
         selected = node.mux.select(now_sec=0.1)  # 在 0.25s 超时窗口内
         assert selected.source == "teleop"
         assert selected.command == Command(linear_x=0.4, angular_z=-0.2)
+
+    @pytest.mark.parametrize(
+        "linear,angular",
+        [
+            (float("nan"), 0.0),
+            (0.0, float("nan")),
+            (float("inf"), 0.0),
+            (0.0, float("-inf")),
+        ],
+    )
+    def test_invalid_command_triggers_one_release_and_clears_source(self, linear, angular):
+        from robot_control.control_policy import Command
+
+        node = make_mux()
+        node.mux.update("teleop", Command(0.2, 0.0), now_sec=0.0)
+        node.last_active = True
+        callback = node._make_callback("teleop")
+        msg = MagicMock()
+        msg.linear.x = linear
+        msg.angular.z = angular
+
+        callback(msg)
+
+        published = node.publisher.publish.call_args[0][0]
+        assert published.enable is False
+        assert node.mux.select(0.0).active is False
+        assert node.invalid_command_count == 1
+
+    def test_invalid_high_priority_source_allows_lower_source_on_next_tick(self):
+        from robot_control.control_policy import Command
+
+        node = make_mux()
+        node.mux.update("nav", Command(0.1, 0.0), now_sec=0.0)
+        node.mux.update("teleop", Command(0.2, 0.0), now_sec=0.0)
+        node.last_active = True
+        callback = node._make_callback("teleop")
+        msg = MagicMock()
+        msg.linear.x = float("nan")
+        msg.angular.z = 0.0
+
+        callback(msg)
+        node.publisher.reset_mock()
+        node._publish_selected()
+
+        published = node.publisher.publish.call_args[0][0]
+        assert published.enable is True
+        assert published.source == _FakeChassisCommand.SOURCE_NAV

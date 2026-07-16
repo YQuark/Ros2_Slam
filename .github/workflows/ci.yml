@@ -13,7 +13,14 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+
+      - name: Checkout firmware contract
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          repository: Yaoser-x/SlamRobot_Chassis_Control
+          ref: a4ae10d592e840e979dd35c8a9b2ff2f5dd107e4
+          path: firmware-contract
 
       - name: Configure git safe directory
         run: git config --global --add safe.directory /__w/Ros2_Slam/Ros2_Slam
@@ -21,30 +28,48 @@ jobs:
       - name: Install system deps
         run: |
           apt-get update
-          apt-get install -y python3-pip python3-serial
-          pip3 install "pytest<8" pytest-cov
+          apt-get install -y python3-pip python3-serial shellcheck
+          pip3 install \
+            "pytest<8" pytest-cov \
+            black==24.10.0 ruff==0.8.6 mypy==1.14.1 yamllint==1.35.1
 
       - name: rosdep install
         run: |
           rosdep update
           rosdep install --from-paths src --ignore-src -r -y \
-            --skip-keys ydlidar_sdk --skip-keys ydlidar_ros2_driver \
-            --skip-keys robot_localization
+            --skip-keys ydlidar_sdk --skip-keys ydlidar_ros2_driver
+
+      - name: Static quality gates
+        run: |
+          ruff check .
+          black --check \
+            tools/datasets tools/experiments scripts/verify tests/integration \
+            tests/deployment/test_coverage_gate.py \
+            tests/deployment/test_release_contract.py \
+            src/robot_control/robot_control/control_policy.py \
+            src/stm32_robot_bridge/stm32_robot_bridge/odometry.py
+          mypy tools scripts/verify \
+            src/robot_control/robot_control/control_policy.py \
+            src/stm32_robot_bridge/stm32_robot_bridge/bridge_state.py \
+            src/stm32_robot_bridge/stm32_robot_bridge/command_guard.py \
+            src/stm32_robot_bridge/stm32_robot_bridge/odometry.py \
+            src/stm32_robot_bridge/stm32_robot_bridge/protocol_v2.py \
+            src/stm32_robot_bridge/stm32_robot_bridge/serial_transport.py
+          yamllint .
+          find scripts launch_scripts -type f -name '*.sh' -print0 | \
+            xargs -0 shellcheck --severity=error
 
       - name: colcon build
         run: |
           . /opt/ros/humble/setup.sh
-          colcon build --symlink-install \
-            --packages-skip ydlidar_ros2_driver \
-            --packages-skip robot_localization
+          colcon build --base-paths src --symlink-install --packages-skip ydlidar_ros2_driver
 
       - name: colcon test
         run: |
           . /opt/ros/humble/setup.sh
           . install/setup.sh
-          colcon test \
+          colcon test --base-paths src \
             --packages-skip ydlidar_ros2_driver \
-            --packages-skip robot_localization \
             --return-code-on-test-failure
 
       - name: colcon test-result
@@ -54,10 +79,12 @@ jobs:
           colcon test-result --verbose
 
       - name: pytest with coverage
+        env:
+          FIRMWARE_CONTRACT_DIR: ${{ github.workspace }}/firmware-contract
         run: |
           . /opt/ros/humble/setup.sh
           . install/setup.sh
-          pytest tests/ src/ \
+          python3 -m pytest tests/ src/ \
             --cov=src/stm32_robot_bridge \
             --cov=src/robot_control \
             --cov=src/robot_sensing \
@@ -65,6 +92,8 @@ jobs:
             --cov-report=term \
             --cov-report=xml \
             -v
+          python3 -m coverage json -o coverage.json
+          python3 scripts/verify/check_coverage.py coverage.json
 
       - name: repo boundaries check
         run: python3 scripts/verify/check_repo_boundaries.py

@@ -30,7 +30,7 @@ Usage: ./test_base_cmd.sh [--base-port PORT] [--rotate-only|--with-linear|--cali
 
 Purpose:
   Isolate upper-computer base control only:
-    ROS2 /cmd_vel/test -> robot_control -> /cmd_vel/driver -> stm32_bridge -> STM32 -> /wheel/odom -> /odom
+    ROS2 /cmd_vel/test -> robot_control -> /chassis/command -> stm32_bridge -> STM32 -> /wheel/odom -> /odom
 
 Defaults:
   /dev/serial0, rotate-only, angular=0.35rad/s, duration=1.5s, cmd_timeout=1.0s
@@ -171,7 +171,7 @@ CONTROL_PID="$!"
 ros2 launch stm32_robot_bridge stm32_bridge.launch.py \
     port:="${BASE_PORT}" \
     baudrate:=115200 \
-    cmd_vel_topic:=/cmd_vel/driver \
+    chassis_command_topic:=/chassis/command \
     odom_topic:=/wheel/odom \
     publish_tf:=false \
     cmd_timeout:="${BASE_TEST_CMD_TIMEOUT}" \

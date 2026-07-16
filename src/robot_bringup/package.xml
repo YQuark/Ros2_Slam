@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>robot_bringup</name>
-  <version>0.1.0</version>
+  <version>0.3.0</version>
   <description>System bringup orchestration for platform, mapping and navigation profiles.</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>MIT</license>

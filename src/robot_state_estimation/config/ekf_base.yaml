@@ -1,6 +1,6 @@
 /**:
   ros__parameters:
-    frequency: 20.0
+    frequency: 30.0
     sensor_timeout: 0.2
     two_d_mode: true
     publish_tf: true
@@ -14,7 +14,17 @@
     odom0_config: [false, false, false,
                    false, false, false,
                    true, false, false,
-                   false, false, true,
+                   false, false, false,
                    false, false, false]
     odom0_queue_size: 20
     odom0_nodelay: true
+
+    imu0: /imu/data
+    imu0_config: [false, false, false,
+                  false, false, false,
+                  false, false, false,
+                  false, false, true,
+                  false, false, false]
+    imu0_queue_size: 50
+    imu0_nodelay: true
+    imu0_remove_gravitational_acceleration: false
