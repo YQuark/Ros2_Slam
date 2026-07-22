@@ -1,0 +1,15 @@
+# ADR：跨层 rearm 语义
+
+状态：Accepted，补充 ADR 0002。
+
+通信层通过 `ChassisState.rearm_required/rearm_reason_flags` 报告锁存原因；运动层
+通过 `MotionSafetyState.release_required` 报告释放请求；控制层通过
+`ControlState` 公开 gate、命令年龄、拒绝原因和 enable 意图。任何下层恢复都
+不能自行清除控制层 gate。
+
+恢复过程只有一个：控制层先发出新的 disable 并清空候选，候选来源再静默一个
+lease 窗口，随后收到新的候选输入并创建新 command session。这样既阻止旧 Nav2 Twist
+复用，也让 Real/Fake provider 使用同一恢复语义。
+
+证据：`test_transport_rearm_clears_old_goal_and_requires_quiet_then_fresh_input`、
+Bridge generation 测试和 HIL fault matrix。

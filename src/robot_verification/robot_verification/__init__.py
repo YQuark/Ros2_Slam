@@ -1,0 +1,1 @@
+"""Deterministic platform verification helpers."""

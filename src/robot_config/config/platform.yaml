@@ -12,7 +12,11 @@ platform:
   topics:
     chassis_command: chassis/command
     chassis_state: chassis/state
+    control_state: chassis/control_state
     firmware_info: chassis/firmware_info
+    wheel_observation: wheel/observation
+    imu_observation: imu/observation
+    motion_safety_state: motion/safety_state
     wheel_odom: wheel/odom
     odom: odom
     imu: imu/data

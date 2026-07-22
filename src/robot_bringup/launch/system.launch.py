@@ -76,8 +76,8 @@ def _validate_and_compose(context):
         raise RuntimeError("Invalid 'mapping_source'. Only 'lidar' is supported.")
     if base_mode not in ("real", "fake", "none"):
         raise RuntimeError("Invalid 'base_mode'. Use 'real', 'fake' or 'none'.")
-    if base_fusion_mode not in ("none", "ekf"):
-        raise RuntimeError("Invalid 'base_fusion_mode'. Use 'none' or 'ekf'.")
+    if base_fusion_mode not in ("none", "ekf", "wheel", "wheel_imu"):
+        raise RuntimeError("Invalid 'base_fusion_mode'. Use 'wheel' or 'wheel_imu'.")
     if auto_mapping_drive:
         raise RuntimeError(
             "auto_mapping_drive is legacy. frontier_explorer lives in experiments/legacy and is not part of platform bringup."
@@ -90,11 +90,12 @@ def _validate_and_compose(context):
     fake_base_enabled = base_mode == "fake"
     no_base = base_mode == "none"
 
-    if real_base_enabled:
+    if real_base_enabled or fake_base_enabled:
         if not effective_params_file or not os.path.isfile(effective_params_file):
             raise RuntimeError(
-                "real base requires compiled effective params; start through bin/robot"
+                "base providers require compiled effective params; start through bin/robot"
             )
+    if real_base_enabled:
         if base_port_value.lower() != "auto" and not os.path.exists(base_port_value):
             raise RuntimeError(f"base_port does not exist: {base_port_value}")
         if (
@@ -110,6 +111,8 @@ def _validate_and_compose(context):
     control_share = get_package_share_directory("robot_control")
     state_share = get_package_share_directory("robot_state_estimation")
     bridge_share = get_package_share_directory("stm32_robot_bridge")
+    supervision_share = get_package_share_directory("robot_supervision")
+    verification_share = get_package_share_directory("robot_verification")
 
     actions = [
         _include(
@@ -148,7 +151,7 @@ def _validate_and_compose(context):
             _include(
                 control_share,
                 "control.launch.py",
-                {"params_file": LaunchConfiguration("control_params_file")},
+                {"params_file": LaunchConfiguration("effective_params_file")},
             )
         )
 
@@ -163,34 +166,37 @@ def _validate_and_compose(context):
                 },
             )
         )
+
+    if fake_base_enabled:
+        actions.append(
+            _include(
+                verification_share,
+                "fake_base.launch.py",
+                {
+                    "params_file": LaunchConfiguration("effective_params_file"),
+                    "scenario": LaunchConfiguration("fake_base_scenario"),
+                },
+            )
+        )
+
+    if real_base_enabled or fake_base_enabled:
         actions.append(
             _include(
                 state_share,
                 "state_estimation.launch.py",
                 {
                     "base_fusion_mode": LaunchConfiguration("base_fusion_mode"),
-                    "wheel_odom_topic": "wheel/odom",
+                    "effective_params_file": LaunchConfiguration("effective_params_file"),
                     "odom_topic": "odom",
-                    "publish_tf": "true",
-                    "ekf_params_file": LaunchConfiguration("base_ekf_params_file"),
+                    "ekf_wheel_imu_params_file": LaunchConfiguration("base_ekf_params_file"),
                 },
             )
         )
-
-    if fake_base_enabled:
         actions.append(
-            Node(
-                package="robot_state_estimation",
-                executable="fake_base_odom.py",
-                name="fake_base_odom",
-                output="screen",
-                parameters=[
-                    {
-                        "chassis_command_topic": "chassis/command",
-                        "odom_topic": "odom",
-                        "publish_tf": True,
-                    }
-                ],
+            _include(
+                supervision_share,
+                "supervision.launch.py",
+                {"params_file": LaunchConfiguration("effective_params_file")},
             )
         )
 
@@ -272,7 +278,6 @@ def _validate_and_compose(context):
 def generate_launch_description():
     rb_share = get_package_share_directory("robot_bringup")
     sensing_share = get_package_share_directory("robot_sensing")
-    control_share = get_package_share_directory("robot_control")
     state_share = get_package_share_directory("robot_state_estimation")
 
     default_nav2_params = os.environ.get(
@@ -282,8 +287,6 @@ def generate_launch_description():
         raise RuntimeError(f"Canonical Nav2 params are missing: {default_nav2_params}")
 
     effective_default = os.environ.get("ROBOT_EFFECTIVE_PARAMS", "")
-    control_default = effective_default or os.path.join(control_share, "config", "cmd_vel_mux.yaml")
-
     return LaunchDescription(
         [
             DeclareLaunchArgument("effective_params_file", default_value=effective_default),
@@ -345,29 +348,12 @@ def generate_launch_description():
             DeclareLaunchArgument("auto_mapping_side_stop_distance", default_value="0.10"),
             DeclareLaunchArgument("auto_mapping_side_resume_distance", default_value="0.18"),
             DeclareLaunchArgument("base_port", default_value="/dev/serial0"),
-            DeclareLaunchArgument("base_baudrate", default_value="115200"),
-            DeclareLaunchArgument("base_cmd_timeout", default_value="0.15"),
-            DeclareLaunchArgument("base_drive_keepalive_sec", default_value="0.05"),
-            DeclareLaunchArgument("base_status_timeout", default_value="0.25"),
-            DeclareLaunchArgument("base_hard_max_linear_mps", default_value="0.45"),
-            DeclareLaunchArgument("base_hard_max_angular_radps", default_value="1.50"),
-            DeclareLaunchArgument("base_max_command_age_sec", default_value="0.15"),
-            DeclareLaunchArgument("base_publish_tf", default_value="false"),
-            DeclareLaunchArgument("base_fusion_mode", default_value="ekf"),
-            DeclareLaunchArgument("base_status_hz", default_value="100.0"),
-            DeclareLaunchArgument("base_wheel_radius", default_value="0.0350"),
-            DeclareLaunchArgument("base_wheel_track_width", default_value="0.1760"),
-            DeclareLaunchArgument("base_odom_linear_scale", default_value="1.0"),
-            DeclareLaunchArgument("base_odom_angular_scale", default_value="1.0"),
-            DeclareLaunchArgument("base_odom_angular_sign", default_value="1.0"),
-            DeclareLaunchArgument("base_odom_max_dt_sec", default_value="0.25"),
-            DeclareLaunchArgument("base_status_log_interval_sec", default_value="0.0"),
-            DeclareLaunchArgument("base_cmd_log_interval_sec", default_value="0.0"),
+            DeclareLaunchArgument("base_fusion_mode", default_value="wheel"),
+            DeclareLaunchArgument("fake_base_scenario", default_value="normal"),
             DeclareLaunchArgument(
                 "base_ekf_params_file",
                 default_value=os.path.join(state_share, "config", "ekf_base.yaml"),
             ),
-            DeclareLaunchArgument("control_params_file", default_value=control_default),
             DeclareLaunchArgument("nav2_params_file", default_value=default_nav2_params),
             DeclareLaunchArgument(
                 "nav2_bt_xml_file",

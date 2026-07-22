@@ -121,6 +121,20 @@ class CommandMux:
         self._commands.pop(source, None)
         self.reject_count += 1
 
+    def clear(self) -> None:
+        self._commands.clear()
+
+    def has_recent_input(self, now_sec: float, quiet_sec: Optional[float] = None) -> bool:
+        now = require_finite(now_sec, "quiet timestamp")
+        window = self._timeout_sec if quiet_sec is None else max(float(quiet_sec), 0.0)
+        return any(0.0 <= now - stamp <= window for _, stamp in self._commands.values())
+
+    def newest_age(self, now_sec: float) -> Optional[float]:
+        if not self._commands:
+            return None
+        now = require_finite(now_sec, "age timestamp")
+        return min(max(now - stamp, 0.0) for _, stamp in self._commands.values())
+
     def select(self, now_sec: float) -> SelectedCommand:
         now_sec = require_finite(now_sec, "selection timestamp")
         active = []

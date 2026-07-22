@@ -2,7 +2,7 @@ schema_version: 2
 platform_api_version: 3
 upper:
   branch: ARM
-  baseline_commit: b70721c0e8e8bf3aa5c76debc0b806474a546a26
+  baseline_commit: 45ea2d5bcabb9085dd22b10a27513863d778a84e
   release: v0.4.0
   wire_protocols_supported: [3]
 protocol:
@@ -20,6 +20,9 @@ firmware:
   compatible_tag: null
   status: awaiting_v3_implementation
   implementation_spec: docs/interfaces/upper-protocol-v3.md
+  golden_vector_file: tests/protocol/fixtures/upper_v3_golden.json
+  golden_vector_sha256: fe51e983a2e219a2b279d3f95fe137b1038d515db43758cb13dad9d4c56fa8ae
+  hil_report: verification/reports/hil/v0.4.0.yaml
 incompatible_firmware:
   - tag: v1.0.0-beta4
     commit: a4ae10d592e840e979dd35c8a9b2ff2f5dd107e4
@@ -33,4 +36,4 @@ timing:
   bridge_status_timeout_ms: 250
   required_firmware_upper_timeout_ms: 200
 release_compatible: false
-release_blocker: No firmware commit implements and passes upper protocol v3 HIL.
+release_blocker: Host vectors are ready, but no firmware commit implements and passes upper protocol v3 HIL.

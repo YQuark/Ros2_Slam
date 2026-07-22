@@ -6,38 +6,52 @@ import struct
 import pytest
 import serial
 
-from stm32_robot_bridge.bridge_state import BridgeState, BridgeStateMachine
-from stm32_robot_bridge.command_guard import CommandGuard, CommandRejected
-from stm32_robot_bridge.protocol_v2 import (
+from stm32_robot_bridge.bridge_core import BridgeCore, StatusDisposition
+from stm32_robot_bridge.bridge_state import BridgeState
+from stm32_robot_bridge.framing import FrameParser, build_frame
+from stm32_robot_bridge.protocol_v3 import (
+    ACK_APPLIED,
+    CMD_HELLO,
     CMD_SET_VELOCITY,
     CMD_STATUS,
+    HELLO_PAYLOAD_SIZE,
+    REQUIRED_CAPABILITIES,
+    STATUS_PAYLOAD_SIZE,
     CommandStream,
-    FrameParser,
-    build_frame,
+    decode_hello_payload,
     decode_status_payload,
 )
 from stm32_robot_bridge.serial_transport import TransportStats, write_all
 
 
-def status_payload(status_flags=0, *, version=2):
-    payload = bytearray(65)
-    payload[0] = version
-    payload[1] = status_flags
-    payload[2] = 0
-    payload[3] = 0b0110
-    payload[62] = 0b0110
+def hello_payload(*, capabilities=REQUIRED_CAPABILITIES):
+    payload = (
+        bytes((3, 1))
+        + struct.pack("<I", capabilities)
+        + bytes.fromhex("11" * 20)
+        + struct.pack("<II", 2, 0x12345678)
+    )
+    assert len(payload) == HELLO_PAYLOAD_SIZE
+    return payload
+
+
+def status_payload(sequence, wire_session, *, flags=0, ack_flags=ACK_APPLIED):
+    payload = bytearray(STATUS_PAYLOAD_SIZE)
+    payload[:4] = bytes((3, flags, 2, 0x0F))
+    struct.pack_into("<H", payload, 12, 12000)
+    payload[62:65] = bytes((0x0F, 0, 0))
+    struct.pack_into("<IIQII", payload, 65, sequence, sequence * 20, wire_session, 1, 1)
+    payload[91] = ack_flags
     return bytes(payload)
 
 
-class FakeSTM32:
+class FakeSTM32V3:
     def __init__(self, master_fd):
         self.master_fd = master_fd
         self.parser = FrameParser()
 
-    def send_status(self, status_flags=0, *, version=2):
-        os.write(
-            self.master_fd, build_frame(CMD_STATUS, status_payload(status_flags, version=version))
-        )
+    def send(self, command, payload):
+        os.write(self.master_fd, build_frame(command, payload))
 
     def receive_frames(self):
         ready, _, _ = select.select([self.master_fd], [], [], 0.5)
@@ -45,109 +59,104 @@ class FakeSTM32:
         return self.parser.feed(os.read(self.master_fd, 4096))
 
 
-def host_receive_status(device, parser, state_machine):
+def host_receive(device, parser):
     ready, _, _ = select.select([device.fileno()], [], [], 0.5)
-    assert ready, "timed out waiting for fake STM32 STATUS"
-    frames = parser.feed(device.read(device.in_waiting or 1))
-    assert len(frames) == 1 and frames[0][0] == CMD_STATUS
-    status = decode_status_payload(frames[0][1])
-    assert status is not None
-    state_machine.on_valid_status(status.status_flags)
-    return status
+    assert ready, "timed out waiting for fake STM32 frame"
+    return parser.feed(device.read(device.in_waiting or 1))
 
 
-def decode_velocity_frame(frames):
+def decode_velocity(frames):
     assert len(frames) == 1 and frames[0][0] == CMD_SET_VELOCITY
-    vx, wz, enable, mode = struct.unpack("<ffBB", frames[0][1])
-    assert math.isfinite(vx) and math.isfinite(wz)
-    return vx, wz, enable, mode
+    version, vx, wz, enable, mode, session, sequence = struct.unpack("<BffBBQI", frames[0][1])
+    assert version == 3 and math.isfinite(vx) and math.isfinite(wz)
+    return vx, wz, enable, mode, session, sequence
 
 
 @pytest.mark.serial
-def test_pty_fake_stm32_exercises_drive_release_fault_and_reconnect():
+def test_pty_upper_v3_hello_drive_timeout_fault_and_reconnect_rearm():
     master_fd, slave_fd = os.openpty()
     slave_name = os.ttyname(slave_fd)
     os.close(slave_fd)
     device = serial.Serial(slave_name, 115200, timeout=0.0, write_timeout=0.2)
     try:
-        fake = FakeSTM32(master_fd)
+        fake = FakeSTM32V3(master_fd)
         host_parser = FrameParser()
         stats = TransportStats()
-        state = BridgeStateMachine()
-        guard = CommandGuard(
+        core = BridgeCore(
             hard_max_linear_mps=0.45,
-            hard_max_angular_radps=1.50,
-            max_command_age_sec=0.15,
+            hard_max_angular_radps=1.5,
+            command_timeout_sec=0.15,
             status_timeout_sec=0.25,
+            max_command_age_sec=0.15,
         )
-        stream = CommandStream(cmd_timeout_sec=0.15, keepalive_sec=0.05)
+        core.on_connected(7)
+        core.on_startup_released()
 
-        state.on_serial_opened()
-        state.on_settled()
-        assert state.state is BridgeState.WAIT_STATUS
-        with pytest.raises(CommandRejected, match="STATUS unavailable"):
-            guard.validate(
-                vx=0.2,
-                wz=0.1,
-                command_stamp_sec=1.0,
-                now_sec=1.0,
-                status_age_sec=None,
-                drive_permitted=state.can_drive,
-                status_flags=0,
-                protocol_version=2,
-            )
+        fake.send(CMD_HELLO, hello_payload())
+        frames = host_receive(device, host_parser)
+        assert core.on_hello(decode_hello_payload(frames[0][1]))
+        fake.send(CMD_STATUS, status_payload(1, 7))
+        frames = host_receive(device, host_parser)
+        status = decode_status_payload(frames[0][1])
+        assert core.on_status(status, 1.0) is StatusDisposition.NEW
+        assert core.snapshot.state is BridgeState.READY
+        core.accept_command(
+            vx=0.0,
+            wz=0.0,
+            enable=False,
+            source=0,
+            session_id=99,
+            sequence=1,
+            command_stamp_sec=9.9,
+            now_ros_sec=10.0,
+            now_monotonic=1.0,
+        )
 
-        fake.send_status()
-        status = host_receive_status(device, host_parser, state)
-        command = guard.validate(
+        command = core.accept_command(
             vx=0.8,
             wz=-2.0,
-            command_stamp_sec=1.0,
-            now_sec=1.0,
-            status_age_sec=0.0,
-            drive_permitted=state.can_drive,
-            status_flags=status.status_flags,
-            protocol_version=status.version,
+            enable=True,
+            source=3,
+            session_id=100,
+            sequence=1,
+            command_stamp_sec=10.0,
+            now_ros_sec=10.01,
+            now_monotonic=1.01,
         )
-        assert command.vx == 0.45 and command.wz == -1.50
-        stream.update_command(command.vx, command.wz, 1.0)
-        state.on_drive_enabled()
+        stream = CommandStream(0.15, 0.05, core.snapshot.wire_session_id)
+        stream.update_command(command.vx, command.wz, 1.01)
         sender = lambda payload: write_all(device, build_frame(CMD_SET_VELOCITY, payload), stats)
+        assert stream.tick(1.01, sender)
+        velocity = decode_velocity(fake.receive_frames())
+        assert velocity[:3] == (pytest.approx(0.45), -1.5, 1)
+        assert velocity[4] == 7
 
-        assert stream.tick(1.0, sender) is True
-        assert decode_velocity_frame(fake.receive_frames())[:3] == (pytest.approx(0.45), -1.5, 1)
-        assert stream.tick(1.051, sender) is True
-        assert decode_velocity_frame(fake.receive_frames())[2] == 1
-        assert stream.tick(1.151, sender) is True
-        assert decode_velocity_frame(fake.receive_frames())[:3] == (0.0, 0.0, 0)
-        assert stream.tick(1.30, sender) is False
-
-        stream.update_command(0.1, 0.0, 2.0)
-        assert stream.tick(2.0, sender) is True
-        assert decode_velocity_frame(fake.receive_frames())[2] == 1
-        with pytest.raises(CommandRejected, match="not finite"):
-            guard.validate(
-                vx=float("nan"),
+        assert stream.tick(1.20, sender)
+        assert decode_velocity(fake.receive_frames())[:3] == (0.0, 0.0, 0)
+        assert core.tick(1.20) == (True, "command_timeout")
+        with pytest.raises(ValueError, match="rearm"):
+            core.accept_command(
+                vx=0.1,
                 wz=0.0,
-                command_stamp_sec=2.0,
-                now_sec=2.0,
-                status_age_sec=0.0,
-                drive_permitted=state.can_drive,
-                status_flags=0,
-                protocol_version=2,
+                enable=True,
+                source=3,
+                session_id=100,
+                sequence=2,
+                command_stamp_sec=10.02,
+                now_ros_sec=10.03,
+                now_monotonic=1.21,
             )
-        assert stream.release(sender, 2.0) is True
-        assert decode_velocity_frame(fake.receive_frames())[:3] == (0.0, 0.0, 0)
 
-        state.on_status_timeout()
-        assert state.state is BridgeState.WAIT_STATUS and not state.can_drive
-        state.on_disconnected()
-        state.on_serial_opened()
-        state.on_settled()
-        assert state.state is BridgeState.WAIT_STATUS
-        fake.send_status(status_flags=1)
-        host_receive_status(device, host_parser, state)
-        assert state.state is BridgeState.FAULT and not state.can_drive
+        core.on_disconnected()
+        core.on_connected(8)
+        core.on_startup_released()
+        fake.send(CMD_HELLO, hello_payload())
+        assert core.on_hello(decode_hello_payload(host_receive(device, host_parser)[0][1]))
+        fake.send(CMD_STATUS, status_payload(1, 8, flags=1))
+        status = decode_status_payload(host_receive(device, host_parser)[0][1])
+        assert core.on_status(status, 2.0) is StatusDisposition.NEW
+        assert core.snapshot.state is BridgeState.FAULT
+        assert core.snapshot.rearm_required
     finally:
         device.close()
         os.close(master_fd)

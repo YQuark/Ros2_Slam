@@ -54,7 +54,7 @@ def test_platform_packages_exist_and_bringup_defaults_to_headless() -> None:
     assert 'get_package_share_directory("robot_state_estimation")' in system_launch
 
 
-def test_stm32_bridge_uses_explicit_command_and_raw_wheel_odom_defaults() -> None:
+def test_stm32_bridge_uses_explicit_command_and_raw_observation_defaults() -> None:
     bridge_node = (
         ROOT / "src" / "stm32_robot_bridge" / "stm32_robot_bridge" / "bridge_node_v3.py"
     ).read_text(encoding="utf-8")
@@ -63,7 +63,10 @@ def test_stm32_bridge_uses_explicit_command_and_raw_wheel_odom_defaults() -> Non
     ).read_text(encoding="utf-8")
 
     assert '"chassis_command_topic": "chassis/command"' in bridge_node
-    assert '"odom_topic": "wheel/odom"' in bridge_node
+    assert '"wheel_observation_topic": "wheel/observation"' in bridge_node
+    assert '"imu_observation_topic": "imu/observation"' in bridge_node
+    assert "EncoderOdometry" not in bridge_node
+    assert "create_publisher(Odometry" not in bridge_node
     assert "enable_legacy_cmd_vel" not in bridge_node
     assert "ROBOT_EFFECTIVE_PARAMS" in launch_file
     assert 'DeclareLaunchArgument("namespace", default_value="")' in launch_file

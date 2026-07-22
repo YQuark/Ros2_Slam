@@ -62,6 +62,16 @@ def validate_effective_config(config: Mapping[str, Any]) -> None:
         raise ConfigError("platform_api_version must be 3")
     if int(config.get("protocol", {}).get("version", 0)) != 3:
         raise ConfigError("only upper protocol v3 is supported")
+    topics = config.get("platform", {}).get("topics", {})
+    if not isinstance(topics, Mapping) or not topics:
+        raise ConfigError("platform.topics must be a non-empty mapping")
+    if any(
+        not isinstance(value, str) or not value or value.startswith("/")
+        for value in topics.values()
+    ):
+        raise ConfigError("platform topics must be non-empty relative names")
+    if len(set(topics.values())) != len(topics):
+        raise ConfigError("platform topics must be unique")
 
     keepalive = _positive(config, "safety.timing.drive_keepalive_sec")
     bridge_timeout = _positive(config, "safety.timing.bridge_command_timeout_sec")
@@ -141,10 +151,12 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
                 "baudrate": config["hardware"]["baudrate"],
                 "protocol_version": 3,
                 "chassis_command_topic": topics["chassis_command"],
-                "odom_topic": topics["wheel_odom"],
-                "imu_topic": topics["imu"],
-                "frame_id": frames["odom"],
-                "child_frame_id": frames["base"],
+                "chassis_state_topic": topics["chassis_state"],
+                "firmware_info_topic": topics["firmware_info"],
+                "wheel_observation_topic": topics["wheel_observation"],
+                "imu_observation_topic": topics["imu_observation"],
+                "diagnostics_topic": topics["diagnostics"],
+                "base_frame_id": frames["base"],
                 "imu_frame_id": frames["imu"],
                 "publish_tf": False,
                 "cmd_timeout": timing["bridge_command_timeout_sec"],
@@ -154,18 +166,72 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
                 "max_command_age_sec": timing["max_command_age_sec"],
                 "hard_max_linear_mps": motion["hard_max_linear_mps"],
                 "hard_max_angular_radps": motion["hard_max_angular_radps"],
+            }
+        },
+        "wheel_odometry": {
+            "ros__parameters": {
+                **common,
+                "observation_topic": topics["wheel_observation"],
+                "odom_topic": topics["wheel_odom"],
+                "frame_id": frames["odom"],
+                "child_frame_id": frames["base"],
                 "wheel_radius": drive["wheel_radius_m"],
                 "wheel_track_width": drive["wheel_track_width_m"],
                 "encoder_counts_per_revolution": drive["encoder_counts_per_revolution"],
                 "odom_linear_scale": drive["odom_linear_scale"],
                 "odom_angular_scale": drive["odom_angular_scale"],
                 "odom_angular_sign": drive["odom_angular_sign"],
-                **{f"odom_covariance.{key}": value for key, value in covariance.items()},
-                **{f"motion_supervisor.{key}": value for key, value in supervisor.items()},
-                "imu.use_orientation": imu["use_orientation"],
-                "imu.orientation_stddev": imu["orientation_stddev"],
-                "imu.angular_velocity_stddev": imu["angular_velocity_stddev"],
-                "imu.linear_acceleration_stddev": imu["linear_acceleration_stddev"],
+                "max_dt_sec": timing["status_timeout_sec"],
+                "hard_max_speed_mps": motion["hard_max_linear_mps"],
+                "wheel_variance_floor_m2": covariance["wheel_variance_floor_m2"],
+                "wheel_variance_per_meter": covariance["wheel_variance_per_meter"],
+            }
+        },
+        "imu_adapter": {
+            "ros__parameters": {
+                **common,
+                "observation_topic": topics["imu_observation"],
+                "imu_topic": topics["imu"],
+                "frame_id": frames["imu"],
+                "use_orientation": imu["use_orientation"],
+                "orientation_stddev": imu["orientation_stddev"],
+                "angular_velocity_stddev": imu["angular_velocity_stddev"],
+                "linear_acceleration_stddev": imu["linear_acceleration_stddev"],
+            }
+        },
+        "motion_supervisor": {
+            "ros__parameters": {
+                **common,
+                "wheel_observation_topic": topics["wheel_observation"],
+                "imu_topic": topics["imu"],
+                "chassis_command_topic": topics["chassis_command"],
+                "motion_safety_topic": topics["motion_safety_state"],
+                "wheel_track_width": drive["wheel_track_width_m"],
+                "observation_timeout_sec": timing["status_timeout_sec"],
+                "imu_timeout_sec": 0.20,
+                **{
+                    key: value
+                    for key, value in supervisor.items()
+                    if key != "covariance_max_multiplier"
+                },
+            }
+        },
+        "fake_base": {
+            "ros__parameters": {
+                **common,
+                "chassis_command_topic": topics["chassis_command"],
+                "wheel_observation_topic": topics["wheel_observation"],
+                "imu_observation_topic": topics["imu_observation"],
+                "chassis_state_topic": topics["chassis_state"],
+                "firmware_info_topic": topics["firmware_info"],
+                "diagnostics_topic": topics["diagnostics"],
+                "base_frame_id": frames["base"],
+                "imu_frame_id": frames["imu"],
+                "wheel_radius": drive["wheel_radius_m"],
+                "wheel_track_width": drive["wheel_track_width_m"],
+                "encoder_counts_per_revolution": drive["encoder_counts_per_revolution"],
+                "cmd_timeout": timing["bridge_command_timeout_sec"],
+                "publish_hz": 50.0,
             }
         },
         "cmd_vel_mux": {
@@ -180,6 +246,12 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
                 "max_angular_jerk": motion["max_angular_jerk_radps3"],
                 "timeout_sec": timing["mux_source_timeout_sec"],
                 "publish_hz": 20.0,
+                "motion_safety_topic": topics["motion_safety_state"],
+                "chassis_state_topic": topics["chassis_state"],
+                "control_state_topic": topics["control_state"],
+                "require_motion_supervision": True,
+                "supervision_timeout_sec": timing["status_timeout_sec"],
+                "rearm_quiet_sec": timing["mux_source_timeout_sec"],
             }
         },
     }

@@ -36,4 +36,3 @@ motion_supervisor:
   clear_score: 0.30
   clear_hold_sec: 1.0
   degraded_min_scale: 0.25
-  covariance_max_multiplier: 10.0

@@ -8,6 +8,6 @@ cd /home/robot/ros2_ws
 ./bin/robot check chassis
 ```
 
-bridge 发布原始 `wheel/odom`、`imu/data`、`chassis/state`、`chassis/firmware_info` 与 diagnostics，不拥有 `odom -> base_link` TF。协议规范见 `docs/interfaces/upper-protocol-v3.md`。
+bridge 发布原始 `wheel/observation`、`imu/observation`、`chassis/state`、`chassis/firmware_info` 与 diagnostics。它不计算 odometry、不处理估计协方差，也不拥有任何 TF。协议规范见 `docs/interfaces/upper-protocol-v3.md`。
 
 源码中的 v2 文件仅是 v0.4.x 黄金回归 fixture，不被 CMake 安装。beta4/v2 固件不能驱动本运行时。

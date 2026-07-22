@@ -9,7 +9,7 @@ from pathlib import Path
 THRESHOLDS = {
     "control_policy.py": 90.0,
     "protocol_v3.py": 90.0,
-    "odometry.py": 90.0,
+    "wheel_odometry.py": 90.0,
     "bridge_core.py": 85.0,
 }
 TOTAL_THRESHOLD = 75.0

@@ -32,6 +32,8 @@ def test_dataset_catalog_covers_all_seven_benchmarks_and_required_topics():
     ]
     assert set(catalog["required_topics"]) == {
         "/scan",
+        "/wheel/observation",
+        "/imu/observation",
         "/wheel/odom",
         "/imu/data",
         "/odom",
@@ -39,6 +41,9 @@ def test_dataset_catalog_covers_all_seven_benchmarks_and_required_topics():
         "/tf_static",
         "/cmd_vel/nav",
         "/chassis/command",
+        "/chassis/state",
+        "/chassis/control_state",
+        "/motion/safety_state",
         "/diagnostics",
     }
     for dataset in catalog["datasets"].values():
@@ -59,7 +64,8 @@ def test_record_plan_is_deterministic_and_rejects_unknown_dataset(tmp_path):
 
     assert plan.output_dir == tmp_path / "bag_04_square" / "run-001"
     assert plan.command[:4] == ("ros2", "bag", "record", "--output")
-    assert tuple(catalog["required_topics"]) == plan.command[-9:]
+    required = tuple(catalog["required_topics"])
+    assert plan.command[-len(required) :] == required
     with pytest.raises(ValueError, match="unknown dataset"):
         module.build_record_plan(catalog, "bag_99", output_root=tmp_path, run_id="x")
 

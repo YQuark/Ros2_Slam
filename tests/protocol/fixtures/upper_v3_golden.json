@@ -1,0 +1,42 @@
+{
+  "schema": 1,
+  "protocol_version": 3,
+  "source": "host-contract-unverified-by-firmware",
+  "frames": [
+    {
+      "name": "hello_v3",
+      "command": 128,
+      "payload_length": 34,
+      "frame_length": 39,
+      "frame_hex": "a55a238003011f00000011111111111111111111111111111111111111110200000078563412f0"
+    },
+    {
+      "name": "status_v3",
+      "command": 129,
+      "payload_length": 92,
+      "frame_length": 97,
+      "frame_hex": "a55a5d810300020f0000000000000000e02e64006400780078000a0000000a0000000c0000000c0000006400640064006400640064007800780001000100010001000f000007000000d204000063000000000000000500000005000000000004ff"
+    },
+    {
+      "name": "imu_v3",
+      "command": 131,
+      "payload_length": 99,
+      "frame_length": 104,
+      "frame_hex": "a55a64830300000000000000000000803f00000000000000000000204100000000000000000000a0410000803f000000000000000000000000d2040000c80100000700000000000000000000000000000000000000000000000000000000000000000000000317df"
+    },
+    {
+      "name": "diagnostic_v3",
+      "command": 130,
+      "payload_length": 28,
+      "frame_length": 33,
+      "frame_hex": "a55a1d82030101030000000000000000000000000000000001000000d2040000ca"
+    },
+    {
+      "name": "velocity_v3",
+      "command": 1,
+      "payload_length": 23,
+      "frame_length": 28,
+      "frame_hex": "a55a180103cdcccc3dcdcc4cbe0102887766554433221109000000ae"
+    }
+  ]
+}

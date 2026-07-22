@@ -3,15 +3,12 @@
 
 from __future__ import annotations
 
-import math
 import secrets
 import time
 from dataclasses import replace
 
 import rclpy
-from builtin_interfaces.msg import Time as TimeMessage
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
-from nav_msgs.msg import Odometry
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -22,8 +19,14 @@ from rclpy.qos import (
     ReliabilityPolicy,
     qos_profile_sensor_data,
 )
-from robot_interfaces.msg import ChassisCommand, ChassisState, FirmwareInfo
-from sensor_msgs.msg import BatteryState, Imu
+from robot_interfaces.msg import (
+    ChassisCommand,
+    ChassisState,
+    FirmwareInfo,
+    ImuObservation,
+    WheelObservation,
+)
+from sensor_msgs.msg import BatteryState
 from std_msgs.msg import Float32, UInt32
 from std_srvs.srv import SetBool, Trigger
 
@@ -32,16 +35,13 @@ try:
 except Exception:  # pragma: no cover
     serial = None
 
-from stm32_robot_bridge.bridge_core import BridgeCore
-from stm32_robot_bridge.imu_converter import (
-    AffineClockSynchronizer,
-    accel_g_to_mps2,
-    classify_imu_quality,
-    gyro_dps_to_rad,
-    normalize_quaternion,
+from stm32_robot_bridge.bridge_core import (
+    REARM_ACK_TIMEOUT,
+    REARM_ESTOP,
+    REARM_FIRMWARE_REJECT,
+    BridgeCore,
+    StatusDisposition,
 )
-from stm32_robot_bridge.motion_supervisor import MotionSupervisor, SupervisorConfig, SupervisorLevel
-from stm32_robot_bridge.odometry import EncoderOdometry
 from stm32_robot_bridge.protocol_v3 import (
     ACK_APPLIED,
     ACK_RECEIVED,
@@ -55,8 +55,6 @@ from stm32_robot_bridge.protocol_v3 import (
     CMD_LINE_CTRL,
     CMD_SET_VELOCITY,
     CMD_STATUS,
-    IMU_FLAG_ERROR,
-    IMU_FLAG_ONLINE,
     PROTOCOL_VERSION,
     CommandStream,
     decode_diagnostic_payload,
@@ -102,10 +100,12 @@ class STM32BridgeV3(Node):
             "baudrate": 115200,
             "protocol_version": 3,
             "chassis_command_topic": "chassis/command",
-            "odom_topic": "wheel/odom",
-            "imu_topic": "imu/data",
-            "frame_id": "odom",
-            "child_frame_id": "base_link",
+            "chassis_state_topic": "chassis/state",
+            "firmware_info_topic": "chassis/firmware_info",
+            "wheel_observation_topic": "wheel/observation",
+            "imu_observation_topic": "imu/observation",
+            "diagnostics_topic": "diagnostics",
+            "base_frame_id": "base_link",
             "imu_frame_id": "imu_link",
             "publish_tf": False,
             "cmd_timeout": 0.15,
@@ -115,39 +115,15 @@ class STM32BridgeV3(Node):
             "max_command_age_sec": 0.15,
             "hard_max_linear_mps": 0.45,
             "hard_max_angular_radps": 1.5,
-            "wheel_radius": 0.035,
-            "wheel_track_width": 0.176,
-            "encoder_counts_per_revolution": 2464.0,
-            "odom_linear_scale": 1.0,
-            "odom_angular_scale": 1.0,
-            "odom_angular_sign": 1.0,
-            "odom_covariance.wheel_variance_floor_m2": 0.000025,
-            "odom_covariance.wheel_variance_per_meter": 0.0025,
-            "imu.use_orientation": False,
-            "imu.orientation_stddev": 0.2,
-            "imu.angular_velocity_stddev": [0.02, 0.02, 0.02],
-            "imu.linear_acceleration_stddev": [0.2, 0.2, 0.2],
         }
-        supervisor_defaults = SupervisorConfig()
         for name, value in defaults.items():
             self.declare_parameter(name, value)
-        for name in supervisor_defaults.__dataclass_fields__:
-            self.declare_parameter(f"motion_supervisor.{name}", getattr(supervisor_defaults, name))
         if int(self.get_parameter("protocol_version").value) != 3:
             raise RuntimeError("STM32 bridge v0.4.0 only supports upper protocol v3")
         self.config_sha256 = str(self.get_parameter("config_sha256").value)
         self.status_timeout = float(self.get_parameter("status_timeout").value)
         self.ack_timeout = float(self.get_parameter("command_ack_timeout_sec").value)
-        self.imu_use_orientation = bool(self.get_parameter("imu.use_orientation").value)
-        self.imu_orientation_stddev = float(self.get_parameter("imu.orientation_stddev").value)
-        self.imu_gyro_stddev = tuple(
-            float(v) for v in self.get_parameter("imu.angular_velocity_stddev").value
-        )
-        self.imu_accel_stddev = tuple(
-            float(v) for v in self.get_parameter("imu.linear_acceleration_stddev").value
-        )
-        self.frame_id = str(self.get_parameter("frame_id").value)
-        self.child_frame_id = str(self.get_parameter("child_frame_id").value)
+        self.base_frame_id = str(self.get_parameter("base_frame_id").value)
         self.imu_frame_id = str(self.get_parameter("imu_frame_id").value)
         if bool(self.get_parameter("publish_tf").value):
             raise RuntimeError("bridge v3 never owns odom->base_link TF")
@@ -164,41 +140,6 @@ class STM32BridgeV3(Node):
             float(self.get_parameter("drive_keepalive_sec").value),
             secrets.randbits(64) or 1,
         )
-        self.odometry = EncoderOdometry(
-            wheel_radius_m=float(self.get_parameter("wheel_radius").value),
-            track_width_m=float(self.get_parameter("wheel_track_width").value),
-            counts_per_revolution=float(self.get_parameter("encoder_counts_per_revolution").value),
-            linear_scale=float(self.get_parameter("odom_linear_scale").value),
-            angular_scale=float(self.get_parameter("odom_angular_scale").value),
-            angular_sign=float(self.get_parameter("odom_angular_sign").value),
-            wheel_variance_floor_m2=float(
-                self.get_parameter("odom_covariance.wheel_variance_floor_m2").value
-            ),
-            wheel_variance_per_meter=float(
-                self.get_parameter("odom_covariance.wheel_variance_per_meter").value
-            ),
-        )
-        supervisor_values = {
-            name: self.get_parameter(f"motion_supervisor.{name}").value
-            for name in supervisor_defaults.__dataclass_fields__
-        }
-        self.supervisor = MotionSupervisor(SupervisorConfig(**supervisor_values))
-        self.supervisor_result = self.supervisor.update(
-            now_sec=0.0,
-            command_vx=0.0,
-            command_wz=0.0,
-            wheel_speeds=(0.0,) * 4,
-            wheel_targets=(0.0,) * 4,
-            feedback_vx=0.0,
-            wheel_wz=0.0,
-            gyro_z=None,
-        )
-        self.status_clock_sync = AffineClockSynchronizer()
-        self.imu_clock_sync = AffineClockSynchronizer()
-        self.last_gyro_z = None
-        self.last_imu_monotonic = None
-        self.last_imu_quality = 0
-        self.invalid_imu_count = 0
         self.last_ack_progress = time.monotonic()
         self.last_applied_sequence = 0
         self.release_count = 0
@@ -210,15 +151,25 @@ class STM32BridgeV3(Node):
             serial, str(self.get_parameter("port").value), int(self.get_parameter("baudrate").value)
         )
 
-        self.odom_pub = self.create_publisher(
-            Odometry, str(self.get_parameter("odom_topic").value), STATE_QOS
+        self.wheel_observation_pub = self.create_publisher(
+            WheelObservation,
+            str(self.get_parameter("wheel_observation_topic").value),
+            STATE_QOS,
         )
-        self.imu_pub = self.create_publisher(
-            Imu, str(self.get_parameter("imu_topic").value), qos_profile_sensor_data
+        self.imu_observation_pub = self.create_publisher(
+            ImuObservation,
+            str(self.get_parameter("imu_observation_topic").value),
+            qos_profile_sensor_data,
         )
-        self.state_pub = self.create_publisher(ChassisState, "chassis/state", STATE_QOS)
-        self.firmware_pub = self.create_publisher(FirmwareInfo, "chassis/firmware_info", STATIC_QOS)
-        self.diagnostics_pub = self.create_publisher(DiagnosticArray, "diagnostics", STATE_QOS)
+        self.state_pub = self.create_publisher(
+            ChassisState, str(self.get_parameter("chassis_state_topic").value), STATE_QOS
+        )
+        self.firmware_pub = self.create_publisher(
+            FirmwareInfo, str(self.get_parameter("firmware_info_topic").value), STATIC_QOS
+        )
+        self.diagnostics_pub = self.create_publisher(
+            DiagnosticArray, str(self.get_parameter("diagnostics_topic").value), STATE_QOS
+        )
         self.chassis_status_pub = self.create_publisher(UInt32, "chassis/status", STATE_QOS)
         self.battery_pub = self.create_publisher(BatteryState, "battery_state", STATE_QOS)
         self.left_current_pub = self.create_publisher(Float32, "motor/left_current", STATE_QOS)
@@ -262,10 +213,9 @@ class STM32BridgeV3(Node):
         if not command.enable:
             self._release("command disabled")
             return
-        scale = self.supervisor_result.command_scale
         if not self.command_stream.enabled:
             self.last_ack_progress = now_mono
-        self.command_stream.update_command(command.vx * scale, command.wz * scale, now_mono)
+        self.command_stream.update_command(command.vx, command.wz, now_mono)
 
     def control_tick(self) -> None:
         for event in self.transport.drain_events():
@@ -273,9 +223,6 @@ class STM32BridgeV3(Node):
                 self._on_connected()
             elif event.kind == "disconnected":
                 self.core.on_disconnected()
-                self.odometry.reset_sample_baseline()
-                self.status_clock_sync.reset()
-                self.imu_clock_sync.reset()
             elif event.kind == "frame":
                 self._handle_frame(event.cmd, event.payload, event.received_at)
         now = time.monotonic()
@@ -301,6 +248,7 @@ class STM32BridgeV3(Node):
             self.last_applied_sequence = status.last_applied_sequence
             self.last_ack_progress = now
         if self.command_stream.enabled and now - self.last_ack_progress > self.ack_timeout:
+            self.core.require_rearm(REARM_ACK_TIMEOUT)
             self._release("command ACK timeout")
 
     def _on_connected(self) -> None:
@@ -330,9 +278,6 @@ class STM32BridgeV3(Node):
         if cmd == CMD_HELLO:
             hello = decode_hello_payload(payload)
             if hello and self.core.snapshot.hello is not None:
-                self.odometry.reset_sample_baseline()
-                self.status_clock_sync.reset()
-                self.imu_clock_sync.reset()
                 self._begin_wire_session(request_info=False)
             if hello and self.core.on_hello(hello):
                 msg = FirmwareInfo()
@@ -343,12 +288,15 @@ class STM32BridgeV3(Node):
                     hello.hardware_revision,
                     hello.parameter_crc32,
                 )
+                msg.simulated = False
                 self.firmware_pub.publish(msg)
             return
         if cmd == CMD_STATUS:
             status = decode_status_payload(payload)
-            if status is not None and self.core.on_status(status, received_at):
-                self._publish_status(status, received_at)
+            if status is not None:
+                disposition = self.core.on_status(status, received_at)
+                if disposition is not StatusDisposition.INVALID:
+                    self._publish_status(status, disposition)
             return
         if cmd == CMD_IMU_STATUS:
             imu = decode_imu_status_payload(payload)
@@ -358,114 +306,63 @@ class STM32BridgeV3(Node):
         if cmd == CMD_DIAGNOSTIC:
             decode_diagnostic_payload(payload)
 
-    def _publish_status(self, status, received_at: float) -> None:
+    def _publish_status(self, status, disposition: StatusDisposition) -> None:
+        receive_stamp = self.get_clock().now().to_msg()
+        observation = WheelObservation()
+        observation.header.stamp = receive_stamp
+        observation.header.frame_id = self.base_frame_id
+        observation.schema_version = WheelObservation.SCHEMA_VERSION
+        observation.transport_session_id = self.core.snapshot.wire_session_id
+        observation.status_sequence = status.status_sequence
+        observation.mcu_sample_time_ms = status.sample_timestamp_ms
+        observation.encoder_count = list(status.encoder_count)
+        observation.wheel_speed_mps = list(status.motor_speed_mps)
+        observation.wheel_target_mps = list(status.motor_target_mps)
+        observation.motor_current_a = list(status.motor_current_a)
+        observation.motor_output_permille = list(status.motor_output_permille)
+        observation.motor_enabled_mask = status.motor_enabled_mask
+        observation.speed_valid_mask = status.motor_speed_valid_mask
+        observation.encoder_anomaly_mask = status.encoder_anomaly_mask
+        observation.side_consistency_flags = status.side_consistency_flags
+        observation.comm_health_flags = status.comm_health_flags
+        observation.status_flags = status.status_flags
+        observation.error_flags = status.error_flags
+        observation.latched_error_flags = status.latched_error_flags
+        self.wheel_observation_pub.publish(observation)
+        if disposition is not StatusDisposition.NEW:
+            return
         if self.command_stream.enabled and (
             status.last_reject_reason != 0 or status.command_ack_flags & ACK_REJECTED
         ):
-            self.core.snapshot = replace(self.core.snapshot, rearm_required=True)
+            self.core.require_rearm(REARM_FIRMWARE_REJECT)
             self._release(f"firmware rejected command: {status.last_reject_reason}")
-        receive_ros = self.get_clock().now().nanoseconds * 1e-9
-        timing = self.status_clock_sync.update(status.sample_timestamp_ms, receive_ros)
-        update = self.odometry.update(
-            status.encoder_count,
-            sample_time_sec=timing.sample_ros_sec,
-            valid_mask=status.motor_speed_valid_mask,
-            anomaly_mask=status.encoder_anomaly_mask,
-            slip_multiplier=self.supervisor_result.covariance_multiplier,
-            hard_max_speed_mps=float(self.get_parameter("hard_max_linear_mps").value),
-        )
-        left_speed = 0.5 * (status.motor_speed_mps[0] + status.motor_speed_mps[1])
-        right_speed = 0.5 * (status.motor_speed_mps[2] + status.motor_speed_mps[3])
-        feedback_vx = 0.5 * (left_speed + right_speed)
-        wheel_wz = (right_speed - left_speed) / max(
-            float(self.get_parameter("wheel_track_width").value), 1e-6
-        )
-        self.supervisor_result = self.supervisor.update(
-            now_sec=received_at,
-            command_vx=self.core.snapshot.target_vx,
-            command_wz=self.core.snapshot.target_wz,
-            wheel_speeds=status.motor_speed_mps,
-            wheel_targets=status.motor_target_mps,
-            feedback_vx=feedback_vx,
-            wheel_wz=wheel_wz,
-            gyro_z=self.last_gyro_z,
-        )
-        if self.supervisor_result.release_required:
-            self.core.snapshot = replace(self.core.snapshot, rearm_required=True)
-            self._release(f"motion supervisor critical: {self.supervisor_result.reason}")
-        self._publish_odom(update, timing.sample_ros_sec)
         self.chassis_status_pub.publish(UInt32(data=status.error_flags))
         battery = BatteryState()
-        battery.header.stamp = self._time_message(timing.sample_ros_sec)
+        battery.header.stamp = receive_stamp
         battery.voltage, battery.present = status.battery_voltage, status.battery_voltage > 1.0
         self.battery_pub.publish(battery)
         self.left_current_pub.publish(Float32(data=sum(status.motor_current_a[:2])))
         self.right_current_pub.publish(Float32(data=sum(status.motor_current_a[2:])))
         self._publish_chassis_state(status)
 
-    def _publish_odom(self, update, stamp_sec: float) -> None:
-        msg = Odometry()
-        msg.header.stamp, msg.header.frame_id, msg.child_frame_id = (
-            self._time_message(stamp_sec),
-            self.frame_id,
-            self.child_frame_id,
-        )
-        msg.pose.pose.position.x, msg.pose.pose.position.y = update.pose.x, update.pose.y
-        msg.pose.pose.orientation.z, msg.pose.pose.orientation.w = math.sin(
-            update.pose.yaw / 2.0
-        ), math.cos(update.pose.yaw / 2.0)
-        msg.twist.twist.linear.x, msg.twist.twist.angular.z = update.vx, update.wz
-        p = update.pose_covariance
-        msg.pose.covariance[0], msg.pose.covariance[1], msg.pose.covariance[5] = p[0], p[1], p[2]
-        msg.pose.covariance[6], msg.pose.covariance[7], msg.pose.covariance[11] = p[3], p[4], p[5]
-        msg.pose.covariance[30], msg.pose.covariance[31], msg.pose.covariance[35] = p[6], p[7], p[8]
-        msg.twist.covariance[0] = max(p[0], 1e-6)
-        msg.twist.covariance[35] = max(p[8], 1e-6)
-        self.odom_pub.publish(msg)
-
     def _publish_imu(self, imu) -> None:
-        validity = classify_imu_quality(
-            imu.quality_flags,
-            online=bool(imu.status_flags & IMU_FLAG_ONLINE),
-            error=bool(imu.status_flags & IMU_FLAG_ERROR),
-        )
-        if not validity.gyro_valid:
-            self.invalid_imu_count += 1
-            return
-        receive_ros = self.get_clock().now().nanoseconds * 1e-9
-        timing = (
-            self.imu_clock_sync.update(imu.timestamp_ms, receive_ros)
-            if validity.timestamp_valid
-            else None
-        )
-        sample_ros_sec = receive_ros if timing is None else timing.sample_ros_sec
-        msg = Imu()
-        msg.header.stamp, msg.header.frame_id = (
-            self._time_message(sample_ros_sec),
-            self.imu_frame_id,
-        )
-        q = normalize_quaternion(imu.quaternion)
-        if not self.imu_use_orientation or not validity.orientation_valid or q is None:
-            msg.orientation_covariance[0] = -1.0
-        else:
-            msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w = q
-            for index in (0, 4, 8):
-                msg.orientation_covariance[index] = self.imu_orientation_stddev**2
-        gyro = gyro_dps_to_rad(imu.gyro_corrected_dps)
-        msg.angular_velocity.x, msg.angular_velocity.y, msg.angular_velocity.z = gyro
-        self.last_gyro_z = gyro[2]
-        quality_multiplier = 4.0 if validity.warning else 1.0
-        for index, stddev in zip((0, 4, 8), self.imu_gyro_stddev):
-            msg.angular_velocity_covariance[index] = stddev**2 * quality_multiplier
-        if validity.accel_valid:
-            accel = accel_g_to_mps2(imu.accel_g)
-            msg.linear_acceleration.x, msg.linear_acceleration.y, msg.linear_acceleration.z = accel
-            for index, stddev in zip((0, 4, 8), self.imu_accel_stddev):
-                msg.linear_acceleration_covariance[index] = stddev**2 * quality_multiplier
-        else:
-            msg.linear_acceleration_covariance[0] = -1.0
-        self.last_imu_monotonic, self.last_imu_quality = time.monotonic(), imu.quality_flags
-        self.imu_pub.publish(msg)
+        msg = ImuObservation()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.imu_frame_id
+        msg.schema_version = ImuObservation.SCHEMA_VERSION
+        msg.transport_session_id = self.core.snapshot.wire_session_id
+        msg.mcu_sample_time_ms = imu.timestamp_ms
+        msg.sensor_time = imu.sensor_time
+        msg.sample_sequence = imu.sample_count
+        msg.acceleration_g = list(imu.accel_g)
+        msg.angular_velocity_dps = list(imu.gyro_corrected_dps)
+        msg.euler_deg = list(imu.euler_deg)
+        msg.orientation.x, msg.orientation.y, msg.orientation.z, msg.orientation.w = imu.quaternion
+        msg.quality_flags = imu.quality_flags
+        msg.quality_counters = list(imu.quality_counters)
+        msg.status_flags = imu.status_flags
+        msg.temperature_c = imu.temperature_c
+        self.imu_observation_pub.publish(msg)
 
     def _release(self, reason: str) -> None:
         if self.command_stream.release(
@@ -487,6 +384,8 @@ class STM32BridgeV3(Node):
         if not request.data:
             response.success, response.message = False, "remote ESTOP release is forbidden"
             return response
+        self.core.require_rearm(REARM_ESTOP)
+        self._release("remote ESTOP requested")
         response.success = self.transport.submit(
             CMD_ESTOP, encode_estop_payload(True), critical=True
         )
@@ -533,9 +432,18 @@ class STM32BridgeV3(Node):
             status.last_applied_sequence,
             status.last_reject_reason,
         )
-        msg.slip_score, msg.supervisor_level = self.supervisor_result.score, int(
-            self.supervisor_result.level
+        msg.rearm_required = s.rearm_required
+        msg.rearm_reason_flags = s.rearm_reason_flags
+        now = time.monotonic()
+        msg.status_age_ms = (
+            0
+            if s.last_status_at is None
+            else min(int(max(now - s.last_status_at, 0.0) * 1000.0), 0xFFFFFFFF)
         )
+        msg.command_ack_age_ms = min(
+            int(max(now - self.last_ack_progress, 0.0) * 1000.0), 0xFFFFFFFF
+        )
+        msg.slip_score, msg.supervisor_level = -1.0, 0
         msg.config_sha256 = self.config_sha256
         self.state_pub.publish(msg)
 
@@ -547,8 +455,8 @@ class STM32BridgeV3(Node):
         message = snapshot.state.name.lower()
         if snapshot.hello is None or snapshot.state.value < 3:
             level, message = DiagnosticStatus.ERROR, "v3 HELLO/STATUS/ACK unavailable"
-        elif self.supervisor_result.level >= SupervisorLevel.DEGRADED:
-            level, message = DiagnosticStatus.WARN, self.supervisor_result.reason
+        elif snapshot.rearm_required:
+            level, message = DiagnosticStatus.WARN, "transport rearm required"
         array = DiagnosticArray()
         array.header.stamp = self.get_clock().now().to_msg()
         status = DiagnosticStatus(
@@ -564,19 +472,12 @@ class STM32BridgeV3(Node):
             "status_age": "none" if status_age is None else f"{status_age:.3f}",
             "wire_session": snapshot.wire_session_id,
             "wire_sequence": self.command_stream.sequence,
-            "slip_score": f"{self.supervisor_result.score:.3f}",
-            "supervisor_level": self.supervisor_result.level.name,
+            "rearm_required": snapshot.rearm_required,
+            "rearm_reason_flags": snapshot.rearm_reason_flags,
             "release_count": self.release_count,
             "invalid_command_count": self.invalid_command_count,
-            "invalid_imu_count": self.invalid_imu_count,
-            "status_clock_scale": f"{self.status_clock_sync.scale:.9f}",
-            "status_clock_residual_p95": f"{self.status_clock_sync.residual_p95_sec:.6f}",
-            "imu_clock_scale": f"{self.imu_clock_sync.scale:.9f}",
-            "imu_clock_residual_p95": f"{self.imu_clock_sync.residual_p95_sec:.6f}",
             "command_timeout_sec": self.get_parameter("cmd_timeout").value,
             "status_timeout_sec": self.status_timeout,
-            "wheel_radius_m": self.get_parameter("wheel_radius").value,
-            "wheel_track_width_m": self.get_parameter("wheel_track_width").value,
             "serial_rx_frames": self.transport.stats.rx_frames,
             "serial_tx_frames": self.transport.stats.tx_frames,
             "serial_crc_errors": self.transport.stats.rx_crc_errors,
@@ -586,14 +487,6 @@ class STM32BridgeV3(Node):
         status.values = [KeyValue(key=str(k), value=str(v)) for k, v in values.items()]
         array.status = [status]
         self.diagnostics_pub.publish(array)
-
-    @staticmethod
-    def _time_message(seconds: float) -> TimeMessage:
-        sec = math.floor(seconds)
-        nanosec = int(round((seconds - sec) * 1e9))
-        if nanosec >= 1_000_000_000:
-            sec, nanosec = sec + 1, nanosec - 1_000_000_000
-        return TimeMessage(sec=int(sec), nanosec=nanosec)
 
     def shutdown(self) -> None:
         self._release("bridge shutdown")
@@ -613,7 +506,7 @@ def main(args=None) -> None:
         node.shutdown()
         executor.shutdown()
         node.destroy_node()
-        rclpy.shutdown()
+        rclpy.try_shutdown()
 
 
 if __name__ == "__main__":

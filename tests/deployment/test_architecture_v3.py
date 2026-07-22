@@ -24,6 +24,55 @@ def test_bridge_has_no_navigation_dependency_and_only_installs_v3_runtime():
     assert "protocol_v2.py" not in cmake and "bridge_node.py" not in cmake
 
 
+def test_bridge_runtime_has_no_odometry_supervision_or_tf_ownership():
+    node = (ROOT / "src/stm32_robot_bridge/stm32_robot_bridge/bridge_node_v3.py").read_text(
+        encoding="utf-8"
+    )
+    for forbidden in (
+        "EncoderOdometry",
+        "MotionSupervisor",
+        "nav_msgs",
+        "TransformBroadcaster",
+        "create_publisher(Odometry",
+    ):
+        assert forbidden not in node
+    assert "WheelObservation" in node and "ImuObservation" in node
+
+
+def test_fake_and_real_base_share_raw_platform_contract_and_publish_no_tf():
+    real = (ROOT / "src/stm32_robot_bridge/stm32_robot_bridge/bridge_node_v3.py").read_text(
+        encoding="utf-8"
+    )
+    fake = (ROOT / "src/robot_verification/robot_verification/fake_base_node.py").read_text(
+        encoding="utf-8"
+    )
+    for message in (
+        "ChassisCommand",
+        "WheelObservation",
+        "ImuObservation",
+        "ChassisState",
+        "FirmwareInfo",
+        "DiagnosticArray",
+    ):
+        assert message in real and message in fake
+    for provider in (real, fake):
+        assert "Odometry" not in provider
+        assert "TransformBroadcaster" not in provider
+
+
+def test_state_estimation_is_only_wheel_odom_owner_and_ekf_is_only_dynamic_tf_owner():
+    wheel = (
+        ROOT / "src/robot_state_estimation/robot_state_estimation/wheel_odometry_node.py"
+    ).read_text(encoding="utf-8")
+    assert "create_publisher(" in wheel and "Odometry" in wheel
+    assert "TransformBroadcaster" not in wheel
+    for config_name in ("ekf_wheel.yaml", "ekf_base.yaml"):
+        config = yaml.safe_load(
+            (ROOT / "src/robot_state_estimation/config" / config_name).read_text(encoding="utf-8")
+        )
+        assert config["/**"]["ros__parameters"]["publish_tf"] is True
+
+
 def test_platform_topics_are_relative_and_namespace_is_launchable():
     platform = yaml.safe_load(
         (ROOT / "src/robot_config/config/platform.yaml").read_text(encoding="utf-8")
@@ -53,5 +102,5 @@ def test_real_base_launch_requires_compiled_effective_config():
     bridge = (ROOT / "src/stm32_robot_bridge/launch/stm32_bridge.launch.py").read_text(
         encoding="utf-8"
     )
-    assert "real base requires compiled effective params" in system
+    assert "base providers require compiled effective params" in system
     assert "effective params are required; start through bin/robot" in bridge

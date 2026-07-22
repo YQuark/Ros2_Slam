@@ -5,3 +5,4 @@ uint32 capabilities
 string firmware_commit
 uint32 hardware_revision
 uint32 parameter_crc32
+bool simulated

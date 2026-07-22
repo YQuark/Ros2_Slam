@@ -47,8 +47,40 @@ class _FakeChassisCommand:
         self.sequence = 0
 
 
+class _FakeControlState:
+    STATE_DISABLED = 0
+    STATE_WAIT_SUPERVISION = 1
+    STATE_READY = 2
+    STATE_ACTIVE = 3
+    STATE_WAIT_SOURCE_QUIET = 4
+    STATE_WAIT_FRESH_SOURCE = 5
+    REJECT_NONE = 0
+    REJECT_INVALID = 1
+    REJECT_STALE = 2
+    REJECT_REARM_REQUIRED = 3
+    REJECT_SUPERVISION_STALE = 4
+    REJECT_MOTION_CRITICAL = 5
+    REARM_TRANSPORT = 1
+    REARM_MOTION_CRITICAL = 128
+    REARM_SUPERVISION_STALE = 256
+
+    def __init__(self):
+        self.header = SimpleNamespace(stamp=None)
+
+
+class _FakeMotionSafetyState:
+    LEVEL_CRITICAL = 4
+
+
+class _FakeChassisState:
+    pass
+
+
 _mock_robot_interfaces_msg = MagicMock()
 _mock_robot_interfaces_msg.ChassisCommand = _FakeChassisCommand
+_mock_robot_interfaces_msg.ChassisState = _FakeChassisState
+_mock_robot_interfaces_msg.ControlState = _FakeControlState
+_mock_robot_interfaces_msg.MotionSafetyState = _FakeMotionSafetyState
 sys.modules["robot_interfaces"] = MagicMock()
 sys.modules["robot_interfaces.msg"] = _mock_robot_interfaces_msg
 
@@ -125,6 +157,7 @@ from robot_control.cmd_vel_mux import CmdVelMuxNode
 
 def make_mux(**param_overrides):
     """创建 CmdVelMuxNode 实例的工厂函数。"""
+    param_overrides.setdefault("require_motion_supervision", False)
     MockNode.set_params(**param_overrides)
     with patch("os.path.exists", return_value=False):
         node = CmdVelMuxNode()
@@ -274,6 +307,53 @@ class TestCmdVelMuxPublish:
         node._publish_selected()
 
         node.legacy_publisher.publish.assert_called_once()
+
+    def test_transport_rearm_clears_old_goal_and_requires_quiet_then_fresh_input(self):
+        from robot_control.control_policy import Command
+
+        node = make_mux()
+        node.mux.update("nav", Command(0.2, 0.0), now_sec=0.0)
+        node._publish_selected()
+        node.publisher.reset_mock()
+        state = MagicMock()
+        state.wire_session_id = 2
+        state.rearm_required = True
+        state.rearm_reason_flags = _FakeControlState.REARM_TRANSPORT
+
+        node._on_chassis_state(state)
+
+        release = node.publisher.publish.call_args[0][0]
+        assert release.enable is False
+        assert node.rearm_required
+        assert not node.mux.select(0.0).active
+
+        node.publisher.reset_mock()
+        node.get_clock().now.return_value.nanoseconds = int(0.30e9)
+        node._publish_selected()
+        assert node.gate_state == _FakeControlState.STATE_WAIT_FRESH_SOURCE
+        node.publisher.publish.assert_not_called()
+
+        fresh = MagicMock()
+        fresh.linear.x, fresh.angular.z = 0.1, 0.0
+        node._make_callback("nav")(fresh)
+        resumed = node.publisher.publish.call_args[0][0]
+        assert resumed.enable is True
+        assert not node.rearm_required
+
+    def test_critical_motion_state_releases_and_latches_rearm(self):
+        node = make_mux(require_motion_supervision=True)
+        node.last_active = True
+        message = MagicMock()
+        message.command_scale = 0.0
+        message.release_required = True
+        message.level = _FakeMotionSafetyState.LEVEL_CRITICAL
+
+        node._on_motion_state(message)
+
+        release = node.publisher.publish.call_args[0][0]
+        assert release.enable is False
+        assert node.rearm_required
+        assert node.rearm_reason_flags & _FakeControlState.REARM_MOTION_CRITICAL
 
 
 class TestCmdVelMuxCallback:

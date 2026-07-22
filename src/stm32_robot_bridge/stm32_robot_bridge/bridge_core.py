@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import secrets
 from dataclasses import dataclass, replace
+from enum import IntEnum
 from typing import Optional, Tuple
 
 from .bridge_state import BridgeState, BridgeStateMachine
@@ -17,6 +18,22 @@ from .protocol_v3 import (
     StatusPayload,
     sequence_is_forward,
 )
+
+
+REARM_TRANSPORT = 1 << 0
+REARM_STATUS_TIMEOUT = 1 << 1
+REARM_ACK_TIMEOUT = 1 << 2
+REARM_FIRMWARE_REJECT = 1 << 3
+REARM_ESTOP = 1 << 4
+REARM_FAULT = 1 << 5
+REARM_COMMAND_TIMEOUT = 1 << 6
+
+
+class StatusDisposition(IntEnum):
+    INVALID = 0
+    NEW = 1
+    DUPLICATE = 2
+    OUT_OF_ORDER = 3
 
 
 @dataclass(frozen=True)
@@ -40,6 +57,7 @@ class RuntimeSnapshot:
     last_status_at: Optional[float] = None
     last_command_at: Optional[float] = None
     rearm_required: bool = False
+    rearm_reason_flags: int = 0
 
 
 @dataclass(frozen=True)
@@ -75,7 +93,15 @@ class BridgeCore:
     def on_connected(self, session_id: Optional[int] = None) -> RuntimeSnapshot:
         self.machine.on_serial_opened()
         wire_session = int(session_id if session_id is not None else secrets.randbits(64)) or 1
-        self.snapshot = RuntimeSnapshot(state=self.machine.state, wire_session_id=wire_session)
+        # Every transport generation starts closed.  The wire-side release sent by
+        # the adapter is necessary but is not an upper-layer enable edge; a fresh
+        # ChassisCommand(enable=false) must still be observed before motion.
+        self.snapshot = RuntimeSnapshot(
+            state=self.machine.state,
+            wire_session_id=wire_session,
+            rearm_required=True,
+            rearm_reason_flags=REARM_TRANSPORT,
+        )
         return self.snapshot
 
     def on_disconnected(self) -> RuntimeSnapshot:
@@ -90,6 +116,7 @@ class BridgeCore:
             target_wz=0.0,
             last_command_at=None,
             rearm_required=True,
+            rearm_reason_flags=REARM_TRANSPORT,
         )
         return self.snapshot
 
@@ -106,14 +133,15 @@ class BridgeCore:
         self.machine.on_settled()
         self.snapshot = replace(self.snapshot, state=self.machine.state)
 
-    def on_status(self, status: StatusPayload, now_sec: float) -> bool:
+    def on_status(self, status: StatusPayload, now_sec: float) -> StatusDisposition:
         if status.version != 3 or self.snapshot.hello is None:
-            return False
+            return StatusDisposition.INVALID
         previous = self.snapshot.firmware
-        if previous is not None and not sequence_is_forward(
-            status.status_sequence, previous.status.status_sequence
-        ):
-            return False
+        if previous is not None:
+            if status.status_sequence == previous.status.status_sequence:
+                return StatusDisposition.DUPLICATE
+            if not sequence_is_forward(status.status_sequence, previous.status.status_sequence):
+                return StatusDisposition.OUT_OF_ORDER
         self.machine.on_valid_status(status.status_flags)
         ack_current = status.last_received_session_id == self.snapshot.wire_session_id and bool(
             status.command_ack_flags & ACK_APPLIED
@@ -121,8 +149,17 @@ class BridgeCore:
         if self.machine.state is BridgeState.READY and not ack_current:
             self.machine.state = BridgeState.WAIT_STATUS
         if status.status_flags & (STATUS_FLAG_ESTOP | STATUS_FLAG_FAULT_STOP):
+            reason = 0
+            if status.status_flags & STATUS_FLAG_ESTOP:
+                reason |= REARM_ESTOP
+            if status.status_flags & STATUS_FLAG_FAULT_STOP:
+                reason |= REARM_FAULT
             self.snapshot = replace(
-                self.snapshot, rearm_required=True, target_vx=0.0, target_wz=0.0
+                self.snapshot,
+                rearm_required=True,
+                rearm_reason_flags=self.snapshot.rearm_reason_flags | reason,
+                target_vx=0.0,
+                target_wz=0.0,
             )
         firmware = FirmwareSnapshot(float(now_sec), status)
         self.snapshot = replace(
@@ -131,7 +168,17 @@ class BridgeCore:
             firmware=firmware,
             last_status_at=float(now_sec),
         )
-        return True
+        return StatusDisposition.NEW
+
+    def require_rearm(self, reason_flags: int) -> None:
+        self.snapshot = replace(
+            self.snapshot,
+            rearm_required=True,
+            rearm_reason_flags=self.snapshot.rearm_reason_flags | int(reason_flags),
+            target_vx=0.0,
+            target_wz=0.0,
+            last_command_at=None,
+        )
 
     def accept_command(
         self,
@@ -173,6 +220,7 @@ class BridgeCore:
                 target_wz=0.0,
                 last_command_at=None,
                 rearm_required=False,
+                rearm_reason_flags=0,
             )
             return ValidatedCommand(0.0, 0.0, False, 0, session_id, sequence)
         if self.snapshot.rearm_required:
@@ -214,6 +262,7 @@ class BridgeCore:
                 target_wz=0.0,
                 last_command_at=None,
                 rearm_required=True,
+                rearm_reason_flags=self.snapshot.rearm_reason_flags | REARM_STATUS_TIMEOUT,
             )
             return True, "status_timeout"
         if (
@@ -228,6 +277,7 @@ class BridgeCore:
                 target_wz=0.0,
                 last_command_at=None,
                 rearm_required=True,
+                rearm_reason_flags=self.snapshot.rearm_reason_flags | REARM_COMMAND_TIMEOUT,
             )
             return True, "command_timeout"
         return False, ""

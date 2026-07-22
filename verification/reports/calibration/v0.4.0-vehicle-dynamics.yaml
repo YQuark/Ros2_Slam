@@ -2,7 +2,7 @@ schema_version: 1
 release: v0.4.0
 result: NOT_RUN
 status: provisional
-upper_commit: b70721c0e8e8bf3aa5c76debc0b806474a546a26
+upper_commit: 45ea2d5bcabb9085dd22b10a27513863d778a84e
 firmware_commit: null
 hardware_revision: robot_001
 config_sha256: null

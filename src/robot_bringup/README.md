@@ -34,8 +34,13 @@ machine or when the Raspberry Pi has a display session.
 
 - `/scan_raw`: lidar driver output, internal to the platform.
 - `/scan`: normalized 2D scan, public platform interface.
-- `/wheel/odom`: raw wheel odometry from the STM32 bridge.
+- `/wheel/observation`: raw wheel facts from either Real Base or Fake Base.
+- `/imu/observation`: raw IMU facts from either Real Base or Fake Base.
+- `/wheel/odom`: wheel odometry produced only by `robot_state_estimation`.
+- `/imu/data`: quality-filtered IMU produced only by `robot_state_estimation`.
 - `/odom`: public odometry from `robot_state_estimation`.
 - `/cmd_vel/teleop`, `/cmd_vel/nav`, `/cmd_vel/test`: command candidates.
 - `/cmd_vel/research/<name>`: optional whitelisted research command candidates.
 - `/chassis/command`: only `robot_control` should publish this.
+- `/chassis/control_state`: command selection, age, rejection and rearm state.
+- `/motion/safety_state`: motion-quality decision from `robot_supervision`.

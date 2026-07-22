@@ -23,6 +23,13 @@ uint64 firmware_session_id
 uint32 firmware_received_sequence
 uint32 firmware_applied_sequence
 uint8 firmware_reject_reason
+# Transport rearm is authoritative here. Motion rearm is published by
+# MotionSafetyState and latched by robot_control.
+bool rearm_required
+uint32 rearm_reason_flags
+uint32 status_age_ms
+uint32 command_ack_age_ms
+# Deprecated compatibility fields. Consumers must use MotionSafetyState.
 float32 slip_score
 uint8 supervisor_level
 string config_sha256

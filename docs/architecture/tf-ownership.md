@@ -1,8 +1,4 @@
-# TF 与测量所有权
+# TF 所有权（兼容入口）
 
-- `wheel/odom`：编码器增量里程计，`odom`/`base_link`，不发布 TF。
-- `imu/data`：STM32 IMU，orientation 未验证时 covariance[0] 为 -1。
-- `odom`：EKF 融合输出，唯一发布 `odom → base_link`。
-- `map → odom`：SLAM 或 localization 节点所有。
-
-生产 launch 不允许第二个 `odom → base_link` 发布者。
+权威内容已迁移到 [tf_ownership.md](./tf_ownership.md)。保留本文件仅用于兼容
+历史链接，避免形成两套 TF 事实源。

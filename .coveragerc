@@ -4,6 +4,8 @@ source =
     src/robot_control
     src/robot_sensing
     src/robot_state_estimation
+    src/robot_supervision
+    src/robot_verification
 
 omit =
     */test/*
@@ -12,6 +14,13 @@ omit =
     */experiments/*
     */third_party/*
     */YDLidar-SDK/*
+    # ROS wiring is covered by launch/runtime contract tests; module gates
+    # apply to deterministic policy, protocol and estimation logic.
+    */bridge_node.py
+    */bridge_node_v3.py
+    */*_node.py
+    */stm32_robot_bridge/motion_supervisor.py
+    */stm32_robot_bridge/odometry.py
 
 [report]
 fail_under = 75

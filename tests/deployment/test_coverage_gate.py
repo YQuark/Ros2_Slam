@@ -29,7 +29,7 @@ def test_module_coverage_gate_enforces_core_and_total_thresholds():
         {
             "control_policy.py": 90.0,
             "protocol_v3.py": 91.0,
-            "odometry.py": 99.0,
+            "wheel_odometry.py": 99.0,
             "bridge_core.py": 85.0,
         },
         total=75.0,
@@ -40,7 +40,7 @@ def test_module_coverage_gate_enforces_core_and_total_thresholds():
         {
             "control_policy.py": 89.9,
             "protocol_v3.py": 91.0,
-            "odometry.py": 99.0,
+            "wheel_odometry.py": 99.0,
             "bridge_core.py": 84.9,
         },
         total=74.9,

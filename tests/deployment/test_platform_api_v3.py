@@ -36,6 +36,32 @@ def test_robot_interfaces_define_session_ack_and_firmware_identity():
     firmware = (package / "msg" / "FirmwareInfo.msg").read_text(encoding="utf-8")
     assert "string firmware_commit" in firmware
     assert "uint32 capabilities" in firmware
+    assert "bool simulated" in firmware
+
+    wheel = (package / "msg" / "WheelObservation.msg").read_text(encoding="utf-8")
+    for declaration in (
+        "uint8 schema_version",
+        "uint64 transport_session_id",
+        "uint32 status_sequence",
+        "uint32 mcu_sample_time_ms",
+        "int32[4] encoder_count",
+        "uint8 speed_valid_mask",
+        "uint32 error_flags",
+    ):
+        assert declaration in wheel
+    imu = (package / "msg" / "ImuObservation.msg").read_text(encoding="utf-8")
+    for declaration in (
+        "uint32 sample_sequence",
+        "float32[3] angular_velocity_dps",
+        "uint32 quality_flags",
+    ):
+        assert declaration in imu
+    control = (package / "msg" / "ControlState.msg").read_text(encoding="utf-8")
+    assert "uint8 command_reject_reason" in control
+    assert "bool rearm_required" in control
+    safety = (package / "msg" / "MotionSafetyState.msg").read_text(encoding="utf-8")
+    assert "float32 command_scale" in safety
+    assert "bool release_required" in safety
 
 
 def test_v3_runtime_is_effective_config_driven_and_legacy_twist_is_off():

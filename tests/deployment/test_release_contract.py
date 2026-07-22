@@ -1,6 +1,7 @@
 from pathlib import Path
 import xml.etree.ElementTree as ET
 import importlib.util
+import hashlib
 
 import yaml
 
@@ -14,10 +15,16 @@ def test_firmware_contract_requires_v3_and_marks_beta4_incompatible() -> None:
         (ROOT / "compatibility" / "firmware.yaml").read_text(encoding="utf-8")
     )
 
-    assert contract["upper"]["baseline_commit"] == "b70721c0e8e8bf3aa5c76debc0b806474a546a26"
+    assert contract["upper"]["baseline_commit"] == "45ea2d5bcabb9085dd22b10a27513863d778a84e"
     assert contract["upper"]["release"] == "v0.4.0"
     assert contract["upper"]["wire_protocols_supported"] == [3]
     assert contract["firmware"]["compatible_commit"] is None
+    vector_path = ROOT / contract["firmware"]["golden_vector_file"]
+    assert (
+        hashlib.sha256(vector_path.read_bytes()).hexdigest()
+        == contract["firmware"]["golden_vector_sha256"]
+    )
+    assert contract["release_compatible"] is False
     assert contract["incompatible_firmware"][0]["commit"] == FIRMWARE_COMMIT
     assert contract["timing"]["required_firmware_upper_timeout_ms"] == 200
     assert contract["timing"]["bridge_keepalive_ms"] == 50
@@ -58,6 +65,8 @@ def test_ci_enforces_quality_and_module_coverage_thresholds() -> None:
     assert "shellcheck" in ci
     assert "coverage json -o coverage.json" in ci
     assert "scripts/verify/check_coverage.py" in ci
+    assert "--cov=src/robot_supervision" in ci
+    assert "--cov=src/robot_verification" in ci
 
 
 def test_all_owned_ros_packages_are_versioned_v040() -> None:

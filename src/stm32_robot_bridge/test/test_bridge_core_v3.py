@@ -1,8 +1,7 @@
 import pytest
 
-from stm32_robot_bridge.bridge_core import BridgeCore
+from stm32_robot_bridge.bridge_core import BridgeCore, StatusDisposition
 from stm32_robot_bridge.bridge_state import BridgeState
-from stm32_robot_bridge.motion_supervisor import MotionSupervisor, SupervisorConfig, SupervisorLevel
 from stm32_robot_bridge.protocol_v3 import (
     ACK_APPLIED,
     HelloPayload,
@@ -52,7 +51,27 @@ def ready_core():
     core.on_startup_released()
     assert core.on_status(status(), 1.0)
     assert core.snapshot.state is BridgeState.READY
+    core.accept_command(
+        vx=0.0,
+        wz=0.0,
+        enable=False,
+        source=0,
+        session_id=99,
+        sequence=1,
+        command_stamp_sec=9.9,
+        now_ros_sec=10.0,
+        now_monotonic=1.0,
+    )
     return core
+
+
+def test_connection_generation_always_requires_upper_layer_disable():
+    core = ready_core()
+    assert not core.snapshot.rearm_required
+    core.on_disconnected()
+    core.on_connected(8)
+    assert core.snapshot.rearm_required
+    assert core.snapshot.rearm_reason_flags
 
 
 def test_bridge_core_rejects_missing_capability_and_duplicate_status():
@@ -68,7 +87,7 @@ def test_bridge_core_rejects_missing_capability_and_duplicate_status():
     assert core.on_hello(HelloPayload(3, 1, 0x1F, "00" * 20, 1, 0))
     core.on_startup_released()
     assert core.on_status(status(), 1.0)
-    assert not core.on_status(status(), 1.01)
+    assert core.on_status(status(), 1.01) is StatusDisposition.DUPLICATE
 
 
 def test_bridge_core_sessions_order_limits_and_timeout_rearm():
@@ -128,21 +147,6 @@ def test_bridge_core_disable_enable_edge_recovers_after_fault():
     )
     assert core.on_status(status(sequence=3), 1.07)
     assert core.snapshot.state is BridgeState.READY
-
-
-def test_motion_supervisor_disabled_and_hysteretic_clear():
-    disabled = MotionSupervisor(SupervisorConfig(enabled=False))
-    result = disabled.update(
-        now_sec=0,
-        command_vx=0,
-        command_wz=0,
-        wheel_speeds=(10,) * 4,
-        wheel_targets=(0,) * 4,
-        feedback_vx=10,
-        wheel_wz=0,
-        gyro_z=0,
-    )
-    assert result.level is SupervisorLevel.NORMAL and result.command_scale == 1.0
 
 
 class _Serial:

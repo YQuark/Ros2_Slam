@@ -1,0 +1,8 @@
+scenarios:
+  - duplicate_status
+  - status_freeze
+  - disconnect
+  - disconnect_reconnect
+  - encoder_fault
+  - wheel_slip
+  - imu_drift

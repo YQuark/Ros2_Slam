@@ -5,6 +5,8 @@ storage_id: sqlite3
 
 required_topics:
   - /scan
+  - /wheel/observation
+  - /imu/observation
   - /wheel/odom
   - /imu/data
   - /odom
@@ -12,6 +14,9 @@ required_topics:
   - /tf_static
   - /cmd_vel/nav
   - /chassis/command
+  - /chassis/state
+  - /chassis/control_state
+  - /motion/safety_state
   - /diagnostics
 
 datasets:

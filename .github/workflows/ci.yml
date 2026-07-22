@@ -94,6 +94,8 @@ jobs:
             --cov=src/robot_control \
             --cov=src/robot_sensing \
             --cov=src/robot_state_estimation \
+            --cov=src/robot_supervision \
+            --cov=src/robot_verification \
             --cov-report=term \
             --cov-report=xml \
             -v

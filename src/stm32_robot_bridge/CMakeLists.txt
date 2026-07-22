@@ -10,9 +10,6 @@ install(FILES
   stm32_robot_bridge/bridge_core.py
   stm32_robot_bridge/bridge_state.py
   stm32_robot_bridge/framing.py
-  stm32_robot_bridge/imu_converter.py
-  stm32_robot_bridge/motion_supervisor.py
-  stm32_robot_bridge/odometry.py
   stm32_robot_bridge/protocol_v3.py
   stm32_robot_bridge/serial_transport.py
   stm32_robot_bridge/transport_supervisor.py
@@ -32,9 +29,6 @@ install(DIRECTORY launch
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_protocol_v3 test/test_protocol_v3.py
-    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
-  )
-  ament_add_pytest_test(test_v3_components test/test_v3_components.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
   ament_add_pytest_test(test_bridge_core_v3 test/test_bridge_core_v3.py
