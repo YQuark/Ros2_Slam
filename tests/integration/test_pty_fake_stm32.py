@@ -11,6 +11,8 @@ from stm32_robot_bridge.bridge_state import BridgeState
 from stm32_robot_bridge.framing import FrameParser, build_frame
 from stm32_robot_bridge.protocol_v3 import (
     ACK_APPLIED,
+    ACK_RECEIVED,
+    ACK_SESSION_VALID,
     CMD_HELLO,
     CMD_SET_VELOCITY,
     CMD_STATUS,
@@ -35,12 +37,22 @@ def hello_payload(*, capabilities=REQUIRED_CAPABILITIES):
     return payload
 
 
-def status_payload(sequence, wire_session, *, flags=0, ack_flags=ACK_APPLIED):
+def status_payload(
+    sequence,
+    wire_session,
+    *,
+    flags=0,
+    received=1,
+    applied=1,
+    ack_flags=ACK_SESSION_VALID | ACK_RECEIVED | ACK_APPLIED,
+):
     payload = bytearray(STATUS_PAYLOAD_SIZE)
     payload[:4] = bytes((3, flags, 2, 0x0F))
     struct.pack_into("<H", payload, 12, 12000)
     payload[62:65] = bytes((0x0F, 0, 0))
-    struct.pack_into("<IIQII", payload, 65, sequence, sequence * 20, wire_session, 1, 1)
+    struct.pack_into(
+        "<IIQII", payload, 65, sequence, sequence * 20, wire_session, received, applied
+    )
     payload[91] = ack_flags
     return bytes(payload)
 
@@ -95,22 +107,16 @@ def test_pty_upper_v3_hello_drive_timeout_fault_and_reconnect_rearm():
         fake.send(CMD_HELLO, hello_payload())
         frames = host_receive(device, host_parser)
         assert core.on_hello(decode_hello_payload(frames[0][1]))
-        fake.send(CMD_STATUS, status_payload(1, 7))
+        fake.send(CMD_STATUS, status_payload(1, 7, received=0, applied=0))
         frames = host_receive(device, host_parser)
         status = decode_status_payload(frames[0][1])
         assert core.on_status(status, 1.0) is StatusDisposition.NEW
-        assert core.snapshot.state is BridgeState.READY
-        core.accept_command(
-            vx=0.0,
-            wz=0.0,
-            enable=False,
-            source=0,
-            session_id=99,
-            sequence=1,
-            command_stamp_sec=9.9,
-            now_ros_sec=10.0,
-            now_monotonic=1.0,
-        )
+        assert core.snapshot.state is BridgeState.WAIT_SAFE_STATUS
+        core.on_disable_sent(1)
+        fake.send(CMD_STATUS, status_payload(2, 7))
+        status = decode_status_payload(host_receive(device, host_parser)[0][1])
+        assert core.on_status(status, 1.005) is StatusDisposition.NEW
+        assert core.snapshot.state is BridgeState.WIRE_SYNCHRONIZED
 
         command = core.accept_command(
             vx=0.8,
@@ -155,7 +161,7 @@ def test_pty_upper_v3_hello_drive_timeout_fault_and_reconnect_rearm():
         fake.send(CMD_STATUS, status_payload(1, 8, flags=1))
         status = decode_status_payload(host_receive(device, host_parser)[0][1])
         assert core.on_status(status, 2.0) is StatusDisposition.NEW
-        assert core.snapshot.state is BridgeState.FAULT
+        assert core.snapshot.state is BridgeState.WAIT_SAFE_STATUS
         assert core.snapshot.rearm_required
     finally:
         device.close()

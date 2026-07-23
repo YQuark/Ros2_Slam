@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed v0.4.0 release gate over machine-readable evidence."""
+"""Fail-closed v0.5.0-rc1 release gate over machine-readable evidence."""
 
 from __future__ import annotations
 
@@ -11,7 +11,8 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-MANIFEST = ROOT / "verification" / "configs" / "release" / "v0.4.0.yaml"
+RELEASE = "v0.5.0-rc1"
+MANIFEST = ROOT / "verification" / "configs" / "release" / f"{RELEASE}.yaml"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 
@@ -65,7 +66,7 @@ def _validate_result(name: str, report: dict, release: str) -> list[str]:
 
 def release_failures(root=ROOT):
     root = Path(root)
-    manifest_path = root / "verification" / "configs" / "release" / "v0.4.0.yaml"
+    manifest_path = root / "verification" / "configs" / "release" / f"{RELEASE}.yaml"
     try:
         manifest = _mapping(manifest_path)
     except ValueError as exc:
@@ -111,11 +112,11 @@ def release_failures(root=ROOT):
 def main() -> int:
     failures = release_failures()
     if failures:
-        print("v0.4.0 release blocked:", file=sys.stderr)
+        print(f"{RELEASE} release blocked:", file=sys.stderr)
         for failure in failures:
             print(f"  {failure}", file=sys.stderr)
         return 1
-    print("v0.4.0 release gate PASS")
+    print(f"{RELEASE} release gate PASS")
     return 0
 
 

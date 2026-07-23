@@ -1,10 +1,12 @@
-"""Four-encoder differential-drive odometry and covariance propagation."""
+"""Layout-aware differential-drive odometry and covariance propagation."""
 
 from __future__ import annotations
 
 import math
 from dataclasses import dataclass
 from typing import Optional, Tuple
+
+from robot_chassis_model.wheel_layout import WheelLayout
 
 
 @dataclass(frozen=True)
@@ -59,17 +61,22 @@ class EncoderOdometry:
         self.covariance = [[0.0] * 3 for _ in range(3)]
         self.last_counts: Optional[Tuple[int, int, int, int]] = None
         self.last_sample_time_sec: Optional[float] = None
+        self.last_layout_identity: Optional[Tuple[int, int, int]] = None
 
     def reset_sample_baseline(self) -> None:
         self.last_counts = None
         self.last_sample_time_sec = None
+        self.last_layout_identity = None
 
     def update(
         self,
         counts: Tuple[int, int, int, int],
         *,
         sample_time_sec: float,
+        enabled_mask: int = 0x0F,
+        speed_valid_mask: int = 0x0F,
         anomaly_mask: int = 0,
+        transport_session_id: int = 0,
         covariance_multiplier: float = 1.0,
         hard_max_speed_mps: float = 0.45,
     ) -> EncoderOdometryUpdate:
@@ -77,20 +84,34 @@ class EncoderOdometry:
         if len(counts) != 4:
             raise ValueError("exactly four encoder counts are required")
         sample_time = float(sample_time_sec)
-        if self.last_counts is None or self.last_sample_time_sec is None:
+        layout = WheelLayout(enabled_mask, speed_valid_mask, anomaly_mask)
+        identity = (int(transport_session_id), layout.enabled_mask, layout.eligible_mask)
+        if not layout.complete:
             self.last_counts, self.last_sample_time_sec = counts, sample_time
+            self.last_layout_identity = identity
+            return self._result(0.0, 0.0, 0.0, False, False, 0.0, 0.0)
+        if (
+            self.last_counts is None
+            or self.last_sample_time_sec is None
+            or self.last_layout_identity != identity
+        ):
+            self.last_counts, self.last_sample_time_sec = counts, sample_time
+            self.last_layout_identity = identity
             return self._result(0.0, 0.0, 0.0, False, False, 0.0, 0.0)
         dt = sample_time - self.last_sample_time_sec
         previous = self.last_counts
         self.last_counts, self.last_sample_time_sec = counts, sample_time
-        if dt <= 0.0 or dt > self.max_dt_sec or int(anomaly_mask) & 0x0F:
+        if dt <= 0.0 or dt > self.max_dt_sec:
             return self._result(0.0, 0.0, dt, False, False, 0.0, 0.0)
         deltas = tuple(signed_int32_delta(now, old) for now, old in zip(counts, previous))
         max_counts = abs(float(hard_max_speed_mps)) * dt * 1.2 / self.meters_per_count + 2.0
-        if any(abs(delta) > max_counts for delta in deltas):
+        if any(
+            abs(deltas[index]) > max_counts for index in layout.left_indices + layout.right_indices
+        ):
             return self._result(0.0, 0.0, dt, False, False, 0.0, 0.0)
-        left = 0.5 * (deltas[0] + deltas[1]) * self.meters_per_count * self.linear_scale
-        right = 0.5 * (deltas[2] + deltas[3]) * self.meters_per_count * self.linear_scale
+        left_counts, right_counts = layout.aggregate(deltas)
+        left = left_counts * self.meters_per_count * self.linear_scale
+        right = right_counts * self.meters_per_count * self.linear_scale
         ds = 0.5 * (left + right)
         dtheta = (right - left) / self.track_width_m * self.angular_scale * self.angular_sign
         yaw_mid = self.pose.yaw + 0.5 * dtheta
@@ -144,19 +165,21 @@ class EncoderOdometry:
 def covariance_multiplier(
     *,
     wheel_speeds,
-    speed_valid_mask: int,
+    enabled_mask: int = 0x0F,
+    speed_valid_mask: int = 0x0F,
+    anomaly_mask: int = 0,
     sample_age_sec: float,
     turn_rate: float,
     quality_flags: int = 0,
 ) -> float:
     speeds = tuple(float(value) for value in wheel_speeds)
-    left_disagreement = abs(speeds[0] - speeds[1])
-    right_disagreement = abs(speeds[2] - speeds[3])
-    invalid_wheels = 4 - (int(speed_valid_mask) & 0x0F).bit_count()
+    layout = WheelLayout(enabled_mask, speed_valid_mask, anomaly_mask)
+    disagreement = layout.pair_disagreement(speeds)
+    invalid_wheels = layout.enabled_invalid_count
     return min(
         25.0,
         1.0
-        + 4.0 * max(left_disagreement, right_disagreement)
+        + 4.0 * disagreement
         + 0.5 * abs(float(turn_rate))
         + 4.0 * max(float(sample_age_sec), 0.0)
         + 2.0 * invalid_wheels

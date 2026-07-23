@@ -10,7 +10,7 @@ CONFIG_ROOT = ROOT / "src/robot_config/config"
 def test_robot_calibration_is_versioned_provisional_and_executable():
     effective = load_effective_config(CONFIG_ROOT)
     assert effective["schema_version"] == 1
-    assert effective["platform_api_version"] == 3
+    assert effective["platform_api_version"] == 4
     assert effective["calibration"]["version"]
     assert effective["calibration"]["status"] == "provisional"
     assert effective["calibration"]["drive"]["encoder_counts_per_revolution"] > 0

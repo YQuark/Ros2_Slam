@@ -1,0 +1,15 @@
+schema_version: 1
+release: v0.5.0-rc1
+platform_api_version: 4
+protocol_version: 3
+required_capability_mask: 31
+golden_vector_sha256: cb928ab64e165307155f1098956e16bdec3726db3f685e85c4a5305376fdc137
+result: NOT_RUN
+upper_commit: 0d91f9e5f04350a64e50f9b509de8998cf4f36c0
+firmware_commit: 366a0385290d526009e6cd3bbdaa7b74b2fecad6
+hardware_revision: null
+config_sha256: null
+started_at: null
+metrics: {}
+parameter_crc32: null
+blocker: Real UART hardware is not connected in this environment.

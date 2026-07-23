@@ -2,13 +2,15 @@
 set -euo pipefail
 
 required_topics=(
-    /chassis/command
-    /chassis/state
-    /chassis/control_state
+    /chassis/host_motion_command
+    /chassis/link_state
+    /chassis/host_control_state
+    /chassis/firmware_control_state
     /chassis/firmware_info
     /wheel/observation
     /imu/observation
-    /motion/safety_state
+    /motion/supervision_state
+    /platform/compatibility_state
     /wheel/odom
     /imu/data
     /odom
@@ -23,13 +25,13 @@ for topic in "${required_topics[@]}"; do
     fi
 done
 
-command_publishers="$(ros2 topic info /chassis/command --verbose | awk '/Publisher count:/ {print $3}')"
+command_publishers="$(ros2 topic info /chassis/host_motion_command --verbose | awk '/Publisher count:/ {print $3}')"
 if [ "$command_publishers" != "1" ]; then
-    echo "chassis/command must have exactly one publisher, got ${command_publishers:-unknown}" >&2
+    echo "chassis/host_motion_command must have exactly one publisher, got ${command_publishers:-unknown}" >&2
     exit 1
 fi
 
-for owned_topic in /wheel/odom /imu/data /odom /motion/safety_state; do
+for owned_topic in /wheel/odom /imu/data /odom /motion/supervision_state; do
     publisher_count="$(ros2 topic info "$owned_topic" --verbose | awk '/Publisher count:/ {print $3}')"
     if [ "$publisher_count" != "1" ]; then
         echo "$owned_topic must have exactly one publisher, got ${publisher_count:-unknown}" >&2

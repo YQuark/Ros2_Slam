@@ -1,0 +1,21 @@
+uint8 STATE_DISCONNECTED=0
+uint8 STATE_NEGOTIATING=1
+uint8 STATE_WAIT_SAFE_STATUS=2
+uint8 STATE_WAIT_DISABLE_ACK=3
+uint8 STATE_WIRE_SYNCHRONIZED=4
+
+std_msgs/Header header
+uint8 link_state
+uint8 protocol_version
+uint64 wire_session_id
+uint32 wire_sent_sequence
+bool firmware_ack_available
+uint64 firmware_session_id
+uint32 firmware_received_sequence
+uint32 firmware_applied_sequence
+uint8 firmware_reject_reason
+bool wire_rearm_required
+uint32 wire_rearm_reason_flags
+uint32 status_age_ms
+uint32 command_ack_age_ms
+string config_sha256

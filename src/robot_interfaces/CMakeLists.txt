@@ -7,13 +7,17 @@ find_package(rosidl_default_generators REQUIRED)
 find_package(std_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
-  "msg/ChassisCommand.msg"
-  "msg/ChassisState.msg"
-  "msg/ControlState.msg"
+  "msg/HostMotionCommand.msg"
+  "msg/HostControlState.msg"
+  "msg/ChassisLinkState.msg"
+  "msg/FirmwareControlState.msg"
   "msg/FirmwareInfo.msg"
   "msg/ImuObservation.msg"
-  "msg/MotionSafetyState.msg"
+  "msg/MotionSupervisionState.msg"
+  "msg/PlatformCompatibilityState.msg"
+  "msg/NavigationGuardState.msg"
   "msg/WheelObservation.msg"
+  "action/ChassisOperation.action"
   DEPENDENCIES geometry_msgs std_msgs
 )
 

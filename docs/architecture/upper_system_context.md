@@ -1,23 +1,24 @@
 # 上位机系统上下文
 
-上位机以 Platform API 3 为稳定边界。候选 `Twist` 只能进入
-`robot_control`；真实与虚拟底盘都消费 `ChassisCommand`，并提供相同的
-`WheelObservation`、`ImuObservation`、`ChassisState` 和
-`FirmwareInfo`。状态估计独占轮式里程计与正式 `odom` 链，运动监督只
-输出降级/释放决策。
+上位机以 Platform API 4 为稳定边界。候选 `Twist` 只能进入
+`robot_control`；真实与虚拟底盘都消费 `HostMotionCommand`，并提供相同的
+`WheelObservation`、`ImuObservation`、`ChassisLinkState`、
+`FirmwareControlState` 和 `FirmwareInfo`。状态估计独占轮式里程计与正式
+`odom` 链，运动监督只输出 Host 降级/释放建议。
 
 ```text
-Twist sources -> robot_control -> ChassisCommand -> Real/Fake base provider
-                                                   |-> WheelObservation
-                                                   |-> ImuObservation
-                                                   `-> ChassisState
+Twist sources -> robot_control -> HostMotionCommand -> Real/Fake base provider
+                                                      |-> WheelObservation
+                                                      |-> ImuObservation
+                                                      |-> ChassisLinkState
+                                                      `-> FirmwareControlState
 
 WheelObservation + ImuObservation -> robot_state_estimation
                                   -> wheel/odom + imu/data
                                   -> robot_localization -> odom + odom->base_link
 
-ChassisCommand + observations -> robot_supervision -> MotionSafetyState
-                                                    -> robot_control
+HostMotionCommand + observations -> robot_supervision -> MotionSupervisionState
+                                                        -> robot_control
 ```
 
 Upper wire protocol v3 是 Bridge 与固件的私有传输接口，不得泄漏为状态

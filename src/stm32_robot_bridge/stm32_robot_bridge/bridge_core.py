@@ -11,6 +11,9 @@ from typing import Optional, Tuple
 from .bridge_state import BridgeState, BridgeStateMachine
 from .protocol_v3 import (
     ACK_APPLIED,
+    ACK_RECEIVED,
+    ACK_REJECTED,
+    ACK_SESSION_VALID,
     REQUIRED_CAPABILITIES,
     STATUS_FLAG_ESTOP,
     STATUS_FLAG_FAULT_STOP,
@@ -95,7 +98,7 @@ class BridgeCore:
         wire_session = int(session_id if session_id is not None else secrets.randbits(64)) or 1
         # Every transport generation starts closed.  The wire-side release sent by
         # the adapter is necessary but is not an upper-layer enable edge; a fresh
-        # ChassisCommand(enable=false) must still be observed before motion.
+        # HostMotionCommand(enable=false) must still be observed before motion.
         self.snapshot = RuntimeSnapshot(
             state=self.machine.state,
             wire_session_id=wire_session,
@@ -143,11 +146,19 @@ class BridgeCore:
             if not sequence_is_forward(status.status_sequence, previous.status.status_sequence):
                 return StatusDisposition.OUT_OF_ORDER
         self.machine.on_valid_status(status.status_flags)
-        ack_current = status.last_received_session_id == self.snapshot.wire_session_id and bool(
-            status.command_ack_flags & ACK_APPLIED
+        expected = self.machine.expected_disable_sequence
+        required_ack = ACK_SESSION_VALID | ACK_RECEIVED | ACK_APPLIED
+        ack_current = bool(
+            expected is not None
+            and status.last_received_session_id == self.snapshot.wire_session_id
+            and status.last_received_sequence == expected
+            and status.last_applied_sequence == expected
+            and status.command_ack_flags & required_ack == required_ack
+            and not status.command_ack_flags & ACK_REJECTED
+            and status.last_reject_reason == 0
         )
-        if self.machine.state is BridgeState.READY and not ack_current:
-            self.machine.state = BridgeState.WAIT_STATUS
+        if expected is not None and ack_current and self.machine.on_disable_applied(expected):
+            self.snapshot = replace(self.snapshot, rearm_required=False, rearm_reason_flags=0)
         if status.status_flags & (STATUS_FLAG_ESTOP | STATUS_FLAG_FAULT_STOP):
             reason = 0
             if status.status_flags & STATUS_FLAG_ESTOP:
@@ -209,7 +220,6 @@ class BridgeCore:
             if not sequence_is_forward(sequence, self.snapshot.command_sequence):
                 raise ValueError("out-of-order ROS command sequence")
         if not enable:
-            self.machine.on_disable_command()
             self.snapshot = replace(
                 self.snapshot,
                 state=self.machine.state,
@@ -219,8 +229,6 @@ class BridgeCore:
                 target_vx=0.0,
                 target_wz=0.0,
                 last_command_at=None,
-                rearm_required=False,
-                rearm_reason_flags=0,
             )
             return ValidatedCommand(0.0, 0.0, False, 0, session_id, sequence)
         if self.snapshot.rearm_required:
@@ -248,6 +256,16 @@ class BridgeCore:
             last_command_at=float(now_monotonic),
         )
         return ValidatedCommand(vx, wz, True, int(source) & 0xFF, session_id, sequence)
+
+    def on_disable_sent(self, sequence: int) -> None:
+        self.machine.on_disable_sent(sequence)
+        self.snapshot = replace(
+            self.snapshot,
+            state=self.machine.state,
+            rearm_required=(
+                self.snapshot.rearm_required or self.machine.state is BridgeState.WAIT_DISABLE_ACK
+            ),
+        )
 
     def tick(self, now_sec: float) -> Tuple[bool, str]:
         if (

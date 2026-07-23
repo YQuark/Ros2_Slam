@@ -1,0 +1,20 @@
+schema_version: 1
+release: v0.5.0-rc1
+platform_api_version: 4
+upper_baseline_commit: 0d91f9e5f04350a64e50f9b509de8998cf4f36c0
+firmware_candidate_commit: 366a0385290d526009e6cd3bbdaa7b74b2fecad6
+software_gates:
+  pytest_minimum_count: 133
+  coverage_total_percent: 75
+  bridge_core_percent: 85
+  control_protocol_odometry_percent: 90
+hardware_gates:
+  hil_report: verification/reports/hil/v0.5.0-rc1.yaml
+  vehicle_report: verification/reports/vehicle/v0.5.0-rc1.yaml
+  calibration_report: verification/reports/calibration/v0.5.0-rc1.yaml
+  dynamics_report: verification/reports/calibration/v0.5.0-rc1-vehicle-dynamics.yaml
+release_materials:
+  changelog: CHANGELOG.md
+  compatibility: compatibility/firmware.yaml
+  protocol: docs/interfaces/upper-protocol-v3.md
+  upgrade_and_rollback: docs/releases/v0.5.0-rc1.md

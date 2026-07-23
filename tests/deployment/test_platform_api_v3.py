@@ -6,30 +6,34 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_platform_api_v3_and_wire_contract_are_explicit():
-    assert (ROOT / "PLATFORM_API_VERSION").read_text(encoding="utf-8").strip() == "3"
+def test_platform_api_v4_and_wire_v3_contract_are_explicit():
+    assert (ROOT / "PLATFORM_API_VERSION").read_text(encoding="utf-8").strip() == "4"
     contract = yaml.safe_load(
         (ROOT / "compatibility" / "firmware.yaml").read_text(encoding="utf-8")
     )
     platform = yaml.safe_load(
         (ROOT / "src/robot_config/config/platform.yaml").read_text(encoding="utf-8")
     )
-    assert contract["platform_api_version"] == 3
+    assert contract["platform_api_version"] == 4
     assert contract["upper"]["wire_protocols_supported"] == [3]
-    assert contract["firmware"]["status"] == "awaiting_v3_implementation"
-    assert platform["platform"]["topics"]["chassis_command"] == "chassis/command"
+    assert contract["firmware"]["status"] == "implementation_ready_hil_pending"
+    assert platform["platform"]["topics"]["host_motion_command"] == "chassis/host_motion_command"
 
 
 def test_robot_interfaces_define_session_ack_and_firmware_identity():
     package = ROOT / "src" / "robot_interfaces"
-    command = (package / "msg" / "ChassisCommand.msg").read_text(encoding="utf-8")
-    for declaration in ("bool enable", "uint8 source", "uint64 session_id", "uint32 sequence"):
+    command = (package / "msg" / "HostMotionCommand.msg").read_text(encoding="utf-8")
+    for declaration in (
+        "bool enable",
+        "uint8 host_subsource",
+        "uint64 command_epoch",
+        "uint32 sequence",
+    ):
         assert declaration in command
-    state = (package / "msg" / "ChassisState.msg").read_text(encoding="utf-8")
+    state = (package / "msg" / "ChassisLinkState.msg").read_text(encoding="utf-8")
     for declaration in (
         "uint64 wire_session_id",
         "uint32 firmware_applied_sequence",
-        "float32 slip_score",
         "string config_sha256",
     ):
         assert declaration in state
@@ -56,19 +60,22 @@ def test_robot_interfaces_define_session_ack_and_firmware_identity():
         "uint32 quality_flags",
     ):
         assert declaration in imu
-    control = (package / "msg" / "ControlState.msg").read_text(encoding="utf-8")
+    control = (package / "msg" / "HostControlState.msg").read_text(encoding="utf-8")
     assert "uint8 command_reject_reason" in control
     assert "bool rearm_required" in control
-    safety = (package / "msg" / "MotionSafetyState.msg").read_text(encoding="utf-8")
+    safety = (package / "msg" / "MotionSupervisionState.msg").read_text(encoding="utf-8")
     assert "float32 command_scale" in safety
-    assert "bool release_required" in safety
+    assert "bool release_host_candidate" in safety
 
 
-def test_v3_runtime_is_effective_config_driven_and_legacy_twist_is_off():
+def test_v4_runtime_is_effective_config_driven_and_legacy_twist_is_removed():
     mux = yaml.safe_load(
         (ROOT / "src/robot_control/config/cmd_vel_mux.yaml").read_text(encoding="utf-8")
     )
-    assert mux["cmd_vel_mux"]["ros__parameters"]["publish_legacy_twist"] is False
+    assert (
+        mux["cmd_vel_mux"]["ros__parameters"]["host_motion_command_topic"]
+        == "chassis/host_motion_command"
+    )
     launch = (ROOT / "src/stm32_robot_bridge/launch/stm32_bridge.launch.py").read_text(
         encoding="utf-8"
     )

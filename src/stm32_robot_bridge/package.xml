@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>stm32_robot_bridge</name>
-  <version>0.4.0</version>
+  <version>0.5.0</version>
   <description>Fail-closed ROS 2 adapter for the STM32 upper protocol v3.</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>MIT</license>

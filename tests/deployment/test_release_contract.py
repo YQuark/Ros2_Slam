@@ -7,17 +7,18 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-FIRMWARE_COMMIT = "a4ae10d592e840e979dd35c8a9b2ff2f5dd107e4"
+FIRMWARE_COMMIT = "366a0385290d526009e6cd3bbdaa7b74b2fecad6"
 
 
-def test_firmware_contract_requires_v3_and_marks_beta4_incompatible() -> None:
+def test_firmware_contract_pins_v3_candidate_and_remains_hil_blocked() -> None:
     contract = yaml.safe_load(
         (ROOT / "compatibility" / "firmware.yaml").read_text(encoding="utf-8")
     )
 
-    assert contract["upper"]["baseline_commit"] == "45ea2d5bcabb9085dd22b10a27513863d778a84e"
-    assert contract["upper"]["release"] == "v0.4.0"
+    assert contract["upper"]["baseline_commit"] == "0d91f9e5f04350a64e50f9b509de8998cf4f36c0"
+    assert contract["upper"]["release"] == "v0.5.0-rc1"
     assert contract["upper"]["wire_protocols_supported"] == [3]
+    assert contract["firmware"]["candidate_commit"] == FIRMWARE_COMMIT
     assert contract["firmware"]["compatible_commit"] is None
     vector_path = ROOT / contract["firmware"]["golden_vector_file"]
     assert (
@@ -25,7 +26,7 @@ def test_firmware_contract_requires_v3_and_marks_beta4_incompatible() -> None:
         == contract["firmware"]["golden_vector_sha256"]
     )
     assert contract["release_compatible"] is False
-    assert contract["incompatible_firmware"][0]["commit"] == FIRMWARE_COMMIT
+    assert contract["incompatible_firmware"][0]["commit"] != FIRMWARE_COMMIT
     assert contract["timing"]["required_firmware_upper_timeout_ms"] == 200
     assert contract["timing"]["bridge_keepalive_ms"] == 50
     assert contract["timing"]["bridge_command_timeout_ms"] == 150
@@ -51,9 +52,9 @@ def test_unified_verify_entrypoints_exist_and_use_python_module_pytest() -> None
 
 def test_release_documentation_entrypoints_exist() -> None:
     assert (ROOT / "CHANGELOG.md").is_file()
-    assert (ROOT / "docs" / "releases" / "v0.4.0.md").is_file()
-    assert (ROOT / "verification" / "reports" / "hil" / "v0.4.0.yaml").is_file()
-    assert (ROOT / "verification" / "reports" / "vehicle" / "v0.4.0.yaml").is_file()
+    assert (ROOT / "docs" / "releases" / "v0.5.0-rc1.md").is_file()
+    assert (ROOT / "verification" / "reports" / "hil" / "v0.5.0-rc1.yaml").is_file()
+    assert (ROOT / "verification" / "reports" / "vehicle" / "v0.5.0-rc1.yaml").is_file()
 
 
 def test_ci_enforces_quality_and_module_coverage_thresholds() -> None:
@@ -69,10 +70,10 @@ def test_ci_enforces_quality_and_module_coverage_thresholds() -> None:
     assert "--cov=src/robot_verification" in ci
 
 
-def test_all_owned_ros_packages_are_versioned_v040() -> None:
+def test_all_owned_ros_packages_are_versioned_v050() -> None:
     packages = sorted((ROOT / "src").glob("*/package.xml"))
     assert packages
-    assert {ET.parse(package).getroot().findtext("version") for package in packages} == {"0.4.0"}
+    assert {ET.parse(package).getroot().findtext("version") for package in packages} == {"0.5.0"}
 
 
 def test_hil_contract_lists_all_fault_injections_and_is_fail_closed() -> None:
@@ -82,10 +83,10 @@ def test_hil_contract_lists_all_fault_injections_and_is_fail_closed() -> None:
     assert len(contract["scenarios"]) == 16
     assert len({scenario["id"] for scenario in contract["scenarios"]}) == 16
     hil = yaml.safe_load(
-        (ROOT / "verification/reports/hil/v0.4.0.yaml").read_text(encoding="utf-8")
+        (ROOT / "verification/reports/hil/v0.5.0-rc1.yaml").read_text(encoding="utf-8")
     )
     vehicle = yaml.safe_load(
-        (ROOT / "verification/reports/vehicle/v0.4.0.yaml").read_text(encoding="utf-8")
+        (ROOT / "verification/reports/vehicle/v0.5.0-rc1.yaml").read_text(encoding="utf-8")
     )
     assert hil["result"] == vehicle["result"] == "NOT_RUN"
 
@@ -97,7 +98,7 @@ def test_bridge_executor_path_contains_no_blocking_sleep() -> None:
     assert "time.sleep(" not in bridge
 
 
-def test_v040_release_gate_is_machine_readable_and_fail_closed() -> None:
+def test_v050_rc1_release_gate_is_machine_readable_and_fail_closed() -> None:
     path = ROOT / "scripts/verify/verify_release.py"
     spec = importlib.util.spec_from_file_location("verify_release", path)
     module = importlib.util.module_from_spec(spec)

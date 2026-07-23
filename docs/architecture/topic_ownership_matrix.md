@@ -4,13 +4,16 @@
 
 | Topic | 类型 | 唯一发布者 |
 | --- | --- | --- |
-| `/chassis/command` | `robot_interfaces/ChassisCommand` | `robot_control` |
-| `/chassis/control_state` | `robot_interfaces/ControlState` | `robot_control` |
+| `/chassis/host_motion_command` | `robot_interfaces/HostMotionCommand` | `robot_control` |
+| `/chassis/host_control_state` | `robot_interfaces/HostControlState` | `robot_control` |
 | `/wheel/observation` | `robot_interfaces/WheelObservation` | Real Bridge 或 Fake Base |
 | `/imu/observation` | `robot_interfaces/ImuObservation` | Real Bridge 或 Fake Base |
-| `/chassis/state` | `robot_interfaces/ChassisState` | Real Bridge 或 Fake Base |
+| `/chassis/link_state` | `robot_interfaces/ChassisLinkState` | Real Bridge 或 Fake Base |
+| `/chassis/firmware_control_state` | `robot_interfaces/FirmwareControlState` | Real Bridge 或 Fake Base |
 | `/chassis/firmware_info` | `robot_interfaces/FirmwareInfo` | Real Bridge 或 Fake Base |
-| `/motion/safety_state` | `robot_interfaces/MotionSafetyState` | `robot_supervision` |
+| `/motion/supervision_state` | `robot_interfaces/MotionSupervisionState` | `robot_supervision` |
+| `/platform/compatibility_state` | `robot_interfaces/PlatformCompatibilityState` | `robot_config` |
+| `/navigation/guard_state` | `robot_interfaces/NavigationGuardState` | `robot_navigation_guard` |
 | `/wheel/odom` | `nav_msgs/Odometry` | `robot_state_estimation` |
 | `/imu/data` | `sensor_msgs/Imu` | `robot_state_estimation` |
 | `/odom` | `nav_msgs/Odometry` | `robot_localization` |

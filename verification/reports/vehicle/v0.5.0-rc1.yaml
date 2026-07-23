@@ -1,0 +1,10 @@
+schema_version: 1
+release: v0.5.0-rc1
+result: NOT_RUN
+upper_commit: 0d91f9e5f04350a64e50f9b509de8998cf4f36c0
+firmware_commit: 366a0385290d526009e6cd3bbdaa7b74b2fecad6
+hardware_revision: null
+config_sha256: null
+started_at: null
+metrics: {}
+blocker: UART HIL and vehicle acceptance have not been executed.

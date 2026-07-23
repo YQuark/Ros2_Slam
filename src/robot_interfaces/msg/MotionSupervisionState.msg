@@ -18,8 +18,8 @@ uint8 level
 uint32 reason_flags
 float32 score
 float32 command_scale
-bool release_required
-uint64 command_session_id
+bool release_host_candidate
+uint64 command_epoch
 uint32 command_sequence
 uint64 observation_session_id
 uint32 observation_sequence

@@ -1,8 +1,10 @@
-"""ROS-independent four-wheel motion consistency supervisor."""
+"""ROS-independent, layout-aware Host command quality supervisor."""
 
 from dataclasses import dataclass
 from enum import IntEnum
 from typing import Dict, Optional, Tuple
+
+from robot_chassis_model.wheel_layout import WheelLayout
 
 
 class SupervisorLevel(IntEnum):
@@ -40,15 +42,21 @@ class SupervisorResult:
     score: float
     level: SupervisorLevel
     command_scale: float
-    release_required: bool
+    release_host_candidate: bool
     reason: str
 
 
 def observation_requires_release(
-    *, schema_version: int, expected_schema_version: int, encoder_anomaly_mask: int
+    *,
+    schema_version: int,
+    expected_schema_version: int,
+    encoder_anomaly_mask: int,
+    enabled_mask: int = 0x0F,
+    speed_valid_mask: int = 0x0F,
 ) -> bool:
-    return int(schema_version) != int(expected_schema_version) or bool(
-        int(encoder_anomaly_mask) & 0x0F
+    return (
+        int(schema_version) != int(expected_schema_version)
+        or not WheelLayout(enabled_mask, speed_valid_mask, encoder_anomaly_mask).complete
     )
 
 
@@ -73,6 +81,9 @@ class MotionSupervisor:
         command_wz: float,
         wheel_speeds: Tuple[float, float, float, float],
         wheel_targets: Tuple[float, float, float, float],
+        enabled_mask: int = 0x0F,
+        speed_valid_mask: int = 0x0F,
+        anomaly_mask: int = 0,
         feedback_vx: float,
         wheel_wz: float,
         gyro_z: Optional[float],
@@ -82,9 +93,11 @@ class MotionSupervisor:
             self.level = SupervisorLevel.NORMAL
             self._critical_since = self._clear_since = None
             return SupervisorResult(0.0, self.level, 1.0, False, "disabled")
-        pair = max(abs(wheel_speeds[0] - wheel_speeds[1]), abs(wheel_speeds[2] - wheel_speeds[3]))
+        layout = WheelLayout(enabled_mask, speed_valid_mask, anomaly_mask)
+        pair = layout.pair_disagreement(wheel_speeds)
         tracking = 0.0
-        for target, actual in zip(wheel_targets, wheel_speeds):
+        for index in layout.left_indices + layout.right_indices:
+            target, actual = wheel_targets[index], wheel_speeds[index]
             if abs(target) >= c.tracking_min_target_mps:
                 tracking = max(tracking, abs(target - actual))
         components: Dict[str, float] = {
@@ -101,6 +114,7 @@ class MotionSupervisor:
                 and abs(command_wz) < c.zero_command_angular_radps
                 and (
                     abs(feedback_vx) > c.unexpected_linear_mps
+                    or abs(wheel_wz) > c.unexpected_angular_radps
                     or (gyro_z is not None and abs(gyro_z) > c.unexpected_angular_radps)
                 )
                 else 0.0

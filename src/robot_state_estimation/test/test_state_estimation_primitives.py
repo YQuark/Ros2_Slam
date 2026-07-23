@@ -23,6 +23,14 @@ def make_odom():
     )
 
 
+def test_encoder_odometry_validates_geometry_and_count_shape():
+    with pytest.raises(ValueError):
+        EncoderOdometry(wheel_radius_m=0.0, track_width_m=0.2, counts_per_revolution=1000)
+    odom = make_odom()
+    with pytest.raises(ValueError):
+        odom.update((0, 0, 0), sample_time_sec=0.0)
+
+
 def test_order_tracker_separates_sessions_duplicates_and_old_samples():
     tracker = SampleOrderTracker()
     assert tracker.update(1, 10) is SampleDisposition.FIRST
@@ -73,6 +81,49 @@ def test_encoder_odometry_integrates_rotation_and_arc():
     assert curved.pose.x > 0.0 and curved.pose.y > 0.0 and curved.pose.yaw > 0.0
 
 
+def test_default_m2_m3_layout_does_not_halve_distance():
+    odom = make_odom()
+    odom.update((0, 0, 0, 0), sample_time_sec=0.0, enabled_mask=0b0110, speed_valid_mask=0b0110)
+    update = odom.update(
+        (0, 100, 100, 0),
+        sample_time_sec=0.1,
+        enabled_mask=0b0110,
+        speed_valid_mask=0b0110,
+    )
+    expected = 100 * odom.meters_per_count
+    assert update.integrated
+    assert update.left_distance == pytest.approx(expected)
+    assert update.right_distance == pytest.approx(expected)
+
+
+def test_layout_change_resets_integration_baseline():
+    odom = make_odom()
+    odom.update((0, 0, 0, 0), sample_time_sec=0.0)
+    changed = odom.update(
+        (0, 100, 100, 0),
+        sample_time_sec=0.1,
+        enabled_mask=0b0110,
+        speed_valid_mask=0b0110,
+    )
+    assert not changed.integrated
+
+    odom.reset_sample_baseline()
+    missing_side = odom.update(
+        (0, 0, 0, 0),
+        sample_time_sec=0.2,
+        enabled_mask=0b0010,
+        speed_valid_mask=0b0010,
+    )
+    assert not missing_side.integrated
+
+
+def test_implausible_enabled_wheel_jump_is_rejected():
+    odom = make_odom()
+    odom.update((0, 0, 0, 0), sample_time_sec=0.0)
+    jump = odom.update((100000, 0, 0, 0), sample_time_sec=0.1)
+    assert not jump.integrated
+
+
 def test_time_regression_and_long_gap_do_not_move_pose():
     odom = make_odom()
     odom.update((0, 0, 0, 0), sample_time_sec=1.0)
@@ -98,6 +149,15 @@ def test_covariance_multiplier_increases_for_age_turn_disagreement_and_quality()
     )
     assert nominal == 1.0
     assert degraded > nominal
+
+    two_wheel = covariance_multiplier(
+        wheel_speeds=(0.0, 0.1, 0.1, 0.0),
+        enabled_mask=0b0110,
+        speed_valid_mask=0b0110,
+        sample_age_sec=0.0,
+        turn_rate=0.0,
+    )
+    assert two_wheel == 1.0
 
 
 def test_signed_int32_delta_wraps():

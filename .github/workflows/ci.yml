@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: Yaoser-x/SlamRobot_Chassis_Control
-          ref: a4ae10d592e840e979dd35c8a9b2ff2f5dd107e4
+          ref: 366a0385290d526009e6cd3bbdaa7b74b2fecad6
           path: firmware-contract
 
       - name: Configure git safe directory
@@ -46,19 +46,21 @@ jobs:
             tools/datasets tools/experiments verification/runners scripts/verify tests/integration \
             tests/deployment/test_coverage_gate.py \
             tests/deployment/test_release_contract.py \
+            src/robot_chassis_model/robot_chassis_model \
+            src/robot_chassis_ops/robot_chassis_ops \
             src/robot_control/robot_control/control_policy.py \
             src/robot_config/robot_config \
-            src/stm32_robot_bridge/stm32_robot_bridge/odometry.py \
+            src/robot_navigation_guard/robot_navigation_guard \
+            src/robot_state_estimation/robot_state_estimation \
+            src/robot_supervision/robot_supervision \
+            src/robot_verification/robot_verification \
             src/stm32_robot_bridge/stm32_robot_bridge/protocol_v3.py \
             src/stm32_robot_bridge/stm32_robot_bridge/bridge_core.py
           mypy tools scripts/verify \
             src/robot_control/robot_control/control_policy.py \
             src/stm32_robot_bridge/stm32_robot_bridge/bridge_state.py \
-            src/stm32_robot_bridge/stm32_robot_bridge/command_guard.py \
-            src/stm32_robot_bridge/stm32_robot_bridge/odometry.py \
             src/stm32_robot_bridge/stm32_robot_bridge/protocol_v3.py \
             src/stm32_robot_bridge/stm32_robot_bridge/bridge_core.py \
-            src/stm32_robot_bridge/stm32_robot_bridge/protocol_v2.py \
             src/stm32_robot_bridge/stm32_robot_bridge/serial_transport.py
           yamllint .
           find scripts launch_scripts -type f -name '*.sh' -print0 | \

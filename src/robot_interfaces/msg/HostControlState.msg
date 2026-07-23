@@ -25,12 +25,12 @@ uint32 REARM_SUPERVISION_STALE=256
 
 std_msgs/Header header
 uint8 control_state
-uint8 selected_source
+uint8 selected_host_subsource
 uint32 command_age_ms
 uint8 command_reject_reason
 bool enable_intent
 bool rearm_required
 uint32 rearm_reason_flags
-uint64 command_session_id
+uint64 command_epoch
 uint32 command_sequence
 string config_sha256

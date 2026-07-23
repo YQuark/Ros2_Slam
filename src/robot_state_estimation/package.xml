@@ -1,6 +1,6 @@
 <package format="3">
   <name>robot_state_estimation</name>
-  <version>0.4.0</version>
+  <version>0.5.0</version>
   <description>Wheel odometry and optional EKF state estimation for the robot platform.</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>Apache-2.0</license>
@@ -16,6 +16,7 @@
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>robot_localization</exec_depend>
   <exec_depend>robot_interfaces</exec_depend>
+  <depend>robot_chassis_model</depend>
   <exec_depend>sensor_msgs</exec_depend>
 
   <test_depend>ament_cmake_pytest</test_depend>

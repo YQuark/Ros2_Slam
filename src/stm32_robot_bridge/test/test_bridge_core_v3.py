@@ -4,6 +4,8 @@ from stm32_robot_bridge.bridge_core import BridgeCore, StatusDisposition
 from stm32_robot_bridge.bridge_state import BridgeState
 from stm32_robot_bridge.protocol_v3 import (
     ACK_APPLIED,
+    ACK_RECEIVED,
+    ACK_SESSION_VALID,
     HelloPayload,
     StatusPayload,
 )
@@ -34,7 +36,7 @@ def status(sequence=1, session=7, received=1, applied=1, flags=0):
         applied,
         0,
         0,
-        ACK_APPLIED,
+        ACK_SESSION_VALID | ACK_RECEIVED | ACK_APPLIED,
     )
 
 
@@ -49,19 +51,11 @@ def ready_core():
     core.on_connected(7)
     assert core.on_hello(HelloPayload(3, 1, 0x1F, "11" * 20, 1, 2))
     core.on_startup_released()
-    assert core.on_status(status(), 1.0)
-    assert core.snapshot.state is BridgeState.READY
-    core.accept_command(
-        vx=0.0,
-        wz=0.0,
-        enable=False,
-        source=0,
-        session_id=99,
-        sequence=1,
-        command_stamp_sec=9.9,
-        now_ros_sec=10.0,
-        now_monotonic=1.0,
-    )
+    assert core.on_status(status(received=0, applied=0), 1.0)
+    assert core.snapshot.state is BridgeState.WAIT_SAFE_STATUS
+    core.on_disable_sent(1)
+    assert core.on_status(status(sequence=2), 1.01)
+    assert core.snapshot.state is BridgeState.WIRE_SYNCHRONIZED
     return core
 
 
@@ -133,7 +127,10 @@ def test_bridge_core_sessions_order_limits_and_timeout_rearm():
 
 def test_bridge_core_disable_enable_edge_recovers_after_fault():
     core = ready_core()
-    assert core.on_status(status(sequence=2, flags=1), 1.05)
+    assert core.on_status(status(sequence=3, flags=1), 1.05)
+    core.on_disable_sent(2)
+    assert core.snapshot.state is BridgeState.WAIT_SAFE_STATUS
+    assert core.snapshot.rearm_required
     core.accept_command(
         vx=0,
         wz=0,
@@ -145,8 +142,11 @@ def test_bridge_core_disable_enable_edge_recovers_after_fault():
         now_ros_sec=2.01,
         now_monotonic=1.06,
     )
-    assert core.on_status(status(sequence=3), 1.07)
-    assert core.snapshot.state is BridgeState.READY
+    assert core.on_status(status(sequence=4), 1.07)
+    assert core.snapshot.state is BridgeState.WAIT_SAFE_STATUS
+    core.on_disable_sent(3)
+    assert core.on_status(status(sequence=5, received=3, applied=3), 1.08)
+    assert core.snapshot.state is BridgeState.WIRE_SYNCHRONIZED
 
 
 class _Serial:

@@ -4,6 +4,8 @@ import math
 from dataclasses import dataclass
 from typing import Tuple
 
+from robot_chassis_model.wheel_layout import DEFAULT_ENABLED_MASK
+
 
 def signed_int32(value: int) -> int:
     return ((int(value) + (1 << 31)) & 0xFFFFFFFF) - (1 << 31)
@@ -40,6 +42,7 @@ class FakeBaseModel:
         track_width_m: float,
         counts_per_revolution: float,
         response_tau_sec: float = 0.10,
+        enabled_mask: int = DEFAULT_ENABLED_MASK,
     ) -> None:
         self.track_width_m = float(track_width_m)
         self.meters_per_count = 2.0 * math.pi * float(wheel_radius_m) / float(counts_per_revolution)
@@ -47,6 +50,7 @@ class FakeBaseModel:
         self.target_vx = self.target_wz = 0.0
         self.vx = self.wz = 0.0
         self._count_float = [0.0] * 4
+        self.enabled_mask = int(enabled_mask) & 0x0F
 
     def set_target(self, vx: float, wz: float) -> None:
         self.target_vx, self.target_wz = float(vx), float(wz)
@@ -63,8 +67,16 @@ class FakeBaseModel:
         target_right = self.target_vx + 0.5 * self.target_wz * self.track_width_m
         left = (self.vx - 0.5 * self.wz * self.track_width_m) * float(slip_scale)
         right = (self.vx + 0.5 * self.wz * self.track_width_m) * float(slip_scale)
-        speeds = (left, left, right, right)
-        targets = (target_left, target_left, target_right, target_right)
+        all_speeds = (left, left, right, right)
+        all_targets = (target_left, target_left, target_right, target_right)
+        speeds = tuple(
+            value if self.enabled_mask & (1 << index) else 0.0
+            for index, value in enumerate(all_speeds)
+        )
+        targets = tuple(
+            value if self.enabled_mask & (1 << index) else 0.0
+            for index, value in enumerate(all_targets)
+        )
         for index, speed in enumerate(speeds):
             self._count_float[index] += speed * dt / self.meters_per_count
         counts = tuple(signed_int32(round(value)) for value in self._count_float)

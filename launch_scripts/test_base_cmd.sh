@@ -30,7 +30,7 @@ Usage: ./test_base_cmd.sh [--base-port PORT] [--rotate-only|--with-linear|--cali
 
 Purpose:
   Isolate upper-computer base control only:
-    ROS2 /cmd_vel/test -> robot_control -> /chassis/command -> stm32_bridge -> STM32 -> /wheel/odom -> /odom
+    ROS2 /cmd_vel/test -> robot_control -> /chassis/host_motion_command -> stm32_bridge -> STM32 -> /wheel/odom -> /odom
 
 Defaults:
   /dev/serial0, rotate-only, angular=0.35rad/s, duration=1.5s, cmd_timeout=1.0s
@@ -169,29 +169,20 @@ ros2 launch robot_control control.launch.py >"$CONTROL_LOG" 2>&1 &
 CONTROL_PID="$!"
 
 ros2 launch stm32_robot_bridge stm32_bridge.launch.py \
-    port:="${BASE_PORT}" \
-    baudrate:=115200 \
-    chassis_command_topic:=/chassis/command \
-    odom_topic:=/wheel/odom \
-    publish_tf:=false \
-    cmd_timeout:="${BASE_TEST_CMD_TIMEOUT}" \
-    drive_keepalive_sec:="${BASE_TEST_KEEPALIVE}" \
-    status_log_interval_sec:=0.5 \
-    cmd_log_interval_sec:=0.2 >"$BRIDGE_LOG" 2>&1 &
+    port:="${BASE_PORT}" >"$BRIDGE_LOG" 2>&1 &
 BRIDGE_PID="$!"
 
 ros2 launch robot_state_estimation state_estimation.launch.py \
     base_fusion_mode:=none \
-    wheel_odom_topic:=/wheel/odom \
-    odom_topic:=/odom \
-    publish_tf:=true >"$STATE_LOG" 2>&1 &
+    effective_params_file:="${ROBOT_EFFECTIVE_PARAMS:-}" \
+    odom_topic:=/odom >"$STATE_LOG" 2>&1 &
 STATE_PID="$!"
 
 log_info "Waiting for robot_control, stm32_bridge and state estimation..."
 for _ in $(seq 1 20); do
     if ros2 node list 2>/dev/null | grep -qx "/cmd_vel_mux" \
         && ros2 node list 2>/dev/null | grep -qx "/stm32_bridge" \
-        && ros2 node list 2>/dev/null | grep -qx "/wheel_odom_republisher"; then
+        && ros2 node list 2>/dev/null | grep -qx "/wheel_odometry"; then
         break
     fi
     sleep 0.3
@@ -205,8 +196,8 @@ if ! ros2 node list 2>/dev/null | grep -qx "/cmd_vel_mux"; then
     log_error "cmd_vel_mux did not start. See: $CONTROL_LOG"
     exit 1
 fi
-if ! ros2 node list 2>/dev/null | grep -qx "/wheel_odom_republisher"; then
-    log_error "wheel_odom_republisher did not start. See: $STATE_LOG"
+if ! ros2 node list 2>/dev/null | grep -qx "/wheel_odometry"; then
+    log_error "wheel_odometry did not start. See: $STATE_LOG"
     exit 1
 fi
 

@@ -17,9 +17,9 @@ python3 - <<'PY'
 from pathlib import Path
 import yaml
 
-report = yaml.safe_load(Path('verification/reports/hil/v0.4.0.yaml').read_text(encoding='utf-8'))
+report = yaml.safe_load(Path('verification/reports/hil/v0.5.0-rc1.yaml').read_text(encoding='utf-8'))
 if report.get('result') != 'PASS':
-    raise SystemExit('Physical HIL report is not PASS: verification/reports/hil/v0.4.0.yaml')
+    raise SystemExit('Physical HIL report is not PASS: verification/reports/hil/v0.5.0-rc1.yaml')
 for key in ('upper_commit', 'firmware_commit', 'hardware_revision', 'config_sha256'):
     if report.get(key) in (None, ''):
         raise SystemExit(f'HIL report is missing {key}')

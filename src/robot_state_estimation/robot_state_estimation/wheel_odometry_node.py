@@ -8,7 +8,7 @@ from builtin_interfaces.msg import Time as TimeMessage
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy
-from robot_interfaces.msg import WheelObservation
+from robot_interfaces.msg import PlatformCompatibilityState, WheelObservation
 
 from robot_state_estimation.time_mapper import (
     McuClockMapper,
@@ -16,6 +16,7 @@ from robot_state_estimation.time_mapper import (
     SampleOrderTracker,
 )
 from robot_state_estimation.wheel_odometry import EncoderOdometry, covariance_multiplier
+from robot_chassis_model.wheel_layout import WheelLayout, WheelLayoutError
 
 
 class WheelOdometryNode(Node):
@@ -35,6 +36,7 @@ class WheelOdometryNode(Node):
             "odom_angular_sign": 1.0,
             "max_dt_sec": 0.25,
             "hard_max_speed_mps": 0.45,
+            "compatibility_state_topic": "platform/compatibility_state",
             "wheel_variance_floor_m2": 0.000025,
             "wheel_variance_per_meter": 0.0025,
         }
@@ -69,8 +71,25 @@ class WheelOdometryNode(Node):
         self.duplicate_count = 0
         self.out_of_order_count = 0
         self.rejected_count = 0
+        self.compatibility_permits_odometry = False
+        self.create_subscription(
+            PlatformCompatibilityState,
+            str(self.get_parameter("compatibility_state_topic").value),
+            self._on_compatibility,
+            10,
+        )
+
+    def _on_compatibility(self, msg: PlatformCompatibilityState) -> None:
+        permitted = bool(msg.permit_formal_odometry)
+        if permitted != self.compatibility_permits_odometry:
+            self.odometry.reset_sample_baseline()
+        self.compatibility_permits_odometry = permitted
 
     def _on_observation(self, msg: WheelObservation) -> None:
+        if not self.compatibility_permits_odometry:
+            self.odometry.reset_sample_baseline()
+            self.rejected_count += 1
+            return
         if int(msg.schema_version) != WheelObservation.SCHEMA_VERSION:
             self.rejected_count += 1
             return
@@ -88,14 +107,21 @@ class WheelOdometryNode(Node):
         timing = self.clock_mapper.update(msg.mcu_sample_time_ms, receive_sec)
         if timing.reset:
             self.odometry.reset_sample_baseline()
-        left_speed = 0.5 * (float(msg.wheel_speed_mps[0]) + float(msg.wheel_speed_mps[1]))
-        right_speed = 0.5 * (float(msg.wheel_speed_mps[2]) + float(msg.wheel_speed_mps[3]))
+        layout = WheelLayout(msg.motor_enabled_mask, msg.speed_valid_mask, msg.encoder_anomaly_mask)
+        try:
+            left_speed, right_speed = layout.aggregate(msg.wheel_speed_mps)
+        except WheelLayoutError:
+            self.rejected_count += 1
+            self.odometry.reset_sample_baseline()
+            return
         wheel_wz = (right_speed - left_speed) / max(
             float(self.get_parameter("wheel_track_width").value), 1e-6
         )
         multiplier = covariance_multiplier(
             wheel_speeds=msg.wheel_speed_mps,
+            enabled_mask=msg.motor_enabled_mask,
             speed_valid_mask=msg.speed_valid_mask,
+            anomaly_mask=msg.encoder_anomaly_mask,
             sample_age_sec=max(receive_sec - timing.sample_ros_sec, 0.0),
             turn_rate=wheel_wz,
             quality_flags=(
@@ -105,7 +131,10 @@ class WheelOdometryNode(Node):
         update = self.odometry.update(
             tuple(msg.encoder_count),
             sample_time_sec=timing.sensor_time_sec,
+            enabled_mask=msg.motor_enabled_mask,
+            speed_valid_mask=msg.speed_valid_mask,
             anomaly_mask=msg.encoder_anomaly_mask,
+            transport_session_id=msg.transport_session_id,
             covariance_multiplier=multiplier,
             hard_max_speed_mps=self.hard_max_speed,
         )

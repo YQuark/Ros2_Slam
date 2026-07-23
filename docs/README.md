@@ -6,7 +6,7 @@
 - [配置单一事实源](./architecture/configuration.md)
 - [TF 所有权](./architecture/tf_ownership.md)
 - [Upper protocol v3](./interfaces/upper-protocol-v3.md)
-- [v0.4.0 发布与回滚](./releases/v0.4.0.md)
+- [v0.5.0-rc1 发布与回滚](./releases/v0.5.0-rc1.md)
 - [架构决策记录](./adr/)
 - [Verification 结构](../verification/README.md)
 

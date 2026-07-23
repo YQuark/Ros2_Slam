@@ -20,9 +20,10 @@ from rclpy.qos import (
     qos_profile_sensor_data,
 )
 from robot_interfaces.msg import (
-    ChassisCommand,
-    ChassisState,
+    ChassisLinkState,
     FirmwareInfo,
+    FirmwareControlState,
+    HostMotionCommand,
     ImuObservation,
     WheelObservation,
 )
@@ -46,6 +47,7 @@ from stm32_robot_bridge.protocol_v3 import (
     ACK_APPLIED,
     ACK_RECEIVED,
     ACK_REJECTED,
+    ACK_SESSION_VALID,
     CMD_CLEAR_FAULT,
     CMD_DIAGNOSTIC,
     CMD_ESTOP,
@@ -65,6 +67,7 @@ from stm32_robot_bridge.protocol_v3 import (
     encode_estop_payload,
     encode_get_info_payload,
     encode_line_ctrl_payload,
+    imu_identity_is_new,
 )
 from stm32_robot_bridge.transport_supervisor import SerialTransportSupervisor
 
@@ -99,8 +102,9 @@ class STM32BridgeV3(Node):
             "port": "/dev/serial0",
             "baudrate": 115200,
             "protocol_version": 3,
-            "chassis_command_topic": "chassis/command",
-            "chassis_state_topic": "chassis/state",
+            "host_motion_command_topic": "chassis/host_motion_command",
+            "chassis_link_state_topic": "chassis/link_state",
+            "firmware_control_state_topic": "chassis/firmware_control_state",
             "firmware_info_topic": "chassis/firmware_info",
             "wheel_observation_topic": "wheel/observation",
             "imu_observation_topic": "imu/observation",
@@ -119,7 +123,7 @@ class STM32BridgeV3(Node):
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         if int(self.get_parameter("protocol_version").value) != 3:
-            raise RuntimeError("STM32 bridge v0.4.0 only supports upper protocol v3")
+            raise RuntimeError("STM32 bridge Platform API 4 only supports upper protocol v3")
         self.config_sha256 = str(self.get_parameter("config_sha256").value)
         self.status_timeout = float(self.get_parameter("status_timeout").value)
         self.ack_timeout = float(self.get_parameter("command_ack_timeout_sec").value)
@@ -161,8 +165,15 @@ class STM32BridgeV3(Node):
             str(self.get_parameter("imu_observation_topic").value),
             qos_profile_sensor_data,
         )
-        self.state_pub = self.create_publisher(
-            ChassisState, str(self.get_parameter("chassis_state_topic").value), STATE_QOS
+        self.link_state_pub = self.create_publisher(
+            ChassisLinkState,
+            str(self.get_parameter("chassis_link_state_topic").value),
+            STATE_QOS,
+        )
+        self.firmware_control_pub = self.create_publisher(
+            FirmwareControlState,
+            str(self.get_parameter("firmware_control_state_topic").value),
+            STATE_QOS,
         )
         self.firmware_pub = self.create_publisher(
             FirmwareInfo, str(self.get_parameter("firmware_info_topic").value), STATIC_QOS
@@ -175,14 +186,15 @@ class STM32BridgeV3(Node):
         self.left_current_pub = self.create_publisher(Float32, "motor/left_current", STATE_QOS)
         self.right_current_pub = self.create_publisher(Float32, "motor/right_current", STATE_QOS)
         self.create_subscription(
-            ChassisCommand,
-            str(self.get_parameter("chassis_command_topic").value),
+            HostMotionCommand,
+            str(self.get_parameter("host_motion_command_topic").value),
             self.on_chassis_command,
             _qos_command(float(self.get_parameter("cmd_timeout").value)),
         )
         self.create_service(SetBool, "chassis/estop", self.on_estop)
         self.create_service(Trigger, "chassis/clear_fault", self.on_clear_fault)
         self.create_service(SetBool, "chassis/line_ctrl", self.on_line_ctrl)
+        self.create_service(Trigger, "chassis/get_info", self.on_get_info)
         self.create_timer(0.01, self.control_tick)
         self.create_timer(1.0, self.publish_diagnostics)
         self.transport.start()
@@ -190,7 +202,9 @@ class STM32BridgeV3(Node):
             "upper protocol v3 only; beta4/v2 firmware is intentionally incompatible"
         )
 
-    def on_chassis_command(self, msg: ChassisCommand) -> None:
+        self.last_imu_identity = None
+
+    def on_chassis_command(self, msg: HostMotionCommand) -> None:
         now_ros = self.get_clock().now().nanoseconds * 1e-9
         now_mono = time.monotonic()
         stamp = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
@@ -199,8 +213,8 @@ class STM32BridgeV3(Node):
                 vx=msg.twist.linear.x,
                 wz=msg.twist.angular.z,
                 enable=bool(msg.enable),
-                source=int(msg.source),
-                session_id=int(msg.session_id),
+                source=int(msg.host_subsource),
+                session_id=int(msg.command_epoch),
                 sequence=int(msg.sequence),
                 command_stamp_sec=stamp,
                 now_ros_sec=now_ros,
@@ -241,8 +255,11 @@ class STM32BridgeV3(Node):
             status
             and status.last_received_session_id == self.command_stream.session_id
             and status.last_received_sequence == self.command_stream.sequence
-            and status.command_ack_flags & (ACK_RECEIVED | ACK_APPLIED)
+            and status.last_applied_sequence == self.command_stream.sequence
+            and status.command_ack_flags & (ACK_SESSION_VALID | ACK_RECEIVED | ACK_APPLIED)
+            == (ACK_SESSION_VALID | ACK_RECEIVED | ACK_APPLIED)
             and not status.command_ack_flags & ACK_REJECTED
+            and status.last_reject_reason == 0
         )
         if self.command_stream.enabled and ack_current:
             self.last_applied_sequence = status.last_applied_sequence
@@ -277,8 +294,6 @@ class STM32BridgeV3(Node):
     def _handle_frame(self, cmd: int, payload: bytes, received_at: float) -> None:
         if cmd == CMD_HELLO:
             hello = decode_hello_payload(payload)
-            if hello and self.core.snapshot.hello is not None:
-                self._begin_wire_session(request_info=False)
             if hello and self.core.on_hello(hello):
                 msg = FirmwareInfo()
                 msg.header.stamp = self.get_clock().now().to_msg()
@@ -295,13 +310,23 @@ class STM32BridgeV3(Node):
             status = decode_status_payload(payload)
             if status is not None:
                 disposition = self.core.on_status(status, received_at)
-                if disposition is not StatusDisposition.INVALID:
+                if disposition is StatusDisposition.NEW:
                     self._publish_status(status, disposition)
+                elif disposition is StatusDisposition.OUT_OF_ORDER:
+                    self.core.require_rearm(REARM_ACK_TIMEOUT)
+                    self._begin_wire_session(request_info=True)
             return
         if cmd == CMD_IMU_STATUS:
             imu = decode_imu_status_payload(payload)
             if imu is not None:
-                self._publish_imu(imu)
+                identity = (
+                    self.core.snapshot.wire_session_id,
+                    int(imu.sample_count),
+                    int(imu.sensor_time),
+                )
+                if imu_identity_is_new(identity, self.last_imu_identity):
+                    self.last_imu_identity = identity
+                    self._publish_imu(imu)
             return
         if cmd == CMD_DIAGNOSTIC:
             decode_diagnostic_payload(payload)
@@ -329,8 +354,14 @@ class STM32BridgeV3(Node):
         observation.error_flags = status.error_flags
         observation.latched_error_flags = status.latched_error_flags
         self.wheel_observation_pub.publish(observation)
-        if disposition is not StatusDisposition.NEW:
-            return
+        if status.status_flags & 0x03:
+            self._release("firmware ESTOP/fault-stop", force_fresh=True)
+        if (
+            self.core.snapshot.rearm_required
+            and not status.status_flags & 0x03
+            and self.core.machine.state.name == "WAIT_SAFE_STATUS"
+        ):
+            self._release("post-clear wire disable", force_fresh=True)
         if self.command_stream.enabled and (
             status.last_reject_reason != 0 or status.command_ack_flags & ACK_REJECTED
         ):
@@ -343,7 +374,7 @@ class STM32BridgeV3(Node):
         self.battery_pub.publish(battery)
         self.left_current_pub.publish(Float32(data=sum(status.motor_current_a[:2])))
         self.right_current_pub.publish(Float32(data=sum(status.motor_current_a[2:])))
-        self._publish_chassis_state(status)
+        self._publish_chassis_states(status)
 
     def _publish_imu(self, imu) -> None:
         msg = ImuObservation()
@@ -364,12 +395,14 @@ class STM32BridgeV3(Node):
         msg.temperature_c = imu.temperature_c
         self.imu_observation_pub.publish(msg)
 
-    def _release(self, reason: str) -> None:
+    def _release(self, reason: str, *, force_fresh: bool = False) -> None:
         if self.command_stream.release(
             lambda payload: self.transport.submit(CMD_SET_VELOCITY, payload, critical=True),
             time.monotonic(),
+            force_new_sequence=force_fresh,
         ):
             self.release_count += 1
+            self.core.on_disable_sent(self.command_stream.sequence)
             self.core.snapshot = replace(
                 self.core.snapshot,
                 wire_sent_sequence=self.command_stream.sequence,
@@ -406,19 +439,19 @@ class STM32BridgeV3(Node):
         response.message = "line control queued" if response.success else "queue full"
         return response
 
-    def _publish_chassis_state(self, status) -> None:
-        s = self.core.snapshot
-        msg = ChassisState()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.bridge_state, msg.selected_source = int(s.state), s.selected_source
-        msg.command_session_id, msg.command_sequence = s.command_session_id, s.command_sequence
-        msg.upper_enabled = bool(self.command_stream.enabled)
-        msg.firmware_control_source, msg.status_flags = status.control_source, status.status_flags
-        msg.error_flags, msg.latched_error_flags, msg.protocol_version = (
-            status.error_flags,
-            status.latched_error_flags,
-            3,
+    def on_get_info(self, _request, response):
+        response.success = self.transport.submit(
+            CMD_GET_INFO, encode_get_info_payload(), critical=True
         )
+        response.message = "get info queued" if response.success else "queue full"
+        return response
+
+    def _publish_chassis_states(self, status) -> None:
+        s = self.core.snapshot
+        msg = ChassisLinkState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.link_state = int(s.state)
+        msg.protocol_version = 3
         msg.wire_session_id, msg.wire_sent_sequence = (
             s.wire_session_id,
             self.command_stream.sequence,
@@ -432,8 +465,8 @@ class STM32BridgeV3(Node):
             status.last_applied_sequence,
             status.last_reject_reason,
         )
-        msg.rearm_required = s.rearm_required
-        msg.rearm_reason_flags = s.rearm_reason_flags
+        msg.wire_rearm_required = s.rearm_required
+        msg.wire_rearm_reason_flags = s.rearm_reason_flags
         now = time.monotonic()
         msg.status_age_ms = (
             0
@@ -443,9 +476,20 @@ class STM32BridgeV3(Node):
         msg.command_ack_age_ms = min(
             int(max(now - self.last_ack_progress, 0.0) * 1000.0), 0xFFFFFFFF
         )
-        msg.slip_score, msg.supervisor_level = -1.0, 0
         msg.config_sha256 = self.config_sha256
-        self.state_pub.publish(msg)
+        self.link_state_pub.publish(msg)
+
+        control = FirmwareControlState()
+        control.header.stamp = msg.header.stamp
+        control.firmware_control_source = status.control_source
+        control.status_flags = status.status_flags
+        control.error_flags = status.error_flags
+        control.latched_error_flags = status.latched_error_flags
+        control.estop_active = bool(status.status_flags & 0x01)
+        control.fault_stop_active = bool(status.status_flags & 0x02)
+        control.status_sequence = status.status_sequence
+        control.wire_session_id = s.wire_session_id
+        self.firmware_control_pub.publish(control)
 
     def publish_diagnostics(self) -> None:
         snapshot = self.core.snapshot

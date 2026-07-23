@@ -1,6 +1,6 @@
 schema_version: 1
-platform_api_version: 3
-release: v0.4.0
+platform_api_version: 4
+release: v0.5.0-rc1
 release_mode: false
 unsafe_development_mode: true
 protocol:
@@ -10,13 +10,16 @@ protocol:
 platform:
   frames: {map: map, odom: odom, base: base_link, imu: imu_link, laser: laser_frame}
   topics:
-    chassis_command: chassis/command
-    chassis_state: chassis/state
-    control_state: chassis/control_state
+    host_motion_command: chassis/host_motion_command
+    chassis_link_state: chassis/link_state
+    firmware_control_state: chassis/firmware_control_state
+    host_control_state: chassis/host_control_state
     firmware_info: chassis/firmware_info
     wheel_observation: wheel/observation
     imu_observation: imu/observation
-    motion_safety_state: motion/safety_state
+    motion_supervision_state: motion/supervision_state
+    platform_compatibility_state: platform/compatibility_state
+    navigation_guard_state: navigation/guard_state
     wheel_odom: wheel/odom
     odom: odom
     imu: imu/data

@@ -1,6 +1,6 @@
 # Upper protocol v3
 
-本文档是上位机 v0.4.0 与 STM32 下位机之间的规范性线协议。v0.4.0 运行时只接受 v3；`v1.0.0-beta4` 的 upper v2 固件不兼容。
+本文档是上位机与 STM32 下位机之间的规范性线协议。v0.5.0-rc1 运行时只接受 v3；ROS Platform API 4 的语义升级不改变本线协议字节。`v1.0.0-beta4` 的 upper v2 固件不兼容。
 
 ## 帧格式
 
@@ -74,7 +74,7 @@ GET_INFO payload 仅为版本字节。固件响应 HELLO：
 | 26 | u32 | hardware_revision |
 | 30 | u32 | parameter_crc32 |
 
-v0.4.0 要求 capabilities `0x1f`：session ACK、STATUS 采样时间、IMU 字段质量、左右侧一致性、构建身份。任一缺失时 bridge 保持 fail-closed。
+v0.5.0-rc1 要求 capabilities `0x1f`：session ACK、STATUS 采样时间、IMU 字段质量、左右侧一致性、构建身份。任一缺失时 bridge 保持 fail-closed。
 
 ## STATUS 主体
 

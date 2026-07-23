@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### v0.5.0-rc1 implementation
+
+- ROS Platform API 升级为 v4：`HostMotionCommand` 只表示 Host 候选，并拆分 wire link、firmware control、Host control 和 motion supervision 状态。Upper Protocol v3 字节契约保持不变。
+- 新增统一轮布局模型，里程计、协方差和运动监督按 `motor_enabled_mask & speed_valid_mask & ~anomaly_mask` 消费默认 M2+M3 两驱观测。
+- Bridge 只发布新 STATUS/IMU 样本，实现健康 STATUS 后 fresh disable + 精确 `ACK_APPLIED` 的 wire rearm，并将本地 lease/watchdog/limiter 计时改为单调时钟。
+- 新增 `robot_navigation_guard`、`robot_chassis_ops` 和参数 CRC/硬件身份兼容门；旧 Nav2 Goal 在故障恢复后不会自动复用。
+- Semantic Fake Base 默认模拟 M2+M3，PTY 测试覆盖 v3 session/ACK/watchdog，CI 与下位机 `366a038` 黄金向量交叉校验。
+- 发布门已迁移到 v0.5.0-rc1；真实 UART HIL、参数 CRC、实车与最终标定仍为 `NOT_RUN`，因此保持 fail-closed。
+
 ### v0.4.0 implementation
 
 - Platform API 与 upper wire protocol 升级为 v3；运行时移除 v2 fallback，引入 session、sequence、ACK、HELLO 身份与能力门。

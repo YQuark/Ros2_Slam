@@ -1,0 +1,1 @@
+"""Navigation revocation guard."""

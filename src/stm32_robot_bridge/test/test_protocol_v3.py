@@ -21,6 +21,7 @@ from stm32_robot_bridge.protocol_v3 import (
     encode_get_info_payload,
     encode_line_ctrl_payload,
     encode_velocity_payload,
+    imu_identity_is_new,
     sequence_is_forward,
 )
 
@@ -56,6 +57,15 @@ def test_v3_velocity_layout_and_sequence_order():
     assert struct.unpack_from("<Q", payload, 11)[0] == 0x1122334455667788
     assert sequence_is_forward(0, 0xFFFFFFFF)
     assert not sequence_is_forward(4, 5)
+
+
+def test_imu_identity_requires_both_counters_to_advance_within_session():
+    previous = (7, 10, 100)
+    assert not imu_identity_is_new(previous, previous)
+    assert not imu_identity_is_new((7, 11, 99), previous)
+    assert not imu_identity_is_new((7, 9, 101), previous)
+    assert imu_identity_is_new((7, 11, 101), previous)
+    assert imu_identity_is_new((8, 0, 0), previous)
 
 
 def test_v3_status_and_framing_fragmentation():

@@ -1,13 +1,15 @@
 <?xml version="1.0"?>
 <package format="3">
   <name>robot_config</name>
-  <version>0.4.0</version>
+  <version>0.5.0</version>
   <description>Canonical platform configuration compiler and validation.</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>MIT</license>
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>
   <exec_depend>python3-yaml</exec_depend>
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>robot_interfaces</exec_depend>
   <test_depend>ament_cmake_pytest</test_depend>
   <export><build_type>ament_cmake</build_type></export>
 </package>

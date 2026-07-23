@@ -1,11 +1,17 @@
 #!/usr/bin/env python3
 import secrets
+import time
 from typing import Dict
 
 import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.node import Node
-from robot_interfaces.msg import ChassisCommand, ChassisState, ControlState, MotionSafetyState
+from robot_interfaces.msg import (
+    ChassisLinkState,
+    HostControlState,
+    HostMotionCommand,
+    MotionSupervisionState,
+)
 
 from robot_control.control_policy import (
     Command,
@@ -20,6 +26,7 @@ from robot_control.control_policy import (
 class CmdVelMuxNode(Node):
     def __init__(self) -> None:
         super().__init__("cmd_vel_mux")
+        self.monotonic_clock = time.monotonic
 
         self.declare_parameter("config_sha256", "development-uncompiled")
         self.declare_parameter("unsafe_development_mode", True)
@@ -35,12 +42,10 @@ class CmdVelMuxNode(Node):
         self.declare_parameter("motion_limiter_max_dt", 0.1)
         self.declare_parameter("timeout_sec", 0.25)
         self.declare_parameter("publish_hz", 20.0)
-        self.declare_parameter("chassis_command_topic", "chassis/command")
-        self.declare_parameter("publish_legacy_twist", False)
-        self.declare_parameter("legacy_driver_topic", "cmd_vel/driver")
-        self.declare_parameter("motion_safety_topic", "motion/safety_state")
-        self.declare_parameter("chassis_state_topic", "chassis/state")
-        self.declare_parameter("control_state_topic", "chassis/control_state")
+        self.declare_parameter("host_motion_command_topic", "chassis/host_motion_command")
+        self.declare_parameter("motion_supervision_topic", "motion/supervision_state")
+        self.declare_parameter("chassis_link_state_topic", "chassis/link_state")
+        self.declare_parameter("host_control_state_topic", "chassis/host_control_state")
         self.declare_parameter("require_motion_supervision", True)
         self.declare_parameter("supervision_timeout_sec", 0.25)
         self.declare_parameter("rearm_quiet_sec", 0.25)
@@ -56,20 +61,13 @@ class CmdVelMuxNode(Node):
             input_angular_abs_max=float(self.get_parameter("input_angular_abs_max").value),
         )
 
-        self.chassis_command_topic = str(self.get_parameter("chassis_command_topic").value)
-        self.publisher = self.create_publisher(ChassisCommand, self.chassis_command_topic, 10)
+        self.chassis_command_topic = str(self.get_parameter("host_motion_command_topic").value)
+        self.publisher = self.create_publisher(HostMotionCommand, self.chassis_command_topic, 10)
         self.state_publisher = self.create_publisher(
-            ControlState, str(self.get_parameter("control_state_topic").value), 10
-        )
-        self.publish_legacy_twist = bool(self.get_parameter("publish_legacy_twist").value)
-        self.legacy_driver_topic = str(self.get_parameter("legacy_driver_topic").value)
-        self.legacy_publisher = (
-            self.create_publisher(Twist, self.legacy_driver_topic, 10)
-            if self.publish_legacy_twist
-            else None
+            HostControlState, str(self.get_parameter("host_control_state_topic").value), 10
         )
         self.sequence = 0
-        self.session_id = 0
+        self.command_epoch = 0
         self.motion_limiter = MotionLimiter(
             max_linear_accel=float(self.get_parameter("max_linear_accel").value),
             max_angular_accel=float(self.get_parameter("max_angular_accel").value),
@@ -92,8 +90,8 @@ class CmdVelMuxNode(Node):
         self.supervision_seen = False
         self.rearm_required = False
         self.rearm_reason_flags = 0
-        self.gate_state = ControlState.STATE_WAIT_SUPERVISION
-        self.last_reject_reason = ControlState.REJECT_NONE
+        self.gate_state = HostControlState.STATE_WAIT_SUPERVISION
+        self.last_reject_reason = HostControlState.REJECT_NONE
         self.last_wire_session_id = 0
         self.release_sent_wire_session = None
         self.subscriptions_by_source: Dict[str, object] = {}
@@ -105,14 +103,14 @@ class CmdVelMuxNode(Node):
                 10,
             )
         self.create_subscription(
-            MotionSafetyState,
-            str(self.get_parameter("motion_safety_topic").value),
+            MotionSupervisionState,
+            str(self.get_parameter("motion_supervision_topic").value),
             self._on_motion_state,
             10,
         )
         self.create_subscription(
-            ChassisState,
-            str(self.get_parameter("chassis_state_topic").value),
+            ChassisLinkState,
+            str(self.get_parameter("chassis_link_state_topic").value),
             self._on_chassis_state,
             10,
         )
@@ -123,7 +121,7 @@ class CmdVelMuxNode(Node):
             "cmd_vel_mux active: "
             f"sources={','.join(self.source_config.topic_map().keys())} "
             f"chassis_command_topic={self.chassis_command_topic} "
-            f"legacy_twist={1 if self.publish_legacy_twist else 0}"
+            "platform_api=4"
         )
 
     def _make_callback(self, source: str):
@@ -132,34 +130,34 @@ class CmdVelMuxNode(Node):
                 self.mux.update(
                     source,
                     Command(linear_x=msg.linear.x, angular_z=msg.angular.z),
-                    self.get_clock().now().nanoseconds * 1e-9,
+                    self.monotonic_clock(),
                 )
             except (InvalidCommandError, TypeError, ValueError) as exc:
                 self.invalid_command_count += 1
-                self.last_reject_reason = ControlState.REJECT_INVALID
+                self.last_reject_reason = HostControlState.REJECT_INVALID
                 self.get_logger().error(f"Rejected {source} command: {exc}")
                 self._publish_release()
                 return
 
             if self.rearm_required:
-                if self.gate_state == ControlState.STATE_WAIT_FRESH_SOURCE:
+                if self.gate_state == HostControlState.STATE_WAIT_FRESH_SOURCE:
                     self.rearm_required = False
                     self.rearm_reason_flags = 0
-                    self.gate_state = ControlState.STATE_READY
+                    self.gate_state = HostControlState.STATE_READY
                     self.last_active = False
-                    self.session_id = 0
+                    self.command_epoch = 0
                     self.sequence = 0
                     self.motion_limiter.reset()
                 else:
                     return
-            self.last_reject_reason = ControlState.REJECT_NONE
+            self.last_reject_reason = HostControlState.REJECT_NONE
             if not self.last_active:
                 self._publish_selected()
 
         return _callback
 
     def _publish_selected(self) -> None:
-        now_sec = self.get_clock().now().nanoseconds * 1e-9
+        now_sec = self.monotonic_clock()
         if self.require_supervision:
             supervision_fresh = (
                 self.motion_state_at is not None
@@ -168,32 +166,32 @@ class CmdVelMuxNode(Node):
             if not supervision_fresh:
                 if self.supervision_seen:
                     self._latch_rearm(
-                        ControlState.REARM_SUPERVISION_STALE,
-                        ControlState.REJECT_SUPERVISION_STALE,
+                        HostControlState.REARM_SUPERVISION_STALE,
+                        HostControlState.REJECT_SUPERVISION_STALE,
                     )
                 elif not self.rearm_required:
-                    self.gate_state = ControlState.STATE_WAIT_SUPERVISION
+                    self.gate_state = HostControlState.STATE_WAIT_SUPERVISION
                 self._publish_control_state(now_sec)
                 return
         if self.rearm_required:
             if (
-                self.gate_state == ControlState.STATE_WAIT_SOURCE_QUIET
+                self.gate_state == HostControlState.STATE_WAIT_SOURCE_QUIET
                 and not self.mux.has_recent_input(now_sec, self.rearm_quiet_sec)
             ):
                 self.mux.clear()
-                self.gate_state = ControlState.STATE_WAIT_FRESH_SOURCE
+                self.gate_state = HostControlState.STATE_WAIT_FRESH_SOURCE
             self._publish_control_state(now_sec)
             return
         selected = self.mux.select(now_sec)
         if not selected.active:
             if self.last_active:
                 self._publish_release()
-            self.gate_state = ControlState.STATE_READY
+            self.gate_state = HostControlState.STATE_READY
             self._publish_control_state(now_sec)
             return
 
         if not self.last_active:
-            self.session_id = secrets.randbits(64) or 1
+            self.command_epoch = secrets.randbits(64) or 1
             self.sequence = 0
 
         scaled = Command(
@@ -204,40 +202,40 @@ class CmdVelMuxNode(Node):
         self._publish_command(SelectedCommand(source=selected.source, command=limited, active=True))
         self.last_active = True
         self.last_source = selected.source
-        self.gate_state = ControlState.STATE_ACTIVE
+        self.gate_state = HostControlState.STATE_ACTIVE
         self._publish_control_state(now_sec)
 
     def _publish_release(self) -> None:
-        if self.session_id == 0:
-            self.session_id = secrets.randbits(64) or 1
+        if self.command_epoch == 0:
+            self.command_epoch = secrets.randbits(64) or 1
         self.motion_limiter.reset()
         selected = SelectedCommand(source="idle", command=Command(0.0, 0.0), active=False)
         self._publish_command(selected)
         self.last_active = False
         self.last_source = "idle"
 
-    def _on_motion_state(self, msg: MotionSafetyState) -> None:
-        now_sec = self.get_clock().now().nanoseconds * 1e-9
+    def _on_motion_state(self, msg: MotionSupervisionState) -> None:
+        now_sec = self.monotonic_clock()
         self.motion_state = msg
         self.motion_state_at = now_sec
         self.supervision_seen = True
         self.motion_scale = max(0.0, min(float(msg.command_scale), 1.0))
-        if msg.release_required or msg.level == MotionSafetyState.LEVEL_CRITICAL:
+        if msg.release_host_candidate or msg.level == MotionSupervisionState.LEVEL_CRITICAL:
             self._latch_rearm(
-                ControlState.REARM_MOTION_CRITICAL,
-                ControlState.REJECT_MOTION_CRITICAL,
+                HostControlState.REARM_MOTION_CRITICAL,
+                HostControlState.REJECT_MOTION_CRITICAL,
             )
         elif not self.rearm_required:
-            self.gate_state = ControlState.STATE_READY
+            self.gate_state = HostControlState.STATE_READY
 
-    def _on_chassis_state(self, msg: ChassisState) -> None:
+    def _on_chassis_state(self, msg: ChassisLinkState) -> None:
         wire_session = int(msg.wire_session_id)
         session_changed = wire_session != 0 and wire_session != self.last_wire_session_id
         self.last_wire_session_id = wire_session
-        if msg.rearm_required:
+        if msg.wire_rearm_required:
             self._latch_rearm(
-                int(msg.rearm_reason_flags) or ControlState.REARM_TRANSPORT,
-                ControlState.REJECT_REARM_REQUIRED,
+                int(msg.wire_rearm_reason_flags) or HostControlState.REARM_TRANSPORT,
+                HostControlState.REJECT_REARM_REQUIRED,
                 force_release=session_changed,
             )
 
@@ -249,56 +247,50 @@ class CmdVelMuxNode(Node):
         if first:
             self.mux.clear()
             self.motion_limiter.reset()
-            self.gate_state = ControlState.STATE_WAIT_SOURCE_QUIET
+            self.gate_state = HostControlState.STATE_WAIT_SOURCE_QUIET
         if first or force_release:
             self._publish_release()
             self.release_sent_wire_session = self.last_wire_session_id
 
     def _publish_control_state(self, now_sec: float) -> None:
-        msg = ControlState()
+        msg = HostControlState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.control_state = self.gate_state
-        msg.selected_source = self._source_id(self.last_source)
+        msg.selected_host_subsource = self._source_id(self.last_source)
         age = self.mux.newest_age(now_sec)
         msg.command_age_ms = 0xFFFFFFFF if age is None else min(int(age * 1000.0), 0xFFFFFFFF)
         msg.command_reject_reason = self.last_reject_reason
         msg.enable_intent = self.last_active and not self.rearm_required
         msg.rearm_required = self.rearm_required
         msg.rearm_reason_flags = self.rearm_reason_flags
-        msg.command_session_id = self.session_id
+        msg.command_epoch = self.command_epoch
         msg.command_sequence = self.sequence
         msg.config_sha256 = self.config_sha256
         self.state_publisher.publish(msg)
 
     def _publish_command(self, selected) -> None:
         self.sequence = (self.sequence + 1) & 0xFFFFFFFF
-        msg = ChassisCommand()
+        msg = HostMotionCommand()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.twist.linear.x = selected.command.linear_x
         msg.twist.angular.z = selected.command.angular_z
         msg.enable = selected.active
-        msg.source = self._source_id(selected.source)
-        msg.session_id = self.session_id
+        msg.host_subsource = self._source_id(selected.source)
+        msg.command_epoch = self.command_epoch
         msg.sequence = self.sequence
         self.publisher.publish(msg)
-
-        if self.legacy_publisher is not None:
-            legacy = Twist()
-            legacy.linear.x = selected.command.linear_x
-            legacy.angular.z = selected.command.angular_z
-            self.legacy_publisher.publish(legacy)
 
     @staticmethod
     def _source_id(source: str) -> int:
         if source == "teleop":
-            return ChassisCommand.SOURCE_TELEOP
+            return HostMotionCommand.HOST_SUBSOURCE_TELEOP
         if source == "test":
-            return ChassisCommand.SOURCE_TEST
+            return HostMotionCommand.HOST_SUBSOURCE_TEST
         if source == "nav":
-            return ChassisCommand.SOURCE_NAV
+            return HostMotionCommand.HOST_SUBSOURCE_NAV
         if source.startswith("research/"):
-            return ChassisCommand.SOURCE_RESEARCH
-        return ChassisCommand.SOURCE_NONE
+            return HostMotionCommand.HOST_SUBSOURCE_RESEARCH
+        return HostMotionCommand.HOST_SUBSOURCE_NONE
 
 
 def main() -> None:

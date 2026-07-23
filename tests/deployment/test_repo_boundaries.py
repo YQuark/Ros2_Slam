@@ -62,7 +62,7 @@ def test_stm32_bridge_uses_explicit_command_and_raw_observation_defaults() -> No
         ROOT / "src" / "stm32_robot_bridge" / "launch" / "stm32_bridge.launch.py"
     ).read_text(encoding="utf-8")
 
-    assert '"chassis_command_topic": "chassis/command"' in bridge_node
+    assert '"host_motion_command_topic": "chassis/host_motion_command"' in bridge_node
     assert '"wheel_observation_topic": "wheel/observation"' in bridge_node
     assert '"imu_observation_topic": "imu/observation"' in bridge_node
     assert "EncoderOdometry" not in bridge_node

@@ -16,7 +16,7 @@ arbitration internals.
 
 - Lidar driver and `/scan_raw -> /scan`: `robot_sensing`.
 - Static platform frames: `robot_description`.
-- `/cmd_vel/* -> /chassis/command`: `robot_control`.
+- `/cmd_vel/* -> /chassis/host_motion_command`: `robot_control`（仅 Host 候选）。
 - `/wheel/odom -> /odom` and optional EKF: `robot_state_estimation`.
 - STM32 serial protocol and raw base status: `stm32_robot_bridge`.
 
@@ -41,6 +41,6 @@ machine or when the Raspberry Pi has a display session.
 - `/odom`: public odometry from `robot_state_estimation`.
 - `/cmd_vel/teleop`, `/cmd_vel/nav`, `/cmd_vel/test`: command candidates.
 - `/cmd_vel/research/<name>`: optional whitelisted research command candidates.
-- `/chassis/command`: only `robot_control` should publish this.
-- `/chassis/control_state`: command selection, age, rejection and rearm state.
-- `/motion/safety_state`: motion-quality decision from `robot_supervision`.
+- `/chassis/host_motion_command`: only `robot_control` should publish this.
+- `/chassis/host_control_state`: Host selection, age, rejection and rearm state.
+- `/motion/supervision_state`: Host motion-quality advice from `robot_supervision`.

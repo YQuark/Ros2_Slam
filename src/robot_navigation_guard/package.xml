@@ -1,0 +1,10 @@
+<package format="3">
+  <name>robot_navigation_guard</name><version>0.5.0</version>
+  <description>Cancel-and-reissue guard for Nav2 goals across chassis revocation.</description>
+  <maintainer email="robot@example.com">robot</maintainer><license>Apache-2.0</license>
+  <buildtool_depend>ament_cmake</buildtool_depend><buildtool_depend>ament_cmake_python</buildtool_depend>
+  <exec_depend>rclpy</exec_depend><exec_depend>action_msgs</exec_depend>
+  <exec_depend>robot_interfaces</exec_depend>
+  <test_depend>ament_cmake_pytest</test_depend>
+  <export><build_type>ament_cmake</build_type></export>
+</package>

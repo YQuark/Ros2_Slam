@@ -6,12 +6,12 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_robot_control_is_only_chassis_command_publisher():
+def test_robot_control_is_only_host_motion_command_publisher():
     publishers = []
     for path in (ROOT / "src").glob("*/**/*.py"):
         if "/test/" in path.as_posix() or path.name.startswith("test_"):
             continue
-        if "create_publisher(ChassisCommand" in path.read_text(encoding="utf-8"):
+        if "create_publisher(HostMotionCommand" in path.read_text(encoding="utf-8"):
             publishers.append(path.relative_to(ROOT).as_posix())
     assert publishers == ["src/robot_control/robot_control/cmd_vel_mux.py"]
 
@@ -47,10 +47,11 @@ def test_fake_and_real_base_share_raw_platform_contract_and_publish_no_tf():
         encoding="utf-8"
     )
     for message in (
-        "ChassisCommand",
+        "HostMotionCommand",
         "WheelObservation",
         "ImuObservation",
-        "ChassisState",
+        "ChassisLinkState",
+        "FirmwareControlState",
         "FirmwareInfo",
         "DiagnosticArray",
     ):
@@ -58,6 +59,8 @@ def test_fake_and_real_base_share_raw_platform_contract_and_publish_no_tf():
     for provider in (real, fake):
         assert "Odometry" not in provider
         assert "TransformBroadcaster" not in provider
+    assert '"chassis/get_info"' in fake
+    assert '"chassis/line_ctrl"' in fake
 
 
 def test_state_estimation_is_only_wheel_odom_owner_and_ekf_is_only_dynamic_tf_owner():

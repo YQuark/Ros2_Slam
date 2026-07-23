@@ -8,10 +8,10 @@
 | --- | --- | --- |
 | 雷达建图 | 已支持 | `YDLIDAR X2 -> /scan -> slam_toolbox` |
 | 摄像头建图 | 后续扩展 | 摄像头默认不进入当前激光 SLAM 主链路 |
-| 真实底盘导航 | 阻塞 | v0.4.0 只支持 upper v3；兼容固件、HIL 和实车验收尚未完成 |
+| 真实底盘导航 | 阻塞 | 固定固件 `366a038` 已实现 upper v3；参数 CRC、UART HIL 和实车验收尚未完成 |
 | 虚拟底盘联调 | 已支持 | `base_mode:=fake` |
 | 串口自动识别 | 已支持 | 自动区分底盘串口与雷达串口 |
-| 底盘 EKF 融合 | 显式开关 | 默认使用 bridge odom，EKF 不默认启用 |
+| 底盘 EKF 融合 | 显式开关 | 正式 wheel odom 由 `robot_state_estimation` 生成，Bridge 不拥有 odom/TF |
 | 激光运行时覆写 | 已支持 | `mapping` / `navigation` 支持 `--lidar-reversion`、`--lidar-inverted`、`--lidar-yaw-*` |
 
 ## 统一入口
@@ -19,7 +19,7 @@
 - 用户和运维入口：`/home/robot/ros2_ws/bin/robot`
 - 工程编排入口：`/home/robot/ros2_ws/src/robot_bringup/launch/system.launch.py`
 
-`launch_scripts/robot.sh` 在 v0.4.x 只做兼容转发。`bin/robot` 会先编译、校验并记录 effective config；`system.launch.py` 只用于开发、调试和二次编排。
+`launch_scripts/robot.sh` 在 v0.5.x 只做兼容转发。`bin/robot` 会先编译、校验并记录 effective config；`system.launch.py` 只用于开发、调试和二次编排。
 
 ## 快速路径
 
@@ -53,11 +53,11 @@ cd /home/robot/ros2_ws
 - 雷达正式串口：`/dev/ydlidar`
 - 雷达参数文件：`src/robot_sensing/config/ydlidar_x2.yaml`
 - 默认激光手性修正：`inverted: true`
-- 雷达 yaw、轮径、轮距、编码器方向、电机方向：待实测
+- 雷达 yaw、轮径、有效轮距待实测；单轮编码器/电机方向归固件参数管理
 - 默认导航行为树：`src/robot_bringup/behavior_trees/navigate_to_pose_recovery.xml`
 - 默认底盘命令时序：mux 250 ms、bridge 150 ms、keepalive 50 ms、固件 watchdog 200 ms
-- 唯一配置事实源：`src/robot_config/config`；每次启动生成 config SHA-256
-- Platform API / upper protocol：v3 only；beta4/v2 不兼容
+- 上位机配置事实源：`src/robot_config/config`；固件参数由下位机管理，跨机以参数 CRC/标定包校验
+- Platform API 4 / Upper Protocol v3；固定下位机候选 `366a038`，发布兼容仍为 false
 
 ## 仓库分层
 
@@ -75,10 +75,15 @@ ros2_ws
 ├── src/
 │   ├── robot_description
 │   ├── robot_config
+│   ├── robot_chassis_model
+│   ├── robot_chassis_ops
 │   ├── robot_sensing
 │   ├── stm32_robot_bridge
 │   ├── robot_state_estimation
 │   ├── robot_control
+│   ├── robot_supervision
+│   ├── robot_navigation_guard
+│   ├── robot_verification
 │   ├── robot_bringup
 │   └── vendor/            # vcs 自动拉取，Git 忽略
 ├── README.md

@@ -58,8 +58,8 @@ def _positive(config: Mapping[str, Any], path: str) -> float:
 def validate_effective_config(config: Mapping[str, Any]) -> None:
     if int(config.get("schema_version", 0)) != 1:
         raise ConfigError("schema_version must be 1")
-    if int(config.get("platform_api_version", 0)) != 3:
-        raise ConfigError("platform_api_version must be 3")
+    if int(config.get("platform_api_version", 0)) != 4:
+        raise ConfigError("platform_api_version must be 4")
     if int(config.get("protocol", {}).get("version", 0)) != 3:
         raise ConfigError("only upper protocol v3 is supported")
     topics = config.get("platform", {}).get("topics", {})
@@ -150,8 +150,9 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
                 "port": config["hardware"]["base_port"],
                 "baudrate": config["hardware"]["baudrate"],
                 "protocol_version": 3,
-                "chassis_command_topic": topics["chassis_command"],
-                "chassis_state_topic": topics["chassis_state"],
+                "host_motion_command_topic": topics["host_motion_command"],
+                "chassis_link_state_topic": topics["chassis_link_state"],
+                "firmware_control_state_topic": topics["firmware_control_state"],
                 "firmware_info_topic": topics["firmware_info"],
                 "wheel_observation_topic": topics["wheel_observation"],
                 "imu_observation_topic": topics["imu_observation"],
@@ -185,6 +186,19 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
                 "hard_max_speed_mps": motion["hard_max_linear_mps"],
                 "wheel_variance_floor_m2": covariance["wheel_variance_floor_m2"],
                 "wheel_variance_per_meter": covariance["wheel_variance_per_meter"],
+                "compatibility_state_topic": topics["platform_compatibility_state"],
+            }
+        },
+        "platform_compatibility": {
+            "ros__parameters": {
+                "firmware_info_topic": topics["firmware_info"],
+                "wheel_observation_topic": topics["wheel_observation"],
+                "compatibility_state_topic": topics["platform_compatibility_state"],
+                "expected_firmware_commit": "366a0385290d526009e6cd3bbdaa7b74b2fecad6",
+                "expected_hardware_revision": 0x00020000,
+                "required_capabilities": 31,
+                "expected_parameter_crc32": 0,
+                "expected_enabled_mask": 0b0110,
             }
         },
         "imu_adapter": {
@@ -204,8 +218,8 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
                 **common,
                 "wheel_observation_topic": topics["wheel_observation"],
                 "imu_topic": topics["imu"],
-                "chassis_command_topic": topics["chassis_command"],
-                "motion_safety_topic": topics["motion_safety_state"],
+                "host_motion_command_topic": topics["host_motion_command"],
+                "motion_supervision_topic": topics["motion_supervision_state"],
                 "wheel_track_width": drive["wheel_track_width_m"],
                 "observation_timeout_sec": timing["status_timeout_sec"],
                 "imu_timeout_sec": 0.20,
@@ -219,10 +233,11 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
         "fake_base": {
             "ros__parameters": {
                 **common,
-                "chassis_command_topic": topics["chassis_command"],
+                "host_motion_command_topic": topics["host_motion_command"],
                 "wheel_observation_topic": topics["wheel_observation"],
                 "imu_observation_topic": topics["imu_observation"],
-                "chassis_state_topic": topics["chassis_state"],
+                "chassis_link_state_topic": topics["chassis_link_state"],
+                "firmware_control_state_topic": topics["firmware_control_state"],
                 "firmware_info_topic": topics["firmware_info"],
                 "diagnostics_topic": topics["diagnostics"],
                 "base_frame_id": frames["base"],
@@ -237,7 +252,7 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
         "cmd_vel_mux": {
             "ros__parameters": {
                 **common,
-                "chassis_command_topic": topics["chassis_command"],
+                "host_motion_command_topic": topics["host_motion_command"],
                 "linear_limit": motion["soft_max_linear_mps"],
                 "angular_limit": motion["soft_max_angular_radps"],
                 "max_linear_accel": motion["max_linear_accel_mps2"],
@@ -246,9 +261,9 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
                 "max_angular_jerk": motion["max_angular_jerk_radps3"],
                 "timeout_sec": timing["mux_source_timeout_sec"],
                 "publish_hz": 20.0,
-                "motion_safety_topic": topics["motion_safety_state"],
-                "chassis_state_topic": topics["chassis_state"],
-                "control_state_topic": topics["control_state"],
+                "motion_supervision_topic": topics["motion_supervision_state"],
+                "chassis_link_state_topic": topics["chassis_link_state"],
+                "host_control_state_topic": topics["host_control_state"],
                 "require_motion_supervision": True,
                 "supervision_timeout_sec": timing["status_timeout_sec"],
                 "rearm_quiet_sec": timing["mux_source_timeout_sec"],

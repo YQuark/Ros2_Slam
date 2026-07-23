@@ -213,6 +213,15 @@ def sequence_is_forward(new: int, old: int) -> bool:
     return 0 < delta < 0x80000000
 
 
+def imu_identity_is_new(current, previous) -> bool:
+    """Require both IMU counters to advance within one wire session."""
+    if previous is None or int(current[0]) != int(previous[0]):
+        return True
+    return sequence_is_forward(current[1], previous[1]) and sequence_is_forward(
+        current[2], previous[2]
+    )
+
+
 class CommandStream:
     """Wire-session stream; unchanged targets use duplicate-sequence keepalives."""
 
@@ -257,9 +266,13 @@ class CommandStream:
         return True
 
     def release(
-        self, send_payload: Callable[[bytes], object], now_sec: Optional[float] = None
+        self,
+        send_payload: Callable[[bytes], object],
+        now_sec: Optional[float] = None,
+        *,
+        force_new_sequence: bool = False,
     ) -> bool:
-        if self.enabled or self.sequence == 0:
+        if force_new_sequence or self.enabled or self.sequence == 0:
             self.sequence = (self.sequence + 1) & 0xFFFFFFFF
         payload = encode_velocity_payload(
             0.0, 0.0, False, self.mode, self.session_id, self.sequence

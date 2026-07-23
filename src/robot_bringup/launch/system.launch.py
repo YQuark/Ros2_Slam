@@ -148,6 +148,23 @@ def _validate_and_compose(context):
 
     if real_base_enabled or fake_base_enabled:
         actions.append(
+            Node(
+                package="robot_config",
+                executable="compatibility_node",
+                name="platform_compatibility",
+                parameters=[LaunchConfiguration("effective_params_file")],
+                output="screen",
+            )
+        )
+        actions.append(
+            Node(
+                package="robot_chassis_ops",
+                executable="chassis_ops_node",
+                name="chassis_ops",
+                output="screen",
+            )
+        )
+        actions.append(
             _include(
                 control_share,
                 "control.launch.py",
@@ -236,6 +253,14 @@ def _validate_and_compose(context):
             )
         if map_file == "" or not os.path.isfile(map_file):
             raise RuntimeError("Navigation mode requires a valid 'map_file' (*.yaml).")
+        actions.append(
+            Node(
+                package="robot_navigation_guard",
+                executable="navigation_guard_node",
+                name="navigation_guard",
+                output="screen",
+            )
+        )
         actions.append(
             _include(
                 this_share,

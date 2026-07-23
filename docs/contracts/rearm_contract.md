@@ -1,0 +1,3 @@
+# Rearm contract
+
+Fault, ESTOP, timeout, disconnect, rejection or reboot closes Host motion. A fault-period disable is not recovery evidence. Bridge waits for a new healthy STATUS, sends a fresh-sequence disable, then requires exact `SESSION_VALID|RECEIVED|APPLIED` ACK evidence with matching wire session and matching received/applied sequence, no rejected bit and reject reason zero. Only then is wire synchronized. `robot_control` separately clears sources, observes a quiet interval, requires fresh Host intent and creates a new `command_epoch`. Navigation Guard cancels the old goal and requires a new goal UUID.

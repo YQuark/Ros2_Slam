@@ -10,11 +10,18 @@ install(PROGRAMS robot_config/compile_config.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME compile_config
 )
+install(PROGRAMS robot_config/compatibility_node.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME compatibility_node
+)
 install(DIRECTORY config DESTINATION share/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_cmake_pytest REQUIRED)
   ament_add_pytest_test(test_config test/test_config.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
+  ament_add_pytest_test(test_compatibility test/test_compatibility.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
 endif()

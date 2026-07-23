@@ -14,9 +14,10 @@ from rclpy.qos import (
     qos_profile_sensor_data,
 )
 from robot_interfaces.msg import (
-    ChassisCommand,
-    ChassisState,
+    ChassisLinkState,
+    FirmwareControlState,
     FirmwareInfo,
+    HostMotionCommand,
     ImuObservation,
     WheelObservation,
 )
@@ -24,6 +25,7 @@ from sensor_msgs.msg import BatteryState
 from std_srvs.srv import SetBool, Trigger
 
 from robot_verification.fake_base_model import FakeBaseModel, StatusSampleLatch
+from robot_chassis_model.wheel_layout import DEFAULT_ENABLED_MASK
 
 
 STATE_QOS = QoSProfile(
@@ -42,10 +44,11 @@ class FakeBaseNode(Node):
         super().__init__("fake_base")
         defaults = {
             "config_sha256": "development-uncompiled",
-            "chassis_command_topic": "chassis/command",
+            "host_motion_command_topic": "chassis/host_motion_command",
             "wheel_observation_topic": "wheel/observation",
             "imu_observation_topic": "imu/observation",
-            "chassis_state_topic": "chassis/state",
+            "chassis_link_state_topic": "chassis/link_state",
+            "firmware_control_state_topic": "chassis/firmware_control_state",
             "firmware_info_topic": "chassis/firmware_info",
             "diagnostics_topic": "diagnostics",
             "base_frame_id": "base_link",
@@ -80,7 +83,7 @@ class FakeBaseNode(Node):
         self.last_tick = time.monotonic()
         self.started_at = self.last_tick
         self.last_command_at = None
-        self.command_session_id = 0
+        self.command_epoch = 0
         self.command_sequence = 0
         self.selected_source = 0
         self.enabled = False
@@ -89,6 +92,7 @@ class FakeBaseNode(Node):
         self.rearm_required = True
         self.rearm_reason_flags = 1
         self.estop = False
+        self.line_control_enabled = False
         self.disconnect_recovered = False
         self.static_qos = QoSProfile(
             depth=1,
@@ -105,9 +109,14 @@ class FakeBaseNode(Node):
             str(self.get_parameter("imu_observation_topic").value),
             qos_profile_sensor_data,
         )
-        self.state_pub = self.create_publisher(
-            ChassisState,
-            str(self.get_parameter("chassis_state_topic").value),
+        self.link_state_pub = self.create_publisher(
+            ChassisLinkState,
+            str(self.get_parameter("chassis_link_state_topic").value),
+            STATE_QOS,
+        )
+        self.firmware_control_pub = self.create_publisher(
+            FirmwareControlState,
+            str(self.get_parameter("firmware_control_state_topic").value),
             STATE_QOS,
         )
         self.firmware_pub = self.create_publisher(
@@ -120,40 +129,43 @@ class FakeBaseNode(Node):
             STATE_QOS,
         )
         self.create_subscription(
-            ChassisCommand,
-            str(self.get_parameter("chassis_command_topic").value),
+            HostMotionCommand,
+            str(self.get_parameter("host_motion_command_topic").value),
             self._on_command,
             10,
         )
         self.create_service(SetBool, "chassis/estop", self._on_estop)
         self.create_service(Trigger, "chassis/clear_fault", self._on_clear_fault)
         self.create_service(SetBool, "chassis/line_ctrl", self._on_line_ctrl)
+        self.create_service(Trigger, "chassis/get_info", self._on_get_info)
         hz = max(float(self.get_parameter("publish_hz").value), 1.0)
         self.create_timer(1.0 / hz, self._tick)
         self.create_timer(1.0, self._publish_diagnostics)
         self._publish_firmware_info()
 
-    def _on_command(self, msg: ChassisCommand) -> None:
-        session, sequence = int(msg.session_id), int(msg.sequence)
+    def _on_command(self, msg: HostMotionCommand) -> None:
+        session, sequence = int(msg.command_epoch), int(msg.sequence)
         if session == 0:
             return
-        if session == self.command_session_id and not _sequence_is_forward(
+        if session == self.command_epoch and not _sequence_is_forward(
             sequence, self.command_sequence
         ):
             return
-        self.command_session_id, self.command_sequence = session, sequence
+        self.command_epoch, self.command_sequence = session, sequence
         if not msg.enable:
             self.enabled = False
             self.selected_source = 0
-            self.rearm_required = False
-            self.rearm_reason_flags = 0
+            if not self.estop:
+                self.rearm_required = False
+                self.rearm_reason_flags = 0
             self.last_command_at = None
             self.model.release()
             return
         if self.rearm_required or self.estop:
             return
         self.enabled = True
-        self.selected_source = int(msg.source)
+        # Firmware sees exactly one physical source for every ROS subsource.
+        self.selected_source = 1  # COMMAND_SOURCE_HOST
         self.last_command_at = time.monotonic()
         self.model.set_target(msg.twist.linear.x, msg.twist.angular.z)
 
@@ -220,8 +232,8 @@ class FakeBaseNode(Node):
         wheel.wheel_target_mps = list(wheel_sample.wheel_targets)
         wheel.motor_current_a = [0.0] * 4
         wheel.motor_output_permille = [0] * 4
-        wheel.motor_enabled_mask = 0x0F if wheel_enabled else 0
-        wheel.speed_valid_mask = 0x0F
+        wheel.motor_enabled_mask = DEFAULT_ENABLED_MASK
+        wheel.speed_valid_mask = DEFAULT_ENABLED_MASK
         wheel.encoder_anomaly_mask = anomaly_mask
         wheel.status_flags = 1 if wheel_estop else 0
         self.wheel_pub.publish(wheel)
@@ -246,27 +258,32 @@ class FakeBaseNode(Node):
         self.battery_pub.publish(battery)
 
     def _publish_state(self) -> None:
-        msg = ChassisState()
+        msg = ChassisLinkState()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.bridge_state = ChassisState.STATE_ACTIVE if self.enabled else ChassisState.STATE_READY
-        msg.selected_source = self.selected_source
-        msg.command_session_id, msg.command_sequence = (
-            self.command_session_id,
-            self.command_sequence,
-        )
-        msg.upper_enabled = self.enabled
+        msg.link_state = ChassisLinkState.STATE_WIRE_SYNCHRONIZED
         msg.protocol_version = 3
         msg.wire_session_id = self.transport_session_id
         msg.wire_sent_sequence = self.command_sequence
         msg.firmware_ack_available = True
-        msg.firmware_session_id = self.command_session_id
+        msg.firmware_session_id = self.transport_session_id
         msg.firmware_received_sequence = self.command_sequence
         msg.firmware_applied_sequence = self.command_sequence
-        msg.rearm_required = self.rearm_required
-        msg.rearm_reason_flags = self.rearm_reason_flags
-        msg.slip_score, msg.supervisor_level = -1.0, 0
+        msg.wire_rearm_required = self.rearm_required
+        msg.wire_rearm_reason_flags = self.rearm_reason_flags
         msg.config_sha256 = self.config_sha256
-        self.state_pub.publish(msg)
+        self.link_state_pub.publish(msg)
+
+        control = FirmwareControlState()
+        control.header.stamp = msg.header.stamp
+        control.firmware_control_source = self.selected_source
+        control.status_flags = (1 if self.estop else 0) | (
+            1 << 2 if self.line_control_enabled else 0
+        )
+        control.estop_active = self.estop
+        control.fault_stop_active = False
+        control.status_sequence = self.status_sequence
+        control.wire_session_id = self.transport_session_id
+        self.firmware_control_pub.publish(control)
 
     def _publish_firmware_info(self) -> None:
         msg = FirmwareInfo()
@@ -306,13 +323,20 @@ class FakeBaseNode(Node):
         return response
 
     def _on_clear_fault(self, _request, response):
-        self.estop = False
-        response.success, response.message = True, "fake fault cleared; rearm still required"
+        if self.estop:
+            response.success, response.message = False, "ESTOP is active; clear fault rejected"
+            return response
+        response.success, response.message = True, "fake fault clear condition confirmed"
         return response
 
-    @staticmethod
-    def _on_line_ctrl(_request, response):
+    def _on_line_ctrl(self, request, response):
+        self.line_control_enabled = bool(request.data)
         response.success, response.message = True, "fake line control accepted"
+        return response
+
+    def _on_get_info(self, _request, response):
+        self._publish_firmware_info()
+        response.success, response.message = True, "fake firmware info published"
         return response
 
 

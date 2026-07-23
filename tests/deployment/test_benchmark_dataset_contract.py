@@ -6,7 +6,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG_PATH = ROOT / "verification" / "configs" / "benchmarks" / "rosbag-datasets-v0.4.0.yaml"
+CONFIG_PATH = ROOT / "verification" / "configs" / "benchmarks" / "rosbag-datasets-v0.5.0-rc1.yaml"
 MODULE_PATH = ROOT / "tools" / "datasets" / "benchmark_bags.py"
 
 
@@ -40,10 +40,13 @@ def test_dataset_catalog_covers_all_seven_benchmarks_and_required_topics():
         "/tf",
         "/tf_static",
         "/cmd_vel/nav",
-        "/chassis/command",
-        "/chassis/state",
+        "/chassis/host_motion_command",
+        "/chassis/link_state",
+        "/chassis/firmware_control_state",
         "/chassis/control_state",
-        "/motion/safety_state",
+        "/motion/supervision_state",
+        "/navigation/guard_state",
+        "/platform/compatibility_state",
         "/diagnostics",
     }
     for dataset in catalog["datasets"].values():

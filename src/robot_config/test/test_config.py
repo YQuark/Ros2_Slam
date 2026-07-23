@@ -8,11 +8,11 @@ from robot_config.compiler import ConfigError, compile_effective_config, load_ef
 ROOT = Path(__file__).resolve().parents[1] / "config"
 
 
-def test_effective_config_is_stable_and_v3(tmp_path):
+def test_effective_config_is_stable_and_api4_wire3(tmp_path):
     first = load_effective_config(ROOT)
     second = load_effective_config(ROOT)
     assert first["config_sha256"] == second["config_sha256"]
-    assert first["platform_api_version"] == 3
+    assert first["platform_api_version"] == 4
     assert first["protocol"]["version"] == 3
     paths = compile_effective_config(ROOT, tmp_path)
     params = yaml.safe_load(paths["ros_params"].read_text(encoding="utf-8"))

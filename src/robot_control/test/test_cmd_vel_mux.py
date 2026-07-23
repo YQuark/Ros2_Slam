@@ -29,12 +29,12 @@ sys.modules["sensor_msgs"] = _mock_sensor_msgs
 sys.modules["sensor_msgs.msg"] = MagicMock()
 
 
-class _FakeChassisCommand:
-    SOURCE_NONE = 0
-    SOURCE_TELEOP = 1
-    SOURCE_TEST = 2
-    SOURCE_NAV = 3
-    SOURCE_RESEARCH = 4
+class _FakeHostMotionCommand:
+    HOST_SUBSOURCE_NONE = 0
+    HOST_SUBSOURCE_TELEOP = 1
+    HOST_SUBSOURCE_TEST = 2
+    HOST_SUBSOURCE_NAV = 3
+    HOST_SUBSOURCE_RESEARCH = 4
 
     def __init__(self):
         self.header = SimpleNamespace(stamp=None)
@@ -43,11 +43,12 @@ class _FakeChassisCommand:
             angular=SimpleNamespace(z=0.0),
         )
         self.enable = False
-        self.source = self.SOURCE_NONE
+        self.host_subsource = self.HOST_SUBSOURCE_NONE
+        self.command_epoch = 0
         self.sequence = 0
 
 
-class _FakeControlState:
+class _FakeHostControlState:
     STATE_DISABLED = 0
     STATE_WAIT_SUPERVISION = 1
     STATE_READY = 2
@@ -68,19 +69,19 @@ class _FakeControlState:
         self.header = SimpleNamespace(stamp=None)
 
 
-class _FakeMotionSafetyState:
+class _FakeMotionSupervisionState:
     LEVEL_CRITICAL = 4
 
 
-class _FakeChassisState:
+class _FakeChassisLinkState:
     pass
 
 
 _mock_robot_interfaces_msg = MagicMock()
-_mock_robot_interfaces_msg.ChassisCommand = _FakeChassisCommand
-_mock_robot_interfaces_msg.ChassisState = _FakeChassisState
-_mock_robot_interfaces_msg.ControlState = _FakeControlState
-_mock_robot_interfaces_msg.MotionSafetyState = _FakeMotionSafetyState
+_mock_robot_interfaces_msg.HostMotionCommand = _FakeHostMotionCommand
+_mock_robot_interfaces_msg.ChassisLinkState = _FakeChassisLinkState
+_mock_robot_interfaces_msg.HostControlState = _FakeHostControlState
+_mock_robot_interfaces_msg.MotionSupervisionState = _FakeMotionSupervisionState
 sys.modules["robot_interfaces"] = MagicMock()
 sys.modules["robot_interfaces.msg"] = _mock_robot_interfaces_msg
 
@@ -164,6 +165,7 @@ def make_mux(**param_overrides):
     node.publisher = MagicMock()
     node._logger = MagicMock()
     node.get_logger = MagicMock(return_value=node._logger)
+    node.monotonic_clock = lambda: node.get_clock().now.return_value.nanoseconds * 1e-9
     return node
 
 
@@ -187,8 +189,7 @@ class TestCmdVelMuxNode:
         assert node.get_parameter("max_angular_jerk").value == 6.0
         assert node.get_parameter("timeout_sec").value == 0.25
         assert node.get_parameter("publish_hz").value == 20.0
-        assert node.get_parameter("chassis_command_topic").value == "chassis/command"
-        assert node.get_parameter("publish_legacy_twist").value is False
+        assert node.get_parameter("host_motion_command_topic").value == "chassis/host_motion_command"
 
     def test_research_sources_default_to_empty(self):
         node = make_mux()
@@ -207,8 +208,8 @@ class TestCmdVelMuxNode:
         assert "research/avoidance" in sources
 
     def test_driver_topic_is_configurable(self):
-        node = make_mux(chassis_command_topic="/chassis/custom")
-        assert node.get_parameter("chassis_command_topic").value == "/chassis/custom"
+        node = make_mux(host_motion_command_topic="/chassis/custom")
+        assert node.get_parameter("host_motion_command_topic").value == "/chassis/custom"
 
 
 class TestCmdVelMuxPublish:
@@ -228,7 +229,7 @@ class TestCmdVelMuxPublish:
         assert msg.twist.linear.x == 0.0
         assert msg.twist.angular.z == 0.0
         assert msg.enable is True
-        assert msg.source == _FakeChassisCommand.SOURCE_TELEOP
+        assert msg.host_subsource == _FakeHostMotionCommand.HOST_SUBSOURCE_TELEOP
         assert msg.sequence == 1
 
         node.get_clock().now.return_value.nanoseconds = int(1.05e9)
@@ -260,7 +261,7 @@ class TestCmdVelMuxPublish:
         node.publisher.publish.assert_called_once()
         msg = node.publisher.publish.call_args[0][0]
         assert msg.enable is False
-        assert msg.source == _FakeChassisCommand.SOURCE_NONE
+        assert msg.host_subsource == _FakeHostMotionCommand.HOST_SUBSOURCE_NONE
         assert node.motion_limiter.current.linear_x == 0.0
 
     def test_new_source_after_idle_resumes(self):
@@ -274,7 +275,7 @@ class TestCmdVelMuxPublish:
 
         published = node.publisher.publish.call_args[0][0]
         assert published.enable is True
-        assert published.source == _FakeChassisCommand.SOURCE_NAV
+        assert published.host_subsource == _FakeHostMotionCommand.HOST_SUBSOURCE_NAV
 
     def test_high_priority_timeout_falls_back_without_release(self):
         from robot_control.control_policy import Command
@@ -291,22 +292,14 @@ class TestCmdVelMuxPublish:
 
         published = node.publisher.publish.call_args[0][0]
         assert published.enable is True
-        assert published.source == _FakeChassisCommand.SOURCE_NAV
+        assert published.host_subsource == _FakeHostMotionCommand.HOST_SUBSOURCE_NAV
 
-    def test_legacy_twist_is_not_published_by_default(self):
+    def test_legacy_twist_output_is_removed(self):
         node = make_mux()
 
         node._publish_selected()
 
-        assert node.legacy_publisher is None
-
-    def test_legacy_twist_can_be_enabled_explicitly(self):
-        node = make_mux(publish_legacy_twist=True)
-        node.last_active = True
-
-        node._publish_selected()
-
-        node.legacy_publisher.publish.assert_called_once()
+        assert not hasattr(node, "legacy_publisher")
 
     def test_transport_rearm_clears_old_goal_and_requires_quiet_then_fresh_input(self):
         from robot_control.control_policy import Command
@@ -317,8 +310,8 @@ class TestCmdVelMuxPublish:
         node.publisher.reset_mock()
         state = MagicMock()
         state.wire_session_id = 2
-        state.rearm_required = True
-        state.rearm_reason_flags = _FakeControlState.REARM_TRANSPORT
+        state.wire_rearm_required = True
+        state.wire_rearm_reason_flags = _FakeHostControlState.REARM_TRANSPORT
 
         node._on_chassis_state(state)
 
@@ -330,7 +323,7 @@ class TestCmdVelMuxPublish:
         node.publisher.reset_mock()
         node.get_clock().now.return_value.nanoseconds = int(0.30e9)
         node._publish_selected()
-        assert node.gate_state == _FakeControlState.STATE_WAIT_FRESH_SOURCE
+        assert node.gate_state == _FakeHostControlState.STATE_WAIT_FRESH_SOURCE
         node.publisher.publish.assert_not_called()
 
         fresh = MagicMock()
@@ -345,15 +338,15 @@ class TestCmdVelMuxPublish:
         node.last_active = True
         message = MagicMock()
         message.command_scale = 0.0
-        message.release_required = True
-        message.level = _FakeMotionSafetyState.LEVEL_CRITICAL
+        message.release_host_candidate = True
+        message.level = _FakeMotionSupervisionState.LEVEL_CRITICAL
 
         node._on_motion_state(message)
 
         release = node.publisher.publish.call_args[0][0]
         assert release.enable is False
         assert node.rearm_required
-        assert node.rearm_reason_flags & _FakeControlState.REARM_MOTION_CRITICAL
+        assert node.rearm_reason_flags & _FakeHostControlState.REARM_MOTION_CRITICAL
 
 
 class TestCmdVelMuxCallback:
@@ -420,4 +413,4 @@ class TestCmdVelMuxCallback:
 
         published = node.publisher.publish.call_args[0][0]
         assert published.enable is True
-        assert published.source == _FakeChassisCommand.SOURCE_NAV
+        assert published.host_subsource == _FakeHostMotionCommand.HOST_SUBSOURCE_NAV

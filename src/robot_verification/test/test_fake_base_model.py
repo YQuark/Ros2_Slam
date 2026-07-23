@@ -14,9 +14,9 @@ def test_fake_model_has_symmetric_straight_counts():
     )
     model.set_target(0.2, 0.0)
     sample = model.step(0.1)
-    assert sample.encoder_counts[0] == sample.encoder_counts[1]
-    assert sample.encoder_counts[2] == sample.encoder_counts[3]
-    assert sample.wheel_speeds[0] == sample.wheel_speeds[2]
+    assert sample.encoder_counts[0] == sample.encoder_counts[3] == 0
+    assert sample.encoder_counts[1] == sample.encoder_counts[2] > 0
+    assert sample.wheel_speeds[1] == sample.wheel_speeds[2]
 
 
 def test_fake_model_rotation_has_opposite_sides_and_int32_wrap():
@@ -28,7 +28,7 @@ def test_fake_model_rotation_has_opposite_sides_and_int32_wrap():
     )
     model.set_target(0.0, 1.0)
     sample = model.step(0.1)
-    assert sample.wheel_speeds[0] < 0.0 < sample.wheel_speeds[2]
+    assert sample.wheel_speeds[1] < 0.0 < sample.wheel_speeds[2]
     assert signed_int32(1 << 31) == -(1 << 31)
 
 

@@ -1,0 +1,9 @@
+std_msgs/Header header
+uint8 firmware_control_source
+uint8 status_flags
+uint32 error_flags
+uint32 latched_error_flags
+bool estop_active
+bool fault_stop_active
+uint32 status_sequence
+uint64 wire_session_id
