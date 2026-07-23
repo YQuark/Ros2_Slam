@@ -238,7 +238,8 @@ class CommandStream:
         self.last_payload: Optional[bytes] = None
 
     def update_command(self, vx: float, wz: float, now_sec: float) -> None:
-        target = (float(vx), float(wz))
+        # Sequence identity follows the values that actually cross the wire.
+        target = struct.unpack("<ff", struct.pack("<ff", float(vx), float(wz)))
         if target != self.target or not self.enabled:
             self.sequence = (self.sequence + 1) & 0xFFFFFFFF
         self.target, self.enabled, self.last_command_time = target, True, float(now_sec)
@@ -253,6 +254,22 @@ class CommandStream:
             return self.release(send_payload, now_sec)
         payload = encode_velocity_payload(
             *self.target, True, self.mode, self.session_id, self.sequence
+        )
+        if (
+            self.last_send_time is not None
+            and payload == self.last_payload
+            and float(now_sec) - self.last_send_time < self.keepalive_sec
+        ):
+            return False
+        if send_payload(payload) is False:
+            return False
+        self.last_payload, self.last_send_time = payload, float(now_sec)
+        return True
+
+    def tick_disabled(self, now_sec: float, send_payload: Callable[[bytes], object]) -> bool:
+        """Retransmit one ordered disable without changing its sequence."""
+        payload = encode_velocity_payload(
+            0.0, 0.0, False, self.mode, self.session_id, self.sequence
         )
         if (
             self.last_send_time is not None

@@ -1,6 +1,6 @@
 # ADR：最终命令所有权
 
-状态：Superseded by Platform API 4 command authority contract。
+状态：Superseded by Platform API 5 command authority contract。
 
 决定由 `robot_control` 独占 `HostMotionCommand` 发布权。Nav2、遥控、测试与研究
 节点只发布候选 `Twist`；`robot_control` 统一完成仲裁、有限值/范围校验、lease、

@@ -26,11 +26,11 @@ def test_simulation_is_explicitly_permitted() -> None:
         expected_firmware_commit="x",
         hardware_revision=0,
         expected_hardware_revision=1,
-        capabilities=0,
+        capabilities=31,
         required_capabilities=31,
         parameter_crc32=0,
         expected_parameter_crc32=1,
-        enabled_mask=0,
+        enabled_mask=6,
         expected_enabled_mask=6,
     )
     assert result.compatible and result.simulated

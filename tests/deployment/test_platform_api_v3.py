@@ -6,15 +6,15 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def test_platform_api_v4_and_wire_v3_contract_are_explicit():
-    assert (ROOT / "PLATFORM_API_VERSION").read_text(encoding="utf-8").strip() == "4"
+def test_platform_api_v5_and_wire_v3_contract_are_explicit():
+    assert (ROOT / "PLATFORM_API_VERSION").read_text(encoding="utf-8").strip() == "5"
     contract = yaml.safe_load(
         (ROOT / "compatibility" / "firmware.yaml").read_text(encoding="utf-8")
     )
     platform = yaml.safe_load(
         (ROOT / "src/robot_config/config/platform.yaml").read_text(encoding="utf-8")
     )
-    assert contract["platform_api_version"] == 4
+    assert contract["platform_api_version"] == 5
     assert contract["upper"]["wire_protocols_supported"] == [3]
     assert contract["firmware"]["status"] == "implementation_ready_hil_pending"
     assert platform["platform"]["topics"]["host_motion_command"] == "chassis/host_motion_command"
@@ -68,7 +68,7 @@ def test_robot_interfaces_define_session_ack_and_firmware_identity():
     assert "bool release_host_candidate" in safety
 
 
-def test_v4_runtime_is_effective_config_driven_and_legacy_twist_is_removed():
+def test_v5_runtime_is_effective_config_driven_and_legacy_twist_is_removed():
     mux = yaml.safe_load(
         (ROOT / "src/robot_control/config/cmd_vel_mux.yaml").read_text(encoding="utf-8")
     )

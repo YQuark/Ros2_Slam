@@ -1,4 +1,5 @@
 std_msgs/Header header
+uint64 wire_session_id
 uint8 protocol_version
 uint8 schema_version
 uint32 capabilities

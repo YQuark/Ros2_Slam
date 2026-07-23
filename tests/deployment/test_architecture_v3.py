@@ -59,21 +59,26 @@ def test_fake_and_real_base_share_raw_platform_contract_and_publish_no_tf():
     for provider in (real, fake):
         assert "Odometry" not in provider
         assert "TransformBroadcaster" not in provider
-    assert '"chassis/get_info"' in fake
-    assert '"chassis/line_ctrl"' in fake
+    assert '"~/wire_get_info"' in fake
+    assert '"~/wire_line_ctrl"' in fake
 
 
-def test_state_estimation_is_only_wheel_odom_owner_and_ekf_is_only_dynamic_tf_owner():
+def test_state_estimation_owns_wheel_odom_and_formal_gate_owns_dynamic_tf():
     wheel = (
         ROOT / "src/robot_state_estimation/robot_state_estimation/wheel_odometry_node.py"
     ).read_text(encoding="utf-8")
     assert "create_publisher(" in wheel and "Odometry" in wheel
     assert "TransformBroadcaster" not in wheel
+    formal = (
+        ROOT / "src/robot_state_estimation/robot_state_estimation/formal_odometry_node.py"
+    ).read_text(encoding="utf-8")
+    assert "TransformBroadcaster" in formal
+    assert "permit_formal_odometry" in formal
     for config_name in ("ekf_wheel.yaml", "ekf_base.yaml"):
         config = yaml.safe_load(
             (ROOT / "src/robot_state_estimation/config" / config_name).read_text(encoding="utf-8")
         )
-        assert config["/**"]["ros__parameters"]["publish_tf"] is True
+        assert config["/**"]["ros__parameters"]["publish_tf"] is False
 
 
 def test_platform_topics_are_relative_and_namespace_is_launchable():
@@ -84,6 +89,9 @@ def test_platform_topics_are_relative_and_namespace_is_launchable():
     system = (ROOT / "src/robot_bringup/launch/system.launch.py").read_text(encoding="utf-8")
     assert "PushRosNamespace" in system
     assert 'DeclareLaunchArgument("namespace", default_value="")' in system
+    nav2_launch = (ROOT / "src/robot_bringup/launch/nav2.launch.py").read_text(encoding="utf-8")
+    assert 'SetRemap(src="navigate_to_pose", dst="nav2/navigate_to_pose")' in nav2_launch
+    assert 'dst="/nav2/navigate_to_pose"' not in nav2_launch
 
 
 def test_no_certified_nav2_fallback_or_duplicated_slam_profile():

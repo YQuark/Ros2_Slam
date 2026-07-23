@@ -1,12 +1,25 @@
 uint8 STATE_DISCONNECTED=0
-uint8 STATE_NEGOTIATING=1
-uint8 STATE_WAIT_SAFE_STATUS=2
-uint8 STATE_WAIT_DISABLE_ACK=3
-uint8 STATE_WIRE_SYNCHRONIZED=4
+uint8 STATE_WAIT_HELLO=1
+uint8 STATE_WAIT_STATUS=2
+uint8 STATE_FAULT_LATCHED=3
+uint8 STATE_WAIT_FAULT_CLEAR=4
+uint8 STATE_WAIT_POST_CLEAR_DISABLE_ACK=5
+uint8 STATE_WIRE_REARM_READY=6
+uint8 STATE_DRIVE_ACTIVE=7
+
+uint32 AGE_INVALID=4294967295
+
+uint32 INCOMPAT_NONE=0
+uint32 INCOMPAT_PROTOCOL=1
+uint32 INCOMPAT_SCHEMA=2
+uint32 INCOMPAT_CAPABILITIES=4
 
 std_msgs/Header header
 uint8 link_state
+uint32 state_generation
 uint8 protocol_version
+bool protocol_compatible
+uint32 incompatibility_flags
 uint64 wire_session_id
 uint32 wire_sent_sequence
 bool firmware_ack_available

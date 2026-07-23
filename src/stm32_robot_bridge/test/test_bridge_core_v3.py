@@ -50,12 +50,22 @@ def ready_core():
     )
     core.on_connected(7)
     assert core.on_hello(HelloPayload(3, 1, 0x1F, "11" * 20, 1, 2))
-    core.on_startup_released()
     assert core.on_status(status(received=0, applied=0), 1.0)
-    assert core.snapshot.state is BridgeState.WAIT_SAFE_STATUS
+    assert core.snapshot.state is BridgeState.WAIT_STATUS
     core.on_disable_sent(1)
     assert core.on_status(status(sequence=2), 1.01)
-    assert core.snapshot.state is BridgeState.WIRE_SYNCHRONIZED
+    assert core.snapshot.state is BridgeState.WIRE_REARM_READY
+    core.accept_command(
+        vx=0,
+        wz=0,
+        enable=False,
+        source=0,
+        session_id=99,
+        sequence=1,
+        command_stamp_sec=0.0,
+        now_ros_sec=0.0,
+        now_monotonic=1.01,
+    )
     return core
 
 
@@ -79,7 +89,6 @@ def test_bridge_core_rejects_missing_capability_and_duplicate_status():
     core.on_connected(7)
     assert not core.on_hello(HelloPayload(3, 1, 0x0F, "00" * 20, 1, 0))
     assert core.on_hello(HelloPayload(3, 1, 0x1F, "00" * 20, 1, 0))
-    core.on_startup_released()
     assert core.on_status(status(), 1.0)
     assert core.on_status(status(), 1.01) is StatusDisposition.DUPLICATE
 
@@ -129,7 +138,7 @@ def test_bridge_core_disable_enable_edge_recovers_after_fault():
     core = ready_core()
     assert core.on_status(status(sequence=3, flags=1), 1.05)
     core.on_disable_sent(2)
-    assert core.snapshot.state is BridgeState.WAIT_SAFE_STATUS
+    assert core.snapshot.state is BridgeState.FAULT_LATCHED
     assert core.snapshot.rearm_required
     core.accept_command(
         vx=0,
@@ -143,10 +152,10 @@ def test_bridge_core_disable_enable_edge_recovers_after_fault():
         now_monotonic=1.06,
     )
     assert core.on_status(status(sequence=4), 1.07)
-    assert core.snapshot.state is BridgeState.WAIT_SAFE_STATUS
+    assert core.snapshot.state is BridgeState.WAIT_FAULT_CLEAR
     core.on_disable_sent(3)
     assert core.on_status(status(sequence=5, received=3, applied=3), 1.08)
-    assert core.snapshot.state is BridgeState.WIRE_SYNCHRONIZED
+    assert core.snapshot.state is BridgeState.WIRE_REARM_READY
 
 
 class _Serial:

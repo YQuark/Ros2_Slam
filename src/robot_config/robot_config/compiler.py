@@ -58,8 +58,8 @@ def _positive(config: Mapping[str, Any], path: str) -> float:
 def validate_effective_config(config: Mapping[str, Any]) -> None:
     if int(config.get("schema_version", 0)) != 1:
         raise ConfigError("schema_version must be 1")
-    if int(config.get("platform_api_version", 0)) != 4:
-        raise ConfigError("platform_api_version must be 4")
+    if int(config.get("platform_api_version", 0)) != 5:
+        raise ConfigError("platform_api_version must be 5")
     if int(config.get("protocol", {}).get("version", 0)) != 3:
         raise ConfigError("only upper protocol v3 is supported")
     topics = config.get("platform", {}).get("topics", {})
@@ -99,6 +99,9 @@ def validate_effective_config(config: Mapping[str, Any]) -> None:
     calibration = config.get("calibration", {})
     if config.get("release_mode") and calibration.get("status") != "final":
         raise ConfigError("release mode requires final calibration")
+    bundle = config.get("calibration_bundle", {})
+    if bundle.get("wheel_layout", {}).get("order") != ["LF", "LR", "RF", "RR"]:
+        raise ConfigError("calibration_bundle wheel order must be LF/LR/RF/RR")
 
 
 def load_effective_config(
@@ -124,9 +127,11 @@ def load_effective_config(
     effective["robot_id"] = robot_id
     effective["profile"] = profile
     validate_effective_config(effective)
-    without_hash = dict(effective)
+    without_hash = deepcopy(effective)
     without_hash.pop("config_sha256", None)
+    without_hash["calibration_bundle"]["identity"].pop("upper_config_sha256", None)
     effective["config_sha256"] = _canonical_hash(without_hash)
+    effective["calibration_bundle"]["identity"]["upper_config_sha256"] = effective["config_sha256"]
     return effective
 
 
@@ -139,6 +144,9 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
     supervisor = config["motion_supervisor"]
     topics = config["platform"]["topics"]
     frames = config["platform"]["frames"]
+    bundle = config["calibration_bundle"]
+    identity = bundle["identity"]
+    expected_mask = int(bundle["wheel_layout"]["expected_enabled_mask"])
     common = {
         "config_sha256": config["config_sha256"],
         "unsafe_development_mode": bool(config.get("unsafe_development_mode", False)),
@@ -192,13 +200,14 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
         "platform_compatibility": {
             "ros__parameters": {
                 "firmware_info_topic": topics["firmware_info"],
+                "chassis_link_state_topic": topics["chassis_link_state"],
                 "wheel_observation_topic": topics["wheel_observation"],
                 "compatibility_state_topic": topics["platform_compatibility_state"],
-                "expected_firmware_commit": "366a0385290d526009e6cd3bbdaa7b74b2fecad6",
-                "expected_hardware_revision": 0x00020000,
+                "expected_firmware_commit": identity["firmware_commit"],
+                "expected_hardware_revision": identity["hardware_revision"],
                 "required_capabilities": 31,
-                "expected_parameter_crc32": 0,
-                "expected_enabled_mask": 0b0110,
+                "expected_parameter_crc32": identity["firmware_parameter_crc32"],
+                "expected_enabled_mask": expected_mask,
             }
         },
         "imu_adapter": {
@@ -213,6 +222,13 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
                 "linear_acceleration_stddev": imu["linear_acceleration_stddev"],
             }
         },
+        "formal_odometry": {
+            "ros__parameters": {
+                "input_topic": "odometry/filtered_internal",
+                "output_topic": topics["odom"],
+                "compatibility_state_topic": topics["platform_compatibility_state"],
+            }
+        },
         "motion_supervisor": {
             "ros__parameters": {
                 **common,
@@ -223,6 +239,7 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
                 "wheel_track_width": drive["wheel_track_width_m"],
                 "observation_timeout_sec": timing["status_timeout_sec"],
                 "imu_timeout_sec": 0.20,
+                "command_timeout_sec": timing["mux_source_timeout_sec"],
                 **{
                     key: value
                     for key, value in supervisor.items()
@@ -245,6 +262,7 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
                 "wheel_radius": drive["wheel_radius_m"],
                 "wheel_track_width": drive["wheel_track_width_m"],
                 "encoder_counts_per_revolution": drive["encoder_counts_per_revolution"],
+                "expected_enabled_mask": expected_mask,
                 "cmd_timeout": timing["bridge_command_timeout_sec"],
                 "publish_hz": 50.0,
             }
@@ -264,6 +282,7 @@ def ros_parameters(config: Mapping[str, Any]) -> dict[str, Any]:
                 "motion_supervision_topic": topics["motion_supervision_state"],
                 "chassis_link_state_topic": topics["chassis_link_state"],
                 "host_control_state_topic": topics["host_control_state"],
+                "navigation_guard_state_topic": topics["navigation_guard_state"],
                 "require_motion_supervision": True,
                 "supervision_timeout_sec": timing["status_timeout_sec"],
                 "rearm_quiet_sec": timing["mux_source_timeout_sec"],

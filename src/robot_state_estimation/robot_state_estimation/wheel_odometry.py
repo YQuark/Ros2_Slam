@@ -27,6 +27,7 @@ class EncoderOdometryUpdate:
     left_distance: float
     right_distance: float
     pose_covariance: Tuple[float, ...]
+    twist_covariance: Tuple[float, float, float, float]
 
 
 def signed_int32_delta(current: int, previous: int) -> int:
@@ -61,7 +62,7 @@ class EncoderOdometry:
         self.covariance = [[0.0] * 3 for _ in range(3)]
         self.last_counts: Optional[Tuple[int, int, int, int]] = None
         self.last_sample_time_sec: Optional[float] = None
-        self.last_layout_identity: Optional[Tuple[int, int, int]] = None
+        self.last_layout_identity: Optional[Tuple[int, int, int, int]] = None
 
     def reset_sample_baseline(self) -> None:
         self.last_counts = None
@@ -77,6 +78,7 @@ class EncoderOdometry:
         speed_valid_mask: int = 0x0F,
         anomaly_mask: int = 0,
         transport_session_id: int = 0,
+        reset_generation: int = 0,
         covariance_multiplier: float = 1.0,
         hard_max_speed_mps: float = 0.45,
     ) -> EncoderOdometryUpdate:
@@ -85,7 +87,12 @@ class EncoderOdometry:
             raise ValueError("exactly four encoder counts are required")
         sample_time = float(sample_time_sec)
         layout = WheelLayout(enabled_mask, speed_valid_mask, anomaly_mask)
-        identity = (int(transport_session_id), layout.enabled_mask, layout.eligible_mask)
+        identity = (
+            int(transport_session_id),
+            int(reset_generation),
+            layout.enabled_mask,
+            layout.eligible_mask,
+        )
         if not layout.complete:
             self.last_counts, self.last_sample_time_sec = counts, sample_time
             self.last_layout_identity = identity
@@ -120,10 +127,29 @@ class EncoderOdometry:
             self.pose.y + ds * math.sin(yaw_mid),
             math.atan2(math.sin(self.pose.yaw + dtheta), math.cos(self.pose.yaw + dtheta)),
         )
-        self._propagate_covariance(left, right, ds, yaw_mid, max(float(covariance_multiplier), 1.0))
-        return self._result(ds / dt, dtheta / dt, dt, True, True, left, right)
+        multiplier = max(float(covariance_multiplier), 1.0)
+        q_left, q_right = self._wheel_increment_variances(left, right, multiplier)
+        self._propagate_covariance(left, right, ds, yaw_mid, q_left, q_right)
+        twist_covariance = self._twist_covariance(q_left, q_right, dt)
+        return self._result(
+            ds / dt,
+            dtheta / dt,
+            dt,
+            True,
+            True,
+            left,
+            right,
+            twist_covariance,
+        )
 
-    def _propagate_covariance(self, left, right, ds, yaw_mid, multiplier):
+    def _wheel_increment_variances(self, left, right, multiplier):
+        return (
+            (self.wheel_variance_floor_m2 + self.wheel_variance_per_meter * abs(left)) * multiplier,
+            (self.wheel_variance_floor_m2 + self.wheel_variance_per_meter * abs(right))
+            * multiplier,
+        )
+
+    def _propagate_covariance(self, left, right, ds, yaw_mid, q_left, q_right):
         f = [
             [1.0, 0.0, -ds * math.sin(yaw_mid)],
             [0.0, 1.0, ds * math.cos(yaw_mid)],
@@ -140,11 +166,7 @@ class EncoderOdometry:
             ],
             [-1.0 / self.track_width_m, 1.0 / self.track_width_m],
         ]
-        q = [
-            (self.wheel_variance_floor_m2 + self.wheel_variance_per_meter * abs(left)) * multiplier,
-            (self.wheel_variance_floor_m2 + self.wheel_variance_per_meter * abs(right))
-            * multiplier,
-        ]
+        q = [q_left, q_right]
         fp = [
             [sum(f[i][k] * self.covariance[k][j] for k in range(3)) for j in range(3)]
             for i in range(3)
@@ -157,9 +179,41 @@ class EncoderOdometry:
                 propagated[i][j] += sum(g[i][k] * q[k] * g[j][k] for k in range(2))
         self.covariance = propagated
 
-    def _result(self, vx, wz, dt, trusted, integrated, left, right):
+    def _twist_covariance(self, q_left, q_right, dt):
+        dt2 = max(float(dt) * float(dt), 1e-12)
+        summed = q_left + q_right
+        cov_vw = 0.5 * (q_right - q_left) / (self.track_width_m * dt2)
+        return (
+            0.25 * summed / dt2,
+            cov_vw,
+            cov_vw,
+            summed / (self.track_width_m * self.track_width_m * dt2),
+        )
+
+    def _result(
+        self,
+        vx,
+        wz,
+        dt,
+        trusted,
+        integrated,
+        left,
+        right,
+        twist_covariance=(0.0, 0.0, 0.0, 0.0),
+    ):
         flat = tuple(self.covariance[i][j] for i in range(3) for j in range(3))
-        return EncoderOdometryUpdate(self.pose, vx, wz, dt, trusted, integrated, left, right, flat)
+        return EncoderOdometryUpdate(
+            self.pose,
+            vx,
+            wz,
+            dt,
+            trusted,
+            integrated,
+            left,
+            right,
+            flat,
+            tuple(twist_covariance),
+        )
 
 
 def covariance_multiplier(
@@ -176,6 +230,7 @@ def covariance_multiplier(
     layout = WheelLayout(enabled_mask, speed_valid_mask, anomaly_mask)
     disagreement = layout.pair_disagreement(speeds)
     invalid_wheels = layout.enabled_invalid_count
+    no_redundancy_sides = int(len(layout.left_indices) < 2) + int(len(layout.right_indices) < 2)
     return min(
         25.0,
         1.0
@@ -183,5 +238,6 @@ def covariance_multiplier(
         + 0.5 * abs(float(turn_rate))
         + 4.0 * max(float(sample_age_sec), 0.0)
         + 2.0 * invalid_wheels
+        + 1.0 * no_redundancy_sides
         + 3.0 * min(int(quality_flags).bit_count(), 4),
     )

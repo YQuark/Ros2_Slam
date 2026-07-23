@@ -161,6 +161,9 @@ def _validate_and_compose(context):
                 package="robot_chassis_ops",
                 executable="chassis_ops_node",
                 name="chassis_ops",
+                parameters=[
+                    {"wire_adapter_name": "fake_base" if fake_base_enabled else "stm32_bridge"}
+                ],
                 output="screen",
             )
         )

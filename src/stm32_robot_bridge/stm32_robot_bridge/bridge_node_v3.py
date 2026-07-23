@@ -9,6 +9,7 @@ from dataclasses import replace
 
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
+from rclpy.clock import Clock, ClockType
 from rclpy.duration import Duration
 from rclpy.executors import MultiThreadedExecutor
 from rclpy.node import Node
@@ -40,9 +41,11 @@ from stm32_robot_bridge.bridge_core import (
     REARM_ACK_TIMEOUT,
     REARM_ESTOP,
     REARM_FIRMWARE_REJECT,
+    REARM_TRANSPORT,
     BridgeCore,
     StatusDisposition,
 )
+from stm32_robot_bridge.bridge_state import BridgeState
 from stm32_robot_bridge.protocol_v3 import (
     ACK_APPLIED,
     ACK_RECEIVED,
@@ -123,8 +126,9 @@ class STM32BridgeV3(Node):
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         if int(self.get_parameter("protocol_version").value) != 3:
-            raise RuntimeError("STM32 bridge Platform API 4 only supports upper protocol v3")
+            raise RuntimeError("STM32 bridge Platform API 5 only supports upper protocol v3")
         self.config_sha256 = str(self.get_parameter("config_sha256").value)
+        self.steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
         self.status_timeout = float(self.get_parameter("status_timeout").value)
         self.ack_timeout = float(self.get_parameter("command_ack_timeout_sec").value)
         self.base_frame_id = str(self.get_parameter("base_frame_id").value)
@@ -144,10 +148,13 @@ class STM32BridgeV3(Node):
             float(self.get_parameter("drive_keepalive_sec").value),
             secrets.randbits(64) or 1,
         )
-        self.last_ack_progress = time.monotonic()
+        self.last_ack_evidence_at = time.monotonic()
+        self.pending_disable_started_at = None
         self.last_applied_sequence = 0
         self.release_count = 0
         self.invalid_command_count = 0
+        self.last_status = None
+        self.enabled_mask = None
 
         if serial is None:
             raise RuntimeError("python3-serial is required")
@@ -168,7 +175,7 @@ class STM32BridgeV3(Node):
         self.link_state_pub = self.create_publisher(
             ChassisLinkState,
             str(self.get_parameter("chassis_link_state_topic").value),
-            STATE_QOS,
+            STATIC_QOS,
         )
         self.firmware_control_pub = self.create_publisher(
             FirmwareControlState,
@@ -191,12 +198,12 @@ class STM32BridgeV3(Node):
             self.on_chassis_command,
             _qos_command(float(self.get_parameter("cmd_timeout").value)),
         )
-        self.create_service(SetBool, "chassis/estop", self.on_estop)
-        self.create_service(Trigger, "chassis/clear_fault", self.on_clear_fault)
-        self.create_service(SetBool, "chassis/line_ctrl", self.on_line_ctrl)
-        self.create_service(Trigger, "chassis/get_info", self.on_get_info)
-        self.create_timer(0.01, self.control_tick)
-        self.create_timer(1.0, self.publish_diagnostics)
+        self.create_service(SetBool, "~/wire_estop", self.on_estop)
+        self.create_service(Trigger, "~/wire_clear_fault", self.on_clear_fault)
+        self.create_service(SetBool, "~/wire_line_ctrl", self.on_line_ctrl)
+        self.create_service(Trigger, "~/wire_get_info", self.on_get_info)
+        self.create_timer(0.01, self.control_tick, clock=self.steady_clock)
+        self.create_timer(1.0, self.publish_diagnostics, clock=self.steady_clock)
         self.transport.start()
         self.get_logger().warn(
             "upper protocol v3 only; beta4/v2 firmware is intentionally incompatible"
@@ -227,9 +234,10 @@ class STM32BridgeV3(Node):
         if not command.enable:
             self._release("command disabled")
             return
-        if not self.command_stream.enabled:
-            self.last_ack_progress = now_mono
+        previous_wire_sequence = self.command_stream.sequence
         self.command_stream.update_command(command.vx, command.wz, now_mono)
+        if self.command_stream.sequence != previous_wire_sequence:
+            self.last_ack_evidence_at = now_mono
 
     def control_tick(self) -> None:
         for event in self.transport.drain_events():
@@ -237,36 +245,41 @@ class STM32BridgeV3(Node):
                 self._on_connected()
             elif event.kind == "disconnected":
                 self.core.on_disconnected()
+                self.last_status = None
+                self.enabled_mask = None
+                self._publish_link_state()
             elif event.kind == "frame":
                 self._handle_frame(event.cmd, event.payload, event.received_at)
         now = time.monotonic()
         release, reason = self.core.tick(now)
         if release:
             self._release(reason)
-        if self.core.machine.can_drive:
+            self._publish_link_state()
+        if self.core.machine.can_drive and self.command_stream.enabled:
             self.command_stream.tick(
                 now, lambda payload: self.transport.submit(CMD_SET_VELOCITY, payload, coalesce=True)
             )
             self.core.snapshot = replace(
                 self.core.snapshot, wire_sent_sequence=self.command_stream.sequence
             )
-        status = self.core.snapshot.firmware.status if self.core.snapshot.firmware else None
-        ack_current = bool(
-            status
-            and status.last_received_session_id == self.command_stream.session_id
-            and status.last_received_sequence == self.command_stream.sequence
-            and status.last_applied_sequence == self.command_stream.sequence
-            and status.command_ack_flags & (ACK_SESSION_VALID | ACK_RECEIVED | ACK_APPLIED)
-            == (ACK_SESSION_VALID | ACK_RECEIVED | ACK_APPLIED)
-            and not status.command_ack_flags & ACK_REJECTED
-            and status.last_reject_reason == 0
-        )
-        if self.command_stream.enabled and ack_current:
-            self.last_applied_sequence = status.last_applied_sequence
-            self.last_ack_progress = now
-        if self.command_stream.enabled and now - self.last_ack_progress > self.ack_timeout:
+        if self.core.machine.state is BridgeState.WAIT_POST_CLEAR_DISABLE_ACK:
+            self.command_stream.tick_disabled(
+                now,
+                lambda payload: self.transport.submit(
+                    CMD_SET_VELOCITY, payload, critical=True, coalesce=True
+                ),
+            )
+        if self.command_stream.enabled and now - self.last_ack_evidence_at > self.ack_timeout:
             self.core.require_rearm(REARM_ACK_TIMEOUT)
             self._release("command ACK timeout")
+            self._publish_link_state()
+        if (
+            self.core.machine.state is BridgeState.WAIT_POST_CLEAR_DISABLE_ACK
+            and self.pending_disable_started_at is not None
+            and now - self.pending_disable_started_at > self.ack_timeout
+        ):
+            self.core.require_rearm(REARM_ACK_TIMEOUT)
+            self._begin_wire_session(request_info=True)
 
     def _on_connected(self) -> None:
         self._begin_wire_session(request_info=True)
@@ -279,7 +292,11 @@ class STM32BridgeV3(Node):
             float(self.get_parameter("drive_keepalive_sec").value),
             session,
         )
-        self.last_ack_progress = time.monotonic()
+        self.last_ack_evidence_at = time.monotonic()
+        self.pending_disable_started_at = None
+        self.last_status = None
+        self.enabled_mask = None
+        self.last_imu_identity = None
         if request_info:
             self.transport.submit(CMD_GET_INFO, encode_get_info_payload(), critical=True)
         for _ in range(3):
@@ -289,14 +306,16 @@ class STM32BridgeV3(Node):
         self.core.snapshot = replace(
             self.core.snapshot, wire_sent_sequence=self.command_stream.sequence
         )
-        self.core.on_startup_released()
+        self._publish_link_state()
 
     def _handle_frame(self, cmd: int, payload: bytes, received_at: float) -> None:
         if cmd == CMD_HELLO:
             hello = decode_hello_payload(payload)
-            if hello and self.core.on_hello(hello):
+            if hello:
+                compatible = self.core.on_hello(hello)
                 msg = FirmwareInfo()
                 msg.header.stamp = self.get_clock().now().to_msg()
+                msg.wire_session_id = self.core.snapshot.wire_session_id
                 msg.protocol_version, msg.schema_version = hello.version, hello.schema_version
                 msg.capabilities, msg.firmware_commit = hello.capabilities, hello.firmware_commit
                 msg.hardware_revision, msg.parameter_crc32 = (
@@ -305,12 +324,22 @@ class STM32BridgeV3(Node):
                 )
                 msg.simulated = False
                 self.firmware_pub.publish(msg)
+                self._publish_link_state()
+                if not compatible:
+                    self.get_logger().error("incompatible Upper-v3 HELLO")
             return
         if cmd == CMD_STATUS:
             status = decode_status_payload(payload)
             if status is not None:
+                if self.enabled_mask is not None and status.motor_enabled_mask != self.enabled_mask:
+                    self.core.require_rearm(REARM_TRANSPORT)
+                    self._begin_wire_session(request_info=True)
+                    return
                 disposition = self.core.on_status(status, received_at)
                 if disposition is StatusDisposition.NEW:
+                    self.enabled_mask = status.motor_enabled_mask
+                    self.last_status = status
+                    self._record_ack_evidence(status, received_at)
                     self._publish_status(status, disposition)
                 elif disposition is StatusDisposition.OUT_OF_ORDER:
                     self.core.require_rearm(REARM_ACK_TIMEOUT)
@@ -331,6 +360,21 @@ class STM32BridgeV3(Node):
         if cmd == CMD_DIAGNOSTIC:
             decode_diagnostic_payload(payload)
 
+    def _record_ack_evidence(self, status, received_at: float) -> None:
+        required = ACK_SESSION_VALID | ACK_RECEIVED | ACK_APPLIED
+        if (
+            status.last_received_session_id == self.command_stream.session_id
+            and status.last_received_sequence == self.command_stream.sequence
+            and status.last_applied_sequence == self.command_stream.sequence
+            and status.command_ack_flags & required == required
+            and not status.command_ack_flags & ACK_REJECTED
+            and status.last_reject_reason == 0
+        ):
+            self.last_applied_sequence = status.last_applied_sequence
+            self.last_ack_evidence_at = float(received_at)
+            if self.core.machine.state is BridgeState.WIRE_REARM_READY:
+                self.pending_disable_started_at = None
+
     def _publish_status(self, status, disposition: StatusDisposition) -> None:
         receive_stamp = self.get_clock().now().to_msg()
         observation = WheelObservation()
@@ -338,6 +382,7 @@ class STM32BridgeV3(Node):
         observation.header.frame_id = self.base_frame_id
         observation.schema_version = WheelObservation.SCHEMA_VERSION
         observation.transport_session_id = self.core.snapshot.wire_session_id
+        observation.reset_generation = self.core.snapshot.reset_generation
         observation.status_sequence = status.status_sequence
         observation.mcu_sample_time_ms = status.sample_timestamp_ms
         observation.encoder_count = list(status.encoder_count)
@@ -355,11 +400,11 @@ class STM32BridgeV3(Node):
         observation.latched_error_flags = status.latched_error_flags
         self.wheel_observation_pub.publish(observation)
         if status.status_flags & 0x03:
-            self._release("firmware ESTOP/fault-stop", force_fresh=True)
+            self._release("firmware ESTOP/fault-stop")
         if (
             self.core.snapshot.rearm_required
             and not status.status_flags & 0x03
-            and self.core.machine.state.name == "WAIT_SAFE_STATUS"
+            and self.core.machine.state in (BridgeState.WAIT_STATUS, BridgeState.WAIT_FAULT_CLEAR)
         ):
             self._release("post-clear wire disable", force_fresh=True)
         if self.command_stream.enabled and (
@@ -403,6 +448,8 @@ class STM32BridgeV3(Node):
         ):
             self.release_count += 1
             self.core.on_disable_sent(self.command_stream.sequence)
+            if self.core.machine.state is BridgeState.WAIT_POST_CLEAR_DISABLE_ACK:
+                self.pending_disable_started_at = time.monotonic()
             self.core.snapshot = replace(
                 self.core.snapshot,
                 wire_sent_sequence=self.command_stream.sequence,
@@ -410,6 +457,7 @@ class STM32BridgeV3(Node):
                 target_wz=0.0,
                 last_command_at=None,
             )
+            self._publish_link_state()
         if reason:
             self.get_logger().warn(reason)
 
@@ -429,6 +477,10 @@ class STM32BridgeV3(Node):
         response.success = self.transport.submit(
             CMD_CLEAR_FAULT, encode_clear_fault_payload(), critical=True
         )
+        if response.success:
+            self.core.machine.on_clear_fault_requested()
+            self.core.snapshot = replace(self.core.snapshot, state=self.core.machine.state)
+            self._publish_link_state()
         response.message = "clear fault queued" if response.success else "queue full"
         return response
 
@@ -446,47 +498,62 @@ class STM32BridgeV3(Node):
         response.message = "get info queued" if response.success else "queue full"
         return response
 
-    def _publish_chassis_states(self, status) -> None:
+    def _publish_link_state(self) -> None:
         s = self.core.snapshot
+        status = self.last_status
         msg = ChassisLinkState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.link_state = int(s.state)
+        msg.state_generation = self.core.machine.generation
         msg.protocol_version = 3
+        msg.protocol_compatible = s.protocol_compatible
+        msg.incompatibility_flags = s.incompatibility_flags
         msg.wire_session_id, msg.wire_sent_sequence = (
             s.wire_session_id,
             self.command_stream.sequence,
         )
-        msg.firmware_ack_available = True
+        msg.firmware_ack_available = bool(
+            status is not None
+            and s.state is not BridgeState.DISCONNECTED
+            and status.last_received_session_id == s.wire_session_id
+        )
         msg.firmware_session_id, msg.firmware_received_sequence = (
-            status.last_received_session_id,
-            status.last_received_sequence,
+            (status.last_received_session_id if status is not None else 0),
+            (status.last_received_sequence if status is not None else 0),
         )
         msg.firmware_applied_sequence, msg.firmware_reject_reason = (
-            status.last_applied_sequence,
-            status.last_reject_reason,
+            (status.last_applied_sequence if status is not None else 0),
+            (status.last_reject_reason if status is not None else 0),
         )
         msg.wire_rearm_required = s.rearm_required
         msg.wire_rearm_reason_flags = s.rearm_reason_flags
         now = time.monotonic()
         msg.status_age_ms = (
-            0
-            if s.last_status_at is None
+            ChassisLinkState.AGE_INVALID
+            if s.last_status_at is None or s.state is BridgeState.DISCONNECTED
             else min(int(max(now - s.last_status_at, 0.0) * 1000.0), 0xFFFFFFFF)
         )
-        msg.command_ack_age_ms = min(
-            int(max(now - self.last_ack_progress, 0.0) * 1000.0), 0xFFFFFFFF
+        msg.command_ack_age_ms = (
+            min(int(max(now - self.last_ack_evidence_at, 0.0) * 1000.0), 0xFFFFFFFF)
+            if msg.firmware_ack_available
+            else ChassisLinkState.AGE_INVALID
         )
         msg.config_sha256 = self.config_sha256
         self.link_state_pub.publish(msg)
 
+    def _publish_chassis_states(self, status) -> None:
+        self._publish_link_state()
+        s = self.core.snapshot
+
         control = FirmwareControlState()
-        control.header.stamp = msg.header.stamp
+        control.header.stamp = self.get_clock().now().to_msg()
         control.firmware_control_source = status.control_source
         control.status_flags = status.status_flags
         control.error_flags = status.error_flags
         control.latched_error_flags = status.latched_error_flags
         control.estop_active = bool(status.status_flags & 0x01)
         control.fault_stop_active = bool(status.status_flags & 0x02)
+        control.line_control_enabled = bool(status.status_flags & 0x04)
         control.status_sequence = status.status_sequence
         control.wire_session_id = s.wire_session_id
         self.firmware_control_pub.publish(control)
@@ -497,7 +564,11 @@ class STM32BridgeV3(Node):
         status_age = None if snapshot.last_status_at is None else now - snapshot.last_status_at
         level = DiagnosticStatus.OK
         message = snapshot.state.name.lower()
-        if snapshot.hello is None or snapshot.state.value < 3:
+        if (
+            snapshot.state in (BridgeState.DISCONNECTED, BridgeState.WAIT_HELLO)
+            or snapshot.hello is None
+            or not snapshot.protocol_compatible
+        ):
             level, message = DiagnosticStatus.ERROR, "v3 HELLO/STATUS/ACK unavailable"
         elif snapshot.rearm_required:
             level, message = DiagnosticStatus.WARN, "transport rearm required"

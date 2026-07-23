@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed v0.5.0-rc1 release gate over machine-readable evidence."""
+"""Fail-closed v0.6.0-rc1 release gate over machine-readable evidence."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-RELEASE = "v0.5.0-rc1"
+RELEASE = "v0.6.0-rc1"
 MANIFEST = ROOT / "verification" / "configs" / "release" / f"{RELEASE}.yaml"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA = re.compile(r"^[0-9a-f]{40}$")

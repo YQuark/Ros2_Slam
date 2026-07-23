@@ -5,5 +5,6 @@ uint32 error_flags
 uint32 latched_error_flags
 bool estop_active
 bool fault_stop_active
+bool line_control_enabled
 uint32 status_sequence
 uint64 wire_session_id

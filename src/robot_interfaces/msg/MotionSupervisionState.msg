@@ -12,6 +12,8 @@ uint32 REASON_UNEXPECTED_MOTION=8
 uint32 REASON_OBSERVATION_STALE=16
 uint32 REASON_IMU_UNAVAILABLE=32
 uint32 REASON_OBSERVATION_INVALID=64
+uint32 REASON_NO_WHEEL_REDUNDANCY=128
+uint32 REASON_COMMAND_STALE=256
 
 std_msgs/Header header
 uint8 level
@@ -24,4 +26,6 @@ uint32 command_sequence
 uint64 observation_session_id
 uint32 observation_sequence
 uint32 observation_age_ms
+uint8 left_valid_wheel_count
+uint8 right_valid_wheel_count
 string config_sha256

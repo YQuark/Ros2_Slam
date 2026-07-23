@@ -2,21 +2,36 @@ from pathlib import Path
 
 import yaml
 
-from robot_config.compiler import ConfigError, compile_effective_config, load_effective_config
+from robot_config.compiler import (
+    ConfigError,
+    _canonical_hash,
+    compile_effective_config,
+    load_effective_config,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1] / "config"
 
 
-def test_effective_config_is_stable_and_api4_wire3(tmp_path):
+def test_effective_config_is_stable_and_api5_wire3(tmp_path):
     first = load_effective_config(ROOT)
     second = load_effective_config(ROOT)
     assert first["config_sha256"] == second["config_sha256"]
-    assert first["platform_api_version"] == 4
+    assert first["platform_api_version"] == 5
     assert first["protocol"]["version"] == 3
     paths = compile_effective_config(ROOT, tmp_path)
     params = yaml.safe_load(paths["ros_params"].read_text(encoding="utf-8"))
     assert params["stm32_bridge"]["ros__parameters"]["config_sha256"] == first["config_sha256"]
+
+
+def test_config_hash_excludes_only_its_self_referential_identity_fields():
+    effective = load_effective_config(ROOT)
+    expected = effective["config_sha256"]
+    unhashed = yaml.safe_load(yaml.safe_dump(effective))
+    unhashed.pop("config_sha256")
+    unhashed["calibration_bundle"]["identity"].pop("upper_config_sha256")
+    assert _canonical_hash(unhashed) == expected
+    assert effective["calibration_bundle"]["identity"]["upper_config_sha256"] == expected
 
 
 def test_timing_invariant_fails_closed():

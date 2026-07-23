@@ -135,6 +135,7 @@ class WheelOdometryNode(Node):
             speed_valid_mask=msg.speed_valid_mask,
             anomaly_mask=msg.encoder_anomaly_mask,
             transport_session_id=msg.transport_session_id,
+            reset_generation=msg.reset_generation,
             covariance_multiplier=multiplier,
             hard_max_speed_mps=self.hard_max_speed,
         )
@@ -166,8 +167,11 @@ class WheelOdometryNode(Node):
             p[7],
             p[8],
         )
-        odom.twist.covariance[0] = max(p[0], 1e-6)
-        odom.twist.covariance[35] = max(p[8], 1e-6)
+        t = update.twist_covariance
+        odom.twist.covariance[0] = max(t[0], 1e-6)
+        odom.twist.covariance[5] = t[1]
+        odom.twist.covariance[30] = t[2]
+        odom.twist.covariance[35] = max(t[3], 1e-6)
         self.publisher.publish(odom)
 
     @staticmethod

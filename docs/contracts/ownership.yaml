@@ -1,0 +1,118 @@
+schema_version: 1
+topics:
+  chassis/host_motion_command:
+    writer: robot_control
+    readers: [stm32_robot_bridge, robot_supervision]
+    rejector: robot_control_and_bridge
+    final_fact: host_candidate
+    reset: robot_control
+    reestablish: fresh_host_intent
+  chassis/link_state:
+    writer: base_provider
+    readers: [robot_control, robot_config, robot_navigation_guard, robot_chassis_ops]
+    rejector: bridge_state_machine
+    final_fact: bridge
+    reset: bridge
+    reestablish: new_wire_session
+  wheel/observation:
+    writer: base_provider
+    readers: [robot_state_estimation, robot_supervision, robot_config]
+    rejector: each_consumer
+    final_fact: firmware_status
+    reset: bridge
+    reestablish: new_status_sample
+  imu/observation:
+    writer: base_provider
+    readers: [robot_state_estimation]
+    rejector: each_consumer
+    final_fact: firmware_imu
+    reset: bridge
+    reestablish: new_imu_sample
+  wheel/odom:
+    writer: robot_state_estimation
+    readers: [robot_localization]
+    rejector: compatibility_gate
+    final_fact: upper_estimator
+    reset: wheel_odometry
+    reestablish: two_valid_samples
+  odom:
+    writer: formal_odometry
+    readers: [nav2, slam]
+    rejector: compatibility_gate
+    final_fact: gated_fused_upper_state
+    reset: compatibility_gate
+    reestablish: current_session_observation
+actions:
+  chassis/operation:
+    writer: operation_client
+    readers: [robot_chassis_ops, stm32_robot_bridge]
+    rejector: robot_chassis_ops
+    final_fact: firmware_evidence
+    reset: operation_deadline
+    reestablish: new_goal
+  navigate_to_pose:
+    writer: navigation_client
+    readers: [robot_navigation_guard, nav2_backend]
+    rejector: robot_navigation_guard
+    final_fact: public_goal_state
+    reset: navigation_guard
+    reestablish: new_goal_uuid
+transforms:
+  map->odom:
+    writer: slam_or_localization
+    readers: [nav2, rviz]
+    rejector: lifecycle_and_navigation_guard
+    final_fact: active_localization_provider
+    reset: lifecycle
+    reestablish: localization
+  odom->base_link:
+    writer: formal_odometry
+    readers: [nav2, slam, rviz]
+    rejector: compatibility_gate
+    final_fact: gated_fused_upper_state
+    reset: compatibility_gate
+    reestablish: current_session_observation
+configuration:
+  upper:
+    writer: robot_config
+    readers: [all_upper_nodes]
+    rejector: config_compiler
+    final_fact: effective_config_sha256
+    reset: deployment
+    reestablish: compile
+  firmware:
+    writer: firmware
+    readers: [firmware, compatibility_gate]
+    rejector: compatibility_gate
+    final_fact: firmware_parameter_crc32
+    reset: firmware
+    reestablish: hello
+mutable_state:
+  wire_rearm:
+    writer: stm32_robot_bridge
+    readers: [robot_control, robot_navigation_guard]
+    rejector: bridge_state_machine
+    final_fact: exact_disable_ack
+    reset: disconnect_fault_timeout
+    reestablish: current_session_disable_ack
+  host_control:
+    writer: robot_control
+    readers: [stm32_robot_bridge, robot_navigation_guard]
+    rejector: robot_control
+    final_fact: host_candidate_state
+    reset: release_host_candidate
+    reestablish: fresh_host_intent
+  navigation_goal:
+    writer: robot_navigation_guard
+    readers: [robot_control, nav2_backend]
+    rejector: robot_navigation_guard
+    final_fact: public_action_result
+    reset: revoke_and_cancel
+    reestablish: new_goal_uuid
+  operation_transaction:
+    writer: robot_chassis_ops
+    readers: [operation_client]
+    rejector: robot_chassis_ops
+    final_fact: firmware_status_or_queue_fact
+    reset: cancel_or_timeout
+    reestablish: new_operation_goal

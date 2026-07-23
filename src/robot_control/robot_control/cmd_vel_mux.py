@@ -5,12 +5,14 @@ from typing import Dict
 
 import rclpy
 from geometry_msgs.msg import Twist
+from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
 from robot_interfaces.msg import (
     ChassisLinkState,
     HostControlState,
     HostMotionCommand,
     MotionSupervisionState,
+    NavigationGuardState,
 )
 
 from robot_control.control_policy import (
@@ -27,6 +29,7 @@ class CmdVelMuxNode(Node):
     def __init__(self) -> None:
         super().__init__("cmd_vel_mux")
         self.monotonic_clock = time.monotonic
+        self.steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
 
         self.declare_parameter("config_sha256", "development-uncompiled")
         self.declare_parameter("unsafe_development_mode", True)
@@ -46,6 +49,7 @@ class CmdVelMuxNode(Node):
         self.declare_parameter("motion_supervision_topic", "motion/supervision_state")
         self.declare_parameter("chassis_link_state_topic", "chassis/link_state")
         self.declare_parameter("host_control_state_topic", "chassis/host_control_state")
+        self.declare_parameter("navigation_guard_state_topic", "navigation/guard_state")
         self.declare_parameter("require_motion_supervision", True)
         self.declare_parameter("supervision_timeout_sec", 0.25)
         self.declare_parameter("rearm_quiet_sec", 0.25)
@@ -88,12 +92,17 @@ class CmdVelMuxNode(Node):
         self.motion_state_at = None
         self.motion_scale = 1.0
         self.supervision_seen = False
-        self.rearm_required = False
-        self.rearm_reason_flags = 0
-        self.gate_state = HostControlState.STATE_WAIT_SUPERVISION
+        self.rearm_required = True
+        self.rearm_reason_flags = HostControlState.REARM_TRANSPORT
+        self.gate_state = HostControlState.STATE_HOST_CLEARED
         self.last_reject_reason = HostControlState.REJECT_NONE
         self.last_wire_session_id = 0
+        self.wire_ready = False
+        self.quiet_started_at = self.monotonic_clock()
         self.release_sent_wire_session = None
+        self.nav_active = False
+        self.nav_goal_generation = 0
+        self.required_nav_generation = 0
         self.subscriptions_by_source: Dict[str, object] = {}
         for source, topic in self.source_config.topic_map().items():
             self.subscriptions_by_source[source] = self.create_subscription(
@@ -114,18 +123,26 @@ class CmdVelMuxNode(Node):
             self._on_chassis_state,
             10,
         )
+        self.create_subscription(
+            NavigationGuardState,
+            str(self.get_parameter("navigation_guard_state_topic").value),
+            self._on_navigation_guard,
+            10,
+        )
 
         publish_hz = max(float(self.get_parameter("publish_hz").value), 1.0)
-        self.create_timer(1.0 / publish_hz, self._publish_selected)
+        self.create_timer(1.0 / publish_hz, self._publish_selected, clock=self.steady_clock)
         self.get_logger().info(
             "cmd_vel_mux active: "
             f"sources={','.join(self.source_config.topic_map().keys())} "
             f"chassis_command_topic={self.chassis_command_topic} "
-            "platform_api=4"
+            "platform_api=5"
         )
 
     def _make_callback(self, source: str):
         def _callback(msg: Twist) -> None:
+            if source == "nav" and not self.nav_active:
+                return
             try:
                 self.mux.update(
                     source,
@@ -140,15 +157,21 @@ class CmdVelMuxNode(Node):
                 return
 
             if self.rearm_required:
-                if self.gate_state == HostControlState.STATE_WAIT_FRESH_SOURCE:
+                if self.gate_state == HostControlState.STATE_WAIT_FRESH_HOST_INTENT:
+                    if not self.wire_ready:
+                        return
+                    if source == "nav" and self.nav_goal_generation <= self.required_nav_generation:
+                        return
                     self.rearm_required = False
                     self.rearm_reason_flags = 0
-                    self.gate_state = HostControlState.STATE_READY
+                    self.gate_state = HostControlState.STATE_WAIT_FRESH_HOST_INTENT
                     self.last_active = False
                     self.command_epoch = 0
                     self.sequence = 0
                     self.motion_limiter.reset()
                 else:
+                    if self.gate_state == HostControlState.STATE_WAIT_SOURCE_QUIET:
+                        self.quiet_started_at = None
                     return
             self.last_reject_reason = HostControlState.REJECT_NONE
             if not self.last_active:
@@ -170,23 +193,37 @@ class CmdVelMuxNode(Node):
                         HostControlState.REJECT_SUPERVISION_STALE,
                     )
                 elif not self.rearm_required:
-                    self.gate_state = HostControlState.STATE_WAIT_SUPERVISION
+                    self.gate_state = HostControlState.STATE_HOST_CLEARED
                 self._publish_control_state(now_sec)
                 return
         if self.rearm_required:
-            if (
-                self.gate_state == HostControlState.STATE_WAIT_SOURCE_QUIET
-                and not self.mux.has_recent_input(now_sec, self.rearm_quiet_sec)
-            ):
-                self.mux.clear()
-                self.gate_state = HostControlState.STATE_WAIT_FRESH_SOURCE
+            if self.gate_state == HostControlState.STATE_HOST_CLEARED:
+                # Establish an explicit Host-side disabled epoch before any
+                # future enabled epoch.  Queue admission is not rearm proof;
+                # the following gates still wait for wire disable ACK.
+                if self.release_sent_wire_session != self.last_wire_session_id:
+                    self._publish_release()
+                    self.release_sent_wire_session = self.last_wire_session_id
+                self.gate_state = HostControlState.STATE_WAIT_SOURCE_QUIET
+                self.quiet_started_at = now_sec
+            elif self.gate_state == HostControlState.STATE_WAIT_SOURCE_QUIET:
+                if self.mux.has_recent_input(now_sec, self.rearm_quiet_sec):
+                    self.quiet_started_at = None
+                else:
+                    if self.quiet_started_at is None:
+                        self.quiet_started_at = now_sec
+                    elif now_sec - self.quiet_started_at >= self.rearm_quiet_sec:
+                        self.mux.clear()
+                        self.gate_state = HostControlState.STATE_WAIT_WIRE_READY
+            elif self.gate_state == HostControlState.STATE_WAIT_WIRE_READY and self.wire_ready:
+                self.gate_state = HostControlState.STATE_WAIT_FRESH_HOST_INTENT
             self._publish_control_state(now_sec)
             return
         selected = self.mux.select(now_sec)
         if not selected.active:
             if self.last_active:
                 self._publish_release()
-            self.gate_state = HostControlState.STATE_READY
+            self.gate_state = HostControlState.STATE_WAIT_FRESH_HOST_INTENT
             self._publish_control_state(now_sec)
             return
 
@@ -202,7 +239,7 @@ class CmdVelMuxNode(Node):
         self._publish_command(SelectedCommand(source=selected.source, command=limited, active=True))
         self.last_active = True
         self.last_source = selected.source
-        self.gate_state = HostControlState.STATE_ACTIVE
+        self.gate_state = HostControlState.STATE_HOST_ACTIVE
         self._publish_control_state(now_sec)
 
     def _publish_release(self) -> None:
@@ -225,30 +262,51 @@ class CmdVelMuxNode(Node):
                 HostControlState.REARM_MOTION_CRITICAL,
                 HostControlState.REJECT_MOTION_CRITICAL,
             )
-        elif not self.rearm_required:
-            self.gate_state = HostControlState.STATE_READY
+        elif not self.rearm_required and not self.last_active:
+            self.gate_state = HostControlState.STATE_WAIT_FRESH_HOST_INTENT
 
     def _on_chassis_state(self, msg: ChassisLinkState) -> None:
         wire_session = int(msg.wire_session_id)
         session_changed = wire_session != 0 and wire_session != self.last_wire_session_id
         self.last_wire_session_id = wire_session
-        if msg.wire_rearm_required:
+        self.wire_ready = bool(
+            msg.link_state
+            in (ChassisLinkState.STATE_WIRE_REARM_READY, ChassisLinkState.STATE_DRIVE_ACTIVE)
+            and not msg.wire_rearm_required
+            and msg.protocol_compatible
+        )
+        if msg.wire_rearm_required or not self.wire_ready:
             self._latch_rearm(
                 int(msg.wire_rearm_reason_flags) or HostControlState.REARM_TRANSPORT,
                 HostControlState.REJECT_REARM_REQUIRED,
                 force_release=session_changed,
             )
 
+    def _on_navigation_guard(self, msg: NavigationGuardState) -> None:
+        self.nav_goal_generation = int(msg.goal_generation)
+        self.nav_active = msg.state == NavigationGuardState.STATE_ACTIVE
+
     def _latch_rearm(self, reason_flags, reject_reason, *, force_release=False) -> None:
         first = not self.rearm_required
         self.rearm_required = True
         self.rearm_reason_flags |= int(reason_flags)
         self.last_reject_reason = int(reject_reason)
-        if first:
+        restart = (
+            first
+            or force_release
+            or self.gate_state
+            in (
+                HostControlState.STATE_WAIT_FRESH_HOST_INTENT,
+                HostControlState.STATE_HOST_ACTIVE,
+            )
+        )
+        if restart:
             self.mux.clear()
             self.motion_limiter.reset()
-            self.gate_state = HostControlState.STATE_WAIT_SOURCE_QUIET
-        if first or force_release:
+            self.gate_state = HostControlState.STATE_HOST_CLEARED
+            self.quiet_started_at = self.monotonic_clock()
+            self.required_nav_generation = self.nav_goal_generation
+        if first or force_release or self.last_active:
             self._publish_release()
             self.release_sent_wire_session = self.last_wire_session_id
 

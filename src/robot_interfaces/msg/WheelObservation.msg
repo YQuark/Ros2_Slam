@@ -5,6 +5,7 @@ uint8 SCHEMA_VERSION=1
 std_msgs/Header header
 uint8 schema_version
 uint64 transport_session_id
+uint32 reset_generation
 uint32 status_sequence
 uint32 mcu_sample_time_ms
 

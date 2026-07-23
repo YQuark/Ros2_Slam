@@ -49,12 +49,11 @@ class _FakeHostMotionCommand:
 
 
 class _FakeHostControlState:
-    STATE_DISABLED = 0
-    STATE_WAIT_SUPERVISION = 1
-    STATE_READY = 2
-    STATE_ACTIVE = 3
-    STATE_WAIT_SOURCE_QUIET = 4
-    STATE_WAIT_FRESH_SOURCE = 5
+    STATE_HOST_CLEARED = 0
+    STATE_WAIT_SOURCE_QUIET = 1
+    STATE_WAIT_WIRE_READY = 2
+    STATE_WAIT_FRESH_HOST_INTENT = 3
+    STATE_HOST_ACTIVE = 4
     REJECT_NONE = 0
     REJECT_INVALID = 1
     REJECT_STALE = 2
@@ -74,7 +73,13 @@ class _FakeMotionSupervisionState:
 
 
 class _FakeChassisLinkState:
-    pass
+    STATE_DISCONNECTED = 0
+    STATE_WIRE_REARM_READY = 6
+    STATE_DRIVE_ACTIVE = 7
+
+
+class _FakeNavigationGuardState:
+    STATE_ACTIVE = 4
 
 
 _mock_robot_interfaces_msg = MagicMock()
@@ -82,6 +87,7 @@ _mock_robot_interfaces_msg.HostMotionCommand = _FakeHostMotionCommand
 _mock_robot_interfaces_msg.ChassisLinkState = _FakeChassisLinkState
 _mock_robot_interfaces_msg.HostControlState = _FakeHostControlState
 _mock_robot_interfaces_msg.MotionSupervisionState = _FakeMotionSupervisionState
+_mock_robot_interfaces_msg.NavigationGuardState = _FakeNavigationGuardState
 sys.modules["robot_interfaces"] = MagicMock()
 sys.modules["robot_interfaces.msg"] = _mock_robot_interfaces_msg
 
@@ -126,7 +132,7 @@ class MockNode:
     def create_subscription(self, msg_type, topic, callback, qos_profile):
         return MagicMock()
 
-    def create_timer(self, timer_period_sec, callback):
+    def create_timer(self, timer_period_sec, callback, **_kwargs):
         self._timer_callback = callback
         return MagicMock()
 
@@ -143,6 +149,9 @@ _mock_rclpy.node.Node = MockNode
 # 设置 mock 子模块
 sys.modules["rclpy.node"] = MagicMock()
 sys.modules["rclpy.node"].Node = MockNode
+sys.modules["rclpy.clock"] = MagicMock()
+sys.modules["rclpy.clock"].Clock = MagicMock()
+sys.modules["rclpy.clock"].ClockType = MagicMock()
 
 # ---------------------------------------------------------------------------
 # 导入被测试模块
@@ -166,6 +175,12 @@ def make_mux(**param_overrides):
     node._logger = MagicMock()
     node.get_logger = MagicMock(return_value=node._logger)
     node.monotonic_clock = lambda: node.get_clock().now.return_value.nanoseconds * 1e-9
+    node.rearm_required = False
+    node.rearm_reason_flags = 0
+    node.wire_ready = True
+    node.gate_state = _FakeHostControlState.STATE_WAIT_FRESH_HOST_INTENT
+    node.nav_active = True
+    node.nav_goal_generation = 1
     return node
 
 
@@ -312,6 +327,8 @@ class TestCmdVelMuxPublish:
         state.wire_session_id = 2
         state.wire_rearm_required = True
         state.wire_rearm_reason_flags = _FakeHostControlState.REARM_TRANSPORT
+        state.link_state = _FakeChassisLinkState.STATE_DISCONNECTED
+        state.protocol_compatible = False
 
         node._on_chassis_state(state)
 
@@ -323,9 +340,21 @@ class TestCmdVelMuxPublish:
         node.publisher.reset_mock()
         node.get_clock().now.return_value.nanoseconds = int(0.30e9)
         node._publish_selected()
-        assert node.gate_state == _FakeHostControlState.STATE_WAIT_FRESH_SOURCE
-        node.publisher.publish.assert_not_called()
+        node.get_clock().now.return_value.nanoseconds = int(0.60e9)
+        node._publish_selected()
+        assert node.gate_state == _FakeHostControlState.STATE_WAIT_WIRE_READY
 
+        ready = MagicMock()
+        ready.wire_session_id = 2
+        ready.wire_rearm_required = False
+        ready.wire_rearm_reason_flags = 0
+        ready.link_state = _FakeChassisLinkState.STATE_WIRE_REARM_READY
+        ready.protocol_compatible = True
+        node._on_chassis_state(ready)
+        node._publish_selected()
+        assert node.gate_state == _FakeHostControlState.STATE_WAIT_FRESH_HOST_INTENT
+
+        node.nav_goal_generation = 2
         fresh = MagicMock()
         fresh.linear.x, fresh.angular.z = 0.1, 0.0
         node._make_callback("nav")(fresh)

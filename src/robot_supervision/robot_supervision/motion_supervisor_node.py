@@ -4,6 +4,7 @@
 import time
 
 import rclpy
+from rclpy.clock import Clock, ClockType
 from rclpy.node import Node
 from rclpy.qos import qos_profile_sensor_data
 from robot_interfaces.msg import HostMotionCommand, MotionSupervisionState, WheelObservation
@@ -21,6 +22,7 @@ from robot_supervision.motion_supervisor import (
 class MotionSupervisorNode(Node):
     def __init__(self) -> None:
         super().__init__("motion_supervisor")
+        self.steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
         defaults = SupervisorConfig()
         self.declare_parameter("config_sha256", "development-uncompiled")
         self.declare_parameter("wheel_observation_topic", "wheel/observation")
@@ -30,6 +32,7 @@ class MotionSupervisorNode(Node):
         self.declare_parameter("wheel_track_width", 0.176)
         self.declare_parameter("observation_timeout_sec", 0.25)
         self.declare_parameter("imu_timeout_sec", 0.20)
+        self.declare_parameter("command_timeout_sec", 0.25)
         for name in defaults.__dataclass_fields__:
             self.declare_parameter(name, getattr(defaults, name))
         values = {name: self.get_parameter(name).value for name in defaults.__dataclass_fields__}
@@ -37,8 +40,11 @@ class MotionSupervisorNode(Node):
         self.track_width = max(float(self.get_parameter("wheel_track_width").value), 1e-6)
         self.observation_timeout = float(self.get_parameter("observation_timeout_sec").value)
         self.imu_timeout = float(self.get_parameter("imu_timeout_sec").value)
+        self.command_timeout = float(self.get_parameter("command_timeout_sec").value)
         self.config_sha256 = str(self.get_parameter("config_sha256").value)
         self.last_command = None
+        self.last_command_at = None
+        self.last_command_identity = None
         self.last_gyro_z = None
         self.last_imu_at = None
         self.last_observation_at = None
@@ -67,10 +73,18 @@ class MotionSupervisorNode(Node):
             self._on_imu,
             qos_profile_sensor_data,
         )
-        self.create_timer(0.05, self._health_tick)
+        self.create_timer(0.05, self._health_tick, clock=self.steady_clock)
 
     def _on_command(self, msg: HostMotionCommand) -> None:
+        identity = (int(msg.command_epoch), int(msg.sequence))
+        if self.last_command_identity is not None:
+            old_epoch, old_sequence = self.last_command_identity
+            delta = (identity[1] - old_sequence) & 0xFFFFFFFF
+            if identity[0] == old_epoch and not (0 < delta < 0x80000000):
+                return
+        self.last_command_identity = identity
         self.last_command = msg
+        self.last_command_at = time.monotonic()
 
     def _on_imu(self, msg: Imu) -> None:
         self.last_gyro_z = float(msg.angular_velocity.z)
@@ -148,6 +162,8 @@ class MotionSupervisorNode(Node):
         reason_flags = reason_map.get(result.reason, MotionSupervisionState.REASON_NONE)
         if gyro is None:
             reason_flags |= MotionSupervisionState.REASON_IMU_UNAVAILABLE
+        if len(layout.left_indices) < 2 or len(layout.right_indices) < 2:
+            reason_flags |= MotionSupervisionState.REASON_NO_WHEEL_REDUNDANCY
         self._publish(
             result.level,
             result.score,
@@ -169,6 +185,19 @@ class MotionSupervisorNode(Node):
                 True,
                 MotionSupervisionState.REASON_OBSERVATION_STALE,
             )
+            return
+        if (
+            self.last_command is not None
+            and self.last_command.enable
+            and (self.last_command_at is None or now - self.last_command_at > self.command_timeout)
+        ):
+            self._publish(
+                SupervisorLevel.CRITICAL,
+                1.0,
+                0.0,
+                True,
+                MotionSupervisionState.REASON_COMMAND_STALE,
+            )
 
     def _publish(self, level, score, scale, release, reason_flags) -> None:
         msg = MotionSupervisionState()
@@ -184,6 +213,13 @@ class MotionSupervisorNode(Node):
         if self.last_observation is not None:
             msg.observation_session_id = self.last_observation.transport_session_id
             msg.observation_sequence = self.last_observation.status_sequence
+            layout = WheelLayout(
+                self.last_observation.motor_enabled_mask,
+                self.last_observation.speed_valid_mask,
+                self.last_observation.encoder_anomaly_mask,
+            )
+            msg.left_valid_wheel_count = len(layout.left_indices)
+            msg.right_valid_wheel_count = len(layout.right_indices)
         msg.observation_age_ms = (
             0xFFFFFFFF
             if self.last_observation_at is None

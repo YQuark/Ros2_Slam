@@ -13,6 +13,9 @@ if(BUILD_TESTING)
   ament_add_pytest_test(test_fake_base_model test/test_fake_base_model.py
     APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
   )
+  ament_add_pytest_test(test_firmware_emulator test/test_firmware_emulator.py
+    APPEND_ENV PYTHONPATH=${CMAKE_CURRENT_SOURCE_DIR}
+  )
 endif()
 
 ament_package()

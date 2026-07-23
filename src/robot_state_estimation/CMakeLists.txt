@@ -9,6 +9,7 @@ ament_python_install_package(robot_state_estimation)
 install(PROGRAMS
   robot_state_estimation/imu_adapter_node.py
   robot_state_estimation/wheel_odometry_node.py
+  robot_state_estimation/formal_odometry_node.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

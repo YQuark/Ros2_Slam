@@ -16,7 +16,7 @@ def test_ekf_fuses_wheel_twist_and_imu_gyro_with_wheel_fallback():
     assert config["frequency"] == 30.0
     assert config["sensor_timeout"] == 0.2
     assert config["two_d_mode"] is True
-    assert config["publish_tf"] is True
+    assert config["publish_tf"] is False
     assert config["odom0"] == "wheel/odom"
     assert [index for index, enabled in enumerate(config["odom0_config"]) if enabled] == [6, 11]
     assert config["imu0"] == "imu/data"
@@ -57,4 +57,8 @@ def test_real_base_tf_has_one_odom_to_base_link_owner():
     assert '"publish_tf": False' in (
         ROOT / "src/stm32_robot_bridge/stm32_robot_bridge/bridge_node_v3.py"
     ).read_text(encoding="utf-8")
-    assert "publish_tf: true" in ekf
+    assert "publish_tf: false" in ekf
+    assert 'executable="formal_odometry_node.py"' in state_launch
+    assert "TransformBroadcaster" in (
+        ROOT / "src/robot_state_estimation/robot_state_estimation/formal_odometry_node.py"
+    ).read_text(encoding="utf-8")

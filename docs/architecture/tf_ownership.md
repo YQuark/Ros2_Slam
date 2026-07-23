@@ -3,7 +3,7 @@
 | Transform | 发布者 |
 | --- | --- |
 | `map -> odom` | SLAM 或定位系统，二选一 |
-| `odom -> base_link` | `robot_localization` |
+| `odom -> base_link` | `formal_odometry`（兼容门允许时） |
 | `base_link -> base_footprint` | `robot_description` |
 | `base_link -> laser_frame` | `robot_description` |
 | `base_link -> imu_link` | `robot_description` |

@@ -1,9 +1,9 @@
 schema_version: 3
-platform_api_version: 4
+platform_api_version: 5
 upper:
   branch: ARM
-  baseline_commit: 0d91f9e5f04350a64e50f9b509de8998cf4f36c0
-  release: v0.5.0-rc1
+  baseline_commit: ae30e0a66957374822ce5efe4a464df67186d311
+  release: v0.6.0-rc1
   wire_protocols_supported: [3]
 protocol:
   name: upper_v3
@@ -23,7 +23,7 @@ firmware:
   implementation_spec: docs/interfaces/upper-protocol-v3.md
   golden_vector_file: tests/protocol/fixtures/upper_v3_golden.json
   golden_vector_sha256: cb928ab64e165307155f1098956e16bdec3726db3f685e85c4a5305376fdc137
-  hil_report: verification/reports/hil/v0.5.0-rc1.yaml
+  hil_report: verification/reports/hil/v0.6.0-rc1.yaml
 incompatible_firmware:
   - tag: v1.0.0-beta4
     commit: a4ae10d592e840e979dd35c8a9b2ff2f5dd107e4

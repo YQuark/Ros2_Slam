@@ -1,6 +1,6 @@
 # stm32_robot_bridge
 
-Platform API 4 只安装 upper v3 runtime：`bridge_node_v3.py` 以 `bridge_node` 名称执行。ROS adapter 消费编译后的 effective params，串口线程通过有界队列输出 domain frame，`BridgeCore` 负责 HELLO/STATUS/wire session/ACK、通信状态与 rearm。
+Platform API 5 只安装 upper v3 runtime：`bridge_node_v3.py` 以 `bridge_node` 名称执行。ROS adapter 消费编译后的 effective params，串口线程通过有界队列输出 domain frame，`BridgeCore` 负责 HELLO/STATUS/wire session/ACK、通信状态与 rearm。
 
 ```bash
 cd /home/robot/ros2_ws

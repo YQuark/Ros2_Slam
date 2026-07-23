@@ -102,7 +102,6 @@ def test_pty_upper_v3_hello_drive_timeout_fault_and_reconnect_rearm():
             max_command_age_sec=0.15,
         )
         core.on_connected(7)
-        core.on_startup_released()
 
         fake.send(CMD_HELLO, hello_payload())
         frames = host_receive(device, host_parser)
@@ -111,12 +110,24 @@ def test_pty_upper_v3_hello_drive_timeout_fault_and_reconnect_rearm():
         frames = host_receive(device, host_parser)
         status = decode_status_payload(frames[0][1])
         assert core.on_status(status, 1.0) is StatusDisposition.NEW
-        assert core.snapshot.state is BridgeState.WAIT_SAFE_STATUS
+        assert core.snapshot.state is BridgeState.WAIT_STATUS
         core.on_disable_sent(1)
         fake.send(CMD_STATUS, status_payload(2, 7))
         status = decode_status_payload(host_receive(device, host_parser)[0][1])
         assert core.on_status(status, 1.005) is StatusDisposition.NEW
-        assert core.snapshot.state is BridgeState.WIRE_SYNCHRONIZED
+        assert core.snapshot.state is BridgeState.WIRE_REARM_READY
+
+        core.accept_command(
+            vx=0.0,
+            wz=0.0,
+            enable=False,
+            source=0,
+            session_id=99,
+            sequence=1,
+            command_stamp_sec=0.0,
+            now_ros_sec=0.0,
+            now_monotonic=1.006,
+        )
 
         command = core.accept_command(
             vx=0.8,
@@ -155,13 +166,12 @@ def test_pty_upper_v3_hello_drive_timeout_fault_and_reconnect_rearm():
 
         core.on_disconnected()
         core.on_connected(8)
-        core.on_startup_released()
         fake.send(CMD_HELLO, hello_payload())
         assert core.on_hello(decode_hello_payload(host_receive(device, host_parser)[0][1]))
         fake.send(CMD_STATUS, status_payload(1, 8, flags=1))
         status = decode_status_payload(host_receive(device, host_parser)[0][1])
         assert core.on_status(status, 2.0) is StatusDisposition.NEW
-        assert core.snapshot.state is BridgeState.WAIT_SAFE_STATUS
+        assert core.snapshot.state is BridgeState.FAULT_LATCHED
         assert core.snapshot.rearm_required
     finally:
         device.close()

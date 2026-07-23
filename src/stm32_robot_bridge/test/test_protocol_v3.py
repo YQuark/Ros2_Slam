@@ -147,3 +147,21 @@ def test_command_stream_keepalive_timeout_and_failed_send():
     assert stream.release(sent.append)
     stream.clear_command()
     assert stream.last_command_time is None
+
+
+def test_identical_ros_commands_for_five_seconds_refresh_lease_without_new_sequence():
+    stream = CommandStream(timeout_sec=0.15, keepalive_sec=0.05, session_id=7)
+    sent = []
+    initial_sequence = None
+    for step in range(101):
+        now = step * 0.05
+        stream.update_command(0.2, 0.0, now)
+        if initial_sequence is None:
+            initial_sequence = stream.sequence
+        assert stream.sequence == initial_sequence
+        stream.tick(now, sent.append)
+        assert stream.enabled
+    assert stream.last_command_time == pytest.approx(5.0)
+    # Binary floating point can occasionally place an exact 50 ms tick just
+    # below the keepalive boundary; the stream must nevertheless remain live.
+    assert len(sent) >= 50

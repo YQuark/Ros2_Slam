@@ -1,6 +1,6 @@
 <package format="3">
   <name>robot_chassis_model</name>
-  <version>0.5.0</version>
+  <version>0.6.0</version>
   <description>Protocol wheel-slot and enabled/valid layout semantics shared by host components.</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>Apache-2.0</license>

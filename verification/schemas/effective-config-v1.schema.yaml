@@ -16,7 +16,7 @@ required:
   - config_sha256
 properties:
   schema_version: {const: 1}
-  platform_api_version: {const: 3}
+  platform_api_version: {const: 5}
   protocol:
     type: object
     required: [name, version, required_capabilities]

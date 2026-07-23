@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### v0.6.0-rc1 implementation
+
+- ROS Platform API 升级为 v5，冻结 Host 候选、Bridge 协议适配、固件整车仲裁、安全许可和电机输出的职权边界；Upper v3 字节协议不变。
+- Bridge/robot_control 实现双层 rearm 状态机、会话绑定兼容门和单调时间租约；相同 Host 目标刷新租约但不推进 wire sequence。
+- 里程计统一支持 M2+M3 与四驱布局，按 session/reset/mask 重建基线，并将累计 Pose 协方差与逐样本 Twist 协方差分离。
+- Motion Supervision 明确只释放 Host 候选；Navigation Guard 改为公开 Action 代理，Chassis Ops 收口为单一 Action，内部 wire 服务私有化。
+- 新增统一标定包身份、Semantic Fake 结构门和可复用 Upper-v3 PTY firmware emulator；软件构建和测试通过，真实 HIL/标定/实车报告仍为 `NOT_RUN`。
+
 ### v0.5.0-rc1 implementation
 
 - ROS Platform API 升级为 v4：`HostMotionCommand` 只表示 Host 候选，并拆分 wire link、firmware control、Host control 和 motion supervision 状态。Upper Protocol v3 字节契约保持不变。

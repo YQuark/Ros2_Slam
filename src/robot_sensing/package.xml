@@ -1,6 +1,6 @@
 <package format="3">
   <name>robot_sensing</name>
-  <version>0.5.0</version>
+  <version>0.6.0</version>
   <description>Lidar driver launch and scan normalization for the robot platform.</description>
   <maintainer email="robot@example.com">robot</maintainer>
   <license>Apache-2.0</license>

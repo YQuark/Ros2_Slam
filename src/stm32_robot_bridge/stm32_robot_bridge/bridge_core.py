@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import secrets
+from collections import deque
 from dataclasses import dataclass, replace
 from enum import IntEnum
 from typing import Optional, Tuple
@@ -30,6 +31,12 @@ REARM_FIRMWARE_REJECT = 1 << 3
 REARM_ESTOP = 1 << 4
 REARM_FAULT = 1 << 5
 REARM_COMMAND_TIMEOUT = 1 << 6
+REARM_PROTOCOL_INCOMPATIBLE = 1 << 9
+REARM_HOST_REPLAY = 1 << 10
+
+INCOMPAT_PROTOCOL = 1 << 0
+INCOMPAT_SCHEMA = 1 << 1
+INCOMPAT_CAPABILITIES = 1 << 2
 
 
 class StatusDisposition(IntEnum):
@@ -61,6 +68,9 @@ class RuntimeSnapshot:
     last_command_at: Optional[float] = None
     rearm_required: bool = False
     rearm_reason_flags: int = 0
+    protocol_compatible: bool = False
+    incompatibility_flags: int = 0
+    reset_generation: int = 0
 
 
 @dataclass(frozen=True)
@@ -92,8 +102,12 @@ class BridgeCore:
         self.required_capabilities = int(required_capabilities)
         self.machine = BridgeStateMachine()
         self.snapshot = RuntimeSnapshot()
+        self._retired_host_epochs: deque[int] = deque(maxlen=16)
+        self._host_disable_observed = False
 
     def on_connected(self, session_id: Optional[int] = None) -> RuntimeSnapshot:
+        if self.snapshot.command_session_id:
+            self._retired_host_epochs.append(self.snapshot.command_session_id)
         self.machine.on_serial_opened()
         wire_session = int(session_id if session_id is not None else secrets.randbits(64)) or 1
         # Every transport generation starts closed.  The wire-side release sent by
@@ -104,7 +118,9 @@ class BridgeCore:
             wire_session_id=wire_session,
             rearm_required=True,
             rearm_reason_flags=REARM_TRANSPORT,
+            reset_generation=(self.snapshot.reset_generation + 1) & 0xFFFFFFFF,
         )
+        self._host_disable_observed = False
         return self.snapshot
 
     def on_disconnected(self) -> RuntimeSnapshot:
@@ -120,24 +136,43 @@ class BridgeCore:
             last_command_at=None,
             rearm_required=True,
             rearm_reason_flags=REARM_TRANSPORT,
+            protocol_compatible=False,
+            incompatibility_flags=0,
         )
         return self.snapshot
 
     def on_hello(self, hello: HelloPayload) -> bool:
-        if (
-            hello.version != 3
-            or (hello.capabilities & self.required_capabilities) != self.required_capabilities
-        ):
-            return False
-        self.snapshot = replace(self.snapshot, hello=hello)
-        return True
-
-    def on_startup_released(self) -> None:
-        self.machine.on_settled()
-        self.snapshot = replace(self.snapshot, state=self.machine.state)
+        flags = 0
+        if hello.version != 3:
+            flags |= INCOMPAT_PROTOCOL
+        if hello.schema_version != 1:
+            flags |= INCOMPAT_SCHEMA
+        if (hello.capabilities & self.required_capabilities) != self.required_capabilities:
+            flags |= INCOMPAT_CAPABILITIES
+        compatible = flags == 0
+        if compatible:
+            self.machine.on_hello_compatible()
+        self.snapshot = replace(
+            self.snapshot,
+            state=self.machine.state,
+            hello=hello,
+            protocol_compatible=compatible,
+            incompatibility_flags=flags,
+            rearm_required=True,
+            rearm_reason_flags=(
+                self.snapshot.rearm_reason_flags
+                if compatible
+                else self.snapshot.rearm_reason_flags | REARM_PROTOCOL_INCOMPATIBLE
+            ),
+        )
+        return compatible
 
     def on_status(self, status: StatusPayload, now_sec: float) -> StatusDisposition:
-        if status.version != 3 or self.snapshot.hello is None:
+        if (
+            status.version != 3
+            or self.snapshot.hello is None
+            or not self.snapshot.protocol_compatible
+        ):
             return StatusDisposition.INVALID
         previous = self.snapshot.firmware
         if previous is not None:
@@ -204,22 +239,35 @@ class BridgeCore:
         now_ros_sec: float,
         now_monotonic: float,
     ) -> ValidatedCommand:
-        values = (vx, wz, command_stamp_sec, now_ros_sec)
+        # Header/ROS time is recording metadata. Safety freshness starts at the
+        # monotonic callback receipt below and is unaffected by /clock.
+        values = (vx, wz, now_monotonic)
         if not all(math.isfinite(float(value)) for value in values):
             raise ValueError("command contains non-finite value")
-        age = float(now_ros_sec) - float(command_stamp_sec)
-        if age < 0.0 or age > self.max_command_age_sec:
-            raise ValueError("command timestamp is invalid or stale")
         session_id = int(session_id) & 0xFFFFFFFFFFFFFFFF
         sequence = int(sequence) & 0xFFFFFFFF
         if session_id == 0:
             raise ValueError("session_id must be non-zero")
-        if self.snapshot.command_session_id == session_id:
+        current_epoch = self.snapshot.command_session_id
+        epoch_changed = current_epoch not in (0, session_id)
+        if session_id in self._retired_host_epochs:
+            self.require_rearm(REARM_HOST_REPLAY)
+            raise ValueError("retired ROS command epoch")
+        if current_epoch == session_id:
             if sequence == self.snapshot.command_sequence:
                 raise ValueError("duplicate ROS command sequence")
             if not sequence_is_forward(sequence, self.snapshot.command_sequence):
                 raise ValueError("out-of-order ROS command sequence")
+        elif enable and not self._host_disable_observed:
+            self.require_rearm(REARM_HOST_REPLAY)
+            raise ValueError("new command epoch requires a preceding disable")
+        if enable and current_epoch == session_id and self._host_disable_observed:
+            self.require_rearm(REARM_HOST_REPLAY)
+            raise ValueError("enable after disable requires a new command epoch")
+        if epoch_changed:
+            self._retired_host_epochs.append(current_epoch)
         if not enable:
+            self._host_disable_observed = True
             self.snapshot = replace(
                 self.snapshot,
                 state=self.machine.state,
@@ -245,6 +293,7 @@ class BridgeCore:
         vx = max(-self.hard_max_linear_mps, min(self.hard_max_linear_mps, float(vx)))
         wz = max(-self.hard_max_angular_radps, min(self.hard_max_angular_radps, float(wz)))
         self.machine.on_drive_enabled()
+        self._host_disable_observed = False
         self.snapshot = replace(
             self.snapshot,
             state=self.machine.state,
@@ -263,7 +312,8 @@ class BridgeCore:
             self.snapshot,
             state=self.machine.state,
             rearm_required=(
-                self.snapshot.rearm_required or self.machine.state is BridgeState.WAIT_DISABLE_ACK
+                self.snapshot.rearm_required
+                or self.machine.state is BridgeState.WAIT_POST_CLEAR_DISABLE_ACK
             ),
         )
 

@@ -15,12 +15,14 @@ from std_srvs.srv import SetBool, Trigger
 class ChassisOpsNode(Node):
     def __init__(self) -> None:
         super().__init__("chassis_ops")
+        self.declare_parameter("wire_adapter_name", "stm32_bridge")
+        adapter = str(self.get_parameter("wire_adapter_name").value).strip("/")
         self.state = None
         self.info_generation = 0
-        self.estop = self.create_client(SetBool, "chassis/estop")
-        self.clear = self.create_client(Trigger, "chassis/clear_fault")
-        self.line = self.create_client(SetBool, "chassis/line_ctrl")
-        self.info = self.create_client(Trigger, "chassis/get_info")
+        self.estop = self.create_client(SetBool, f"{adapter}/wire_estop")
+        self.clear = self.create_client(Trigger, f"{adapter}/wire_clear_fault")
+        self.line = self.create_client(SetBool, f"{adapter}/wire_line_ctrl")
+        self.info = self.create_client(Trigger, f"{adapter}/wire_get_info")
         self.create_subscription(
             FirmwareControlState, "chassis/firmware_control_state", self._state, 10
         )
@@ -57,9 +59,7 @@ class ChassisOpsNode(Node):
     async def _execute(self, goal):
         op = goal.request.operation
         if op == ChassisOperation.Goal.OP_CLEAR_FAULT and self.state and self.state.estop_active:
-            return self._finish(
-                goal, ChassisOperation.Result.RESULT_LOCAL_REJECTED, "ESTOP is active"
-            )
+            return self._finish(goal, ChassisOperation.Result.RESULT_REJECTED, "ESTOP is active")
         before_info = self.info_generation
         before_status_sequence = None if self.state is None else int(self.state.status_sequence)
         if op == ChassisOperation.Goal.OP_ESTOP_SET:
@@ -76,11 +76,26 @@ class ChassisOpsNode(Node):
                 goal.canceled()
                 return self._result(ChassisOperation.Result.RESULT_CANCELLED, "cancelled")
             await asyncio.sleep(0.01)
-        if not future.done() or future.result() is None or not future.result().success:
+        if not future.done() or future.result() is None:
             return self._finish(
                 goal, ChassisOperation.Result.RESULT_TIMEOUT, "request was not queued"
             )
+        if not future.result().success:
+            return self._finish(
+                goal,
+                ChassisOperation.Result.RESULT_REJECTED,
+                future.result().message or "wire adapter rejected request",
+            )
+        if op == ChassisOperation.Goal.OP_LINE_CONTROL:
+            return self._finish(
+                goal,
+                ChassisOperation.Result.RESULT_QUEUED,
+                "wire request queued; Upper v3 has no authoritative applied evidence",
+            )
+        deadline = time.monotonic() + 1.0
         while time.monotonic() < deadline:
+            if goal.is_cancel_requested:
+                return self._finish(goal, ChassisOperation.Result.RESULT_CANCELLED, "cancelled")
             status_is_new = self.state is not None and (
                 before_status_sequence is None
                 or int(self.state.status_sequence) != before_status_sequence
@@ -99,14 +114,6 @@ class ChassisOpsNode(Node):
                 return self._finish(
                     goal, ChassisOperation.Result.RESULT_APPLIED, "fault clear observed"
                 )
-            if (
-                op == ChassisOperation.Goal.OP_LINE_CONTROL
-                and status_is_new
-                and bool(self.state.status_flags & 4) == goal.request.enable
-            ):
-                return self._finish(
-                    goal, ChassisOperation.Result.RESULT_APPLIED, "line state observed"
-                )
             if op == ChassisOperation.Goal.OP_GET_INFO and self.info_generation > before_info:
                 return self._finish(
                     goal, ChassisOperation.Result.RESULT_APPLIED, "new HELLO observed"
@@ -120,7 +127,15 @@ class ChassisOpsNode(Node):
         return self._finish(goal, status, "no confirming firmware evidence")
 
     def _finish(self, goal, status, message):
-        goal.succeed()
+        if status in (
+            ChassisOperation.Result.RESULT_APPLIED,
+            ChassisOperation.Result.RESULT_QUEUED,
+        ):
+            goal.succeed()
+        elif status == ChassisOperation.Result.RESULT_CANCELLED:
+            goal.canceled()
+        else:
+            goal.abort()
         return self._result(status, message)
 
     @staticmethod

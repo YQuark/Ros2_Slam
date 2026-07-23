@@ -12,3 +12,25 @@ calibration:
   odom_covariance:
     wheel_variance_floor_m2: 0.000025
     wheel_variance_per_meter: 0.0025
+calibration_bundle:
+  identity:
+    hardware_revision: 131072
+    firmware_commit: 366a0385290d526009e6cd3bbdaa7b74b2fecad6
+    firmware_parameter_crc32: 0  # 待实机读取；0 会使正式兼容门 fail-closed
+    upper_commit: ae30e0a
+    upper_config_sha256: pending_compile
+  wheel_layout:
+    expected_enabled_mask: 6
+    order: [LF, LR, RF, RR]
+  geometry:
+    wheel_radius_m: 0.0350
+    effective_track_width_m: 0.1760
+    counts_per_revolution: 2464.0
+  imu:
+    frame: imu_link
+    axis_mapping: [x, y, z]
+    bias_identity: pending_physical_calibration
+  lidar:
+    frame: laser_frame
+    translation: [0.07, 0.0, 0.13]
+    rotation: [0.0, 0.0, 1.570796326795]

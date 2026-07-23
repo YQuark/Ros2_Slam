@@ -1,0 +1,15 @@
+schema_version: 1
+release: v0.6.0-rc1
+result: PASS
+upper_commit: ae30e0a66957374822ce5efe4a464df67186d311
+firmware_commit: 366a0385290d526009e6cd3bbdaa7b74b2fecad6
+protocol_version: 3
+scenarios:
+  - hello_and_capability
+  - default_m2_m3_layout
+  - duplicate_keepalive_5s
+  - host_watchdog_200ms
+  - fault_and_clear
+  - mcu_reboot
+  - retired_session_replay
+evidence: src/robot_verification/test/test_firmware_emulator.py

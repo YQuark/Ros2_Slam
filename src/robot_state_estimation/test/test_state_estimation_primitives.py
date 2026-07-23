@@ -117,6 +117,41 @@ def test_layout_change_resets_integration_baseline():
     assert not missing_side.integrated
 
 
+def test_reset_generation_resets_baseline_even_with_same_wire_session():
+    odom = make_odom()
+    odom.update(
+        (0, 0, 0, 0), sample_time_sec=0.0, transport_session_id=7, reset_generation=1
+    )
+    reset = odom.update(
+        (100, 100, 100, 100),
+        sample_time_sec=0.1,
+        transport_session_id=7,
+        reset_generation=2,
+    )
+    assert not reset.integrated
+
+
+@pytest.mark.parametrize(
+    "enabled,counts",
+    [
+        (0b0110, (0, 100, 100, 0)),
+        (0b1111, (100, 100, 100, 100)),
+        (0b1110, (0, 100, 100, 100)),
+        (0b0111, (100, 100, 100, 0)),
+    ],
+)
+def test_two_and_four_drive_layouts_share_one_distance_algorithm(enabled, counts):
+    odom = make_odom()
+    odom.update(
+        (0, 0, 0, 0), sample_time_sec=0.0, enabled_mask=enabled, speed_valid_mask=enabled
+    )
+    update = odom.update(
+        counts, sample_time_sec=0.1, enabled_mask=enabled, speed_valid_mask=enabled
+    )
+    assert update.integrated
+    assert update.pose.x == pytest.approx(100 * odom.meters_per_count)
+
+
 def test_implausible_enabled_wheel_jump_is_rejected():
     odom = make_odom()
     odom.update((0, 0, 0, 0), sample_time_sec=0.0)
@@ -157,12 +192,28 @@ def test_covariance_multiplier_increases_for_age_turn_disagreement_and_quality()
         sample_age_sec=0.0,
         turn_rate=0.0,
     )
-    assert two_wheel == 1.0
+    assert two_wheel == 3.0
 
 
 def test_signed_int32_delta_wraps():
     assert signed_int32_delta(-2147483648, 2147483647) == 1
     assert signed_int32_delta(2147483647, -2147483648) == -1
+
+
+def test_twist_covariance_is_per_sample_not_accumulated_pose_uncertainty():
+    odom = make_odom()
+    odom.update((0, 0, 0, 0), sample_time_sec=0.0)
+    updates = []
+    for index in range(1, 51):
+        updates.append(
+            odom.update(
+                (index * 10,) * 4,
+                sample_time_sec=index * 0.1,
+                hard_max_speed_mps=2.0,
+            )
+        )
+    assert updates[-1].pose_covariance[0] > updates[0].pose_covariance[0]
+    assert updates[-1].twist_covariance == pytest.approx(updates[0].twist_covariance)
 
 
 def test_imu_field_quality_degrades_orientation_independently():

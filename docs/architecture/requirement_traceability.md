@@ -15,7 +15,7 @@
 | CAL-001 | firmware commit/hardware/CRC/layout fail-closed | robot_config | compatibility tests | 参数 CRC 记录 |
 | HIL-001 | 发布兼容必须绑定两个 commit 且 UART HIL PASS | release gate | manifest tests | HIL report |
 | HOST-ARCH-002 | Bridge 不负责导航决策 | Bridge | dependency boundary test | 不适用 |
-| HOST-ARCH-004 | `odom->base_link` 只有一个发布者 | robot_localization | launch/TF graph test | runtime TF report |
+| HOST-ARCH-004 | `odom->base_link` 只有一个发布者 | formal_odometry | launch/TF graph test | runtime TF report |
 | HOST-TEST-001 | Fake/Real 共用状态接口 | verification | graph contract test | Fake/Real manifest |
 
 未通过硬件证据的要求不得因软件单测通过而标记为整机完成。

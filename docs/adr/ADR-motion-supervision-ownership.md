@@ -1,6 +1,6 @@
 # ADR：运动监督所有权
 
-状态：Accepted；按 Platform API 4 术语修订。
+状态：Accepted；按 Platform API 5 术语修订。
 
 四轮一致性、目标跟踪、非预期运动和 wheel/gyro yaw 差异不是传输事实，不能
 由 Bridge 拥有。`robot_supervision` 订阅 Host 候选、`WheelObservation` 与质量

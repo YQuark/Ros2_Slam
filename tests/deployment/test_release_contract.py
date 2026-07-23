@@ -15,8 +15,8 @@ def test_firmware_contract_pins_v3_candidate_and_remains_hil_blocked() -> None:
         (ROOT / "compatibility" / "firmware.yaml").read_text(encoding="utf-8")
     )
 
-    assert contract["upper"]["baseline_commit"] == "0d91f9e5f04350a64e50f9b509de8998cf4f36c0"
-    assert contract["upper"]["release"] == "v0.5.0-rc1"
+    assert contract["upper"]["baseline_commit"] == "ae30e0a66957374822ce5efe4a464df67186d311"
+    assert contract["upper"]["release"] == "v0.6.0-rc1"
     assert contract["upper"]["wire_protocols_supported"] == [3]
     assert contract["firmware"]["candidate_commit"] == FIRMWARE_COMMIT
     assert contract["firmware"]["compatible_commit"] is None
@@ -53,8 +53,9 @@ def test_unified_verify_entrypoints_exist_and_use_python_module_pytest() -> None
 def test_release_documentation_entrypoints_exist() -> None:
     assert (ROOT / "CHANGELOG.md").is_file()
     assert (ROOT / "docs" / "releases" / "v0.5.0-rc1.md").is_file()
-    assert (ROOT / "verification" / "reports" / "hil" / "v0.5.0-rc1.yaml").is_file()
-    assert (ROOT / "verification" / "reports" / "vehicle" / "v0.5.0-rc1.yaml").is_file()
+    assert (ROOT / "docs" / "releases" / "v0.6.0-rc1.md").is_file()
+    assert (ROOT / "verification" / "reports" / "hil" / "v0.6.0-rc1.yaml").is_file()
+    assert (ROOT / "verification" / "reports" / "vehicle" / "v0.6.0-rc1.yaml").is_file()
 
 
 def test_ci_enforces_quality_and_module_coverage_thresholds() -> None:
@@ -70,10 +71,10 @@ def test_ci_enforces_quality_and_module_coverage_thresholds() -> None:
     assert "--cov=src/robot_verification" in ci
 
 
-def test_all_owned_ros_packages_are_versioned_v050() -> None:
+def test_all_owned_ros_packages_are_versioned_v060() -> None:
     packages = sorted((ROOT / "src").glob("*/package.xml"))
     assert packages
-    assert {ET.parse(package).getroot().findtext("version") for package in packages} == {"0.5.0"}
+    assert {ET.parse(package).getroot().findtext("version") for package in packages} == {"0.6.0"}
 
 
 def test_hil_contract_lists_all_fault_injections_and_is_fail_closed() -> None:
@@ -83,10 +84,10 @@ def test_hil_contract_lists_all_fault_injections_and_is_fail_closed() -> None:
     assert len(contract["scenarios"]) == 16
     assert len({scenario["id"] for scenario in contract["scenarios"]}) == 16
     hil = yaml.safe_load(
-        (ROOT / "verification/reports/hil/v0.5.0-rc1.yaml").read_text(encoding="utf-8")
+        (ROOT / "verification/reports/hil/v0.6.0-rc1.yaml").read_text(encoding="utf-8")
     )
     vehicle = yaml.safe_load(
-        (ROOT / "verification/reports/vehicle/v0.5.0-rc1.yaml").read_text(encoding="utf-8")
+        (ROOT / "verification/reports/vehicle/v0.6.0-rc1.yaml").read_text(encoding="utf-8")
     )
     assert hil["result"] == vehicle["result"] == "NOT_RUN"
 
@@ -98,7 +99,7 @@ def test_bridge_executor_path_contains_no_blocking_sleep() -> None:
     assert "time.sleep(" not in bridge
 
 
-def test_v050_rc1_release_gate_is_machine_readable_and_fail_closed() -> None:
+def test_v060_rc1_release_gate_is_machine_readable_and_fail_closed() -> None:
     path = ROOT / "scripts/verify/verify_release.py"
     spec = importlib.util.spec_from_file_location("verify_release", path)
     module = importlib.util.module_from_spec(spec)

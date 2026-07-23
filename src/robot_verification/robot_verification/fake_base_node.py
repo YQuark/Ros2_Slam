@@ -3,10 +3,12 @@
 
 import math
 import time
+from collections import deque
 
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from rclpy.node import Node
+from rclpy.clock import Clock, ClockType
 from rclpy.qos import (
     DurabilityPolicy,
     QoSProfile,
@@ -42,6 +44,7 @@ def _sequence_is_forward(new: int, old: int) -> bool:
 class FakeBaseNode(Node):
     def __init__(self) -> None:
         super().__init__("fake_base")
+        self.steady_clock = Clock(clock_type=ClockType.STEADY_TIME)
         defaults = {
             "config_sha256": "development-uncompiled",
             "host_motion_command_topic": "chassis/host_motion_command",
@@ -59,6 +62,7 @@ class FakeBaseNode(Node):
             "publish_hz": 50.0,
             "cmd_timeout": 0.15,
             "response_tau_sec": 0.10,
+            "expected_enabled_mask": DEFAULT_ENABLED_MASK,
             "scenario": "normal",
         }
         for name, value in defaults.items():
@@ -68,11 +72,13 @@ class FakeBaseNode(Node):
         self.imu_frame = str(self.get_parameter("imu_frame_id").value)
         self.cmd_timeout = float(self.get_parameter("cmd_timeout").value)
         self.scenario = str(self.get_parameter("scenario").value)
+        self.enabled_mask = int(self.get_parameter("expected_enabled_mask").value) & 0x0F
         self.model = FakeBaseModel(
             wheel_radius_m=float(self.get_parameter("wheel_radius").value),
             track_width_m=float(self.get_parameter("wheel_track_width").value),
             counts_per_revolution=float(self.get_parameter("encoder_counts_per_revolution").value),
             response_tau_sec=float(self.get_parameter("response_tau_sec").value),
+            enabled_mask=self.enabled_mask,
         )
         self.transport_session_id = 0xFA4E000000000001
         self.status_latch = StatusSampleLatch()
@@ -87,6 +93,8 @@ class FakeBaseNode(Node):
         self.command_sequence = 0
         self.selected_source = 0
         self.enabled = False
+        self.retired_command_epochs = deque(maxlen=16)
+        self.disable_epoch = 0
         # Match a newly connected real transport: motion is closed until an
         # explicit upper-layer disable is followed by a fresh enable command.
         self.rearm_required = True
@@ -94,6 +102,10 @@ class FakeBaseNode(Node):
         self.estop = False
         self.line_control_enabled = False
         self.disconnect_recovered = False
+        self.state_generation = 1
+        self.reset_generation = 1
+        self.disconnected_published = False
+        self.status_timeout_published = False
         self.static_qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -112,7 +124,7 @@ class FakeBaseNode(Node):
         self.link_state_pub = self.create_publisher(
             ChassisLinkState,
             str(self.get_parameter("chassis_link_state_topic").value),
-            STATE_QOS,
+            self.static_qos,
         )
         self.firmware_control_pub = self.create_publisher(
             FirmwareControlState,
@@ -134,25 +146,30 @@ class FakeBaseNode(Node):
             self._on_command,
             10,
         )
-        self.create_service(SetBool, "chassis/estop", self._on_estop)
-        self.create_service(Trigger, "chassis/clear_fault", self._on_clear_fault)
-        self.create_service(SetBool, "chassis/line_ctrl", self._on_line_ctrl)
-        self.create_service(Trigger, "chassis/get_info", self._on_get_info)
+        self.create_service(SetBool, "~/wire_estop", self._on_estop)
+        self.create_service(Trigger, "~/wire_clear_fault", self._on_clear_fault)
+        self.create_service(SetBool, "~/wire_line_ctrl", self._on_line_ctrl)
+        self.create_service(Trigger, "~/wire_get_info", self._on_get_info)
         hz = max(float(self.get_parameter("publish_hz").value), 1.0)
-        self.create_timer(1.0 / hz, self._tick)
-        self.create_timer(1.0, self._publish_diagnostics)
+        self.create_timer(1.0 / hz, self._tick, clock=self.steady_clock)
+        self.create_timer(1.0, self._publish_diagnostics, clock=self.steady_clock)
         self._publish_firmware_info()
 
     def _on_command(self, msg: HostMotionCommand) -> None:
         session, sequence = int(msg.command_epoch), int(msg.sequence)
         if session == 0:
             return
+        if session in self.retired_command_epochs:
+            return
         if session == self.command_epoch and not _sequence_is_forward(
             sequence, self.command_sequence
         ):
             return
+        if self.command_epoch not in (0, session):
+            self.retired_command_epochs.append(self.command_epoch)
         self.command_epoch, self.command_sequence = session, sequence
         if not msg.enable:
+            self.disable_epoch = session
             self.enabled = False
             self.selected_source = 0
             if not self.estop:
@@ -161,7 +178,7 @@ class FakeBaseNode(Node):
             self.last_command_at = None
             self.model.release()
             return
-        if self.rearm_required or self.estop:
+        if self.rearm_required or self.estop or session == self.disable_epoch:
             return
         self.enabled = True
         # Firmware sees exactly one physical source for every ROS subsource.
@@ -181,22 +198,34 @@ class FakeBaseNode(Node):
             self.rearm_reason_flags |= 1 << 6
         elapsed = now - self.started_at
         if self.scenario == "disconnect" and elapsed >= 2.0:
+            self._publish_disconnected_once()
             return
         if self.scenario == "disconnect_reconnect":
             if 2.0 <= elapsed < 3.0:
+                self._publish_disconnected_once()
                 return
             if elapsed >= 3.0 and not self.disconnect_recovered:
                 self.disconnect_recovered = True
                 self.transport_session_id = (self.transport_session_id + 1) & 0xFFFFFFFFFFFFFFFF
+                self.state_generation += 1
+                self.reset_generation += 1
+                self.disconnected_published = False
                 self.status_latch = StatusSampleLatch()
                 self.status_sequence = 0
+                if self.command_epoch:
+                    self.retired_command_epochs.append(self.command_epoch)
+                self.command_epoch = 0
+                self.command_sequence = 0
+                self.disable_epoch = 0
                 self.enabled = False
                 self.selected_source = 0
                 self.last_command_at = None
                 self.model.release()
                 self.rearm_required = True
                 self.rearm_reason_flags |= 1
+                self._publish_firmware_info()
         if self.scenario == "status_freeze" and elapsed >= 2.0:
+            self._publish_status_timeout_once()
             return
         slip = 0.55 if self.scenario == "wheel_slip" and elapsed >= 2.0 else 1.0
         sample = self.model.step(dt, slip_scale=slip)
@@ -225,6 +254,7 @@ class FakeBaseNode(Node):
         wheel.header.stamp, wheel.header.frame_id = stamp, self.base_frame
         wheel.schema_version = WheelObservation.SCHEMA_VERSION
         wheel.transport_session_id = self.transport_session_id
+        wheel.reset_generation = self.reset_generation
         wheel.status_sequence = self.status_sequence
         wheel.mcu_sample_time_ms = wheel_time_ms
         wheel.encoder_count = list(wheel_sample.encoder_counts)
@@ -232,8 +262,8 @@ class FakeBaseNode(Node):
         wheel.wheel_target_mps = list(wheel_sample.wheel_targets)
         wheel.motor_current_a = [0.0] * 4
         wheel.motor_output_permille = [0] * 4
-        wheel.motor_enabled_mask = DEFAULT_ENABLED_MASK
-        wheel.speed_valid_mask = DEFAULT_ENABLED_MASK
+        wheel.motor_enabled_mask = self.enabled_mask
+        wheel.speed_valid_mask = self.enabled_mask
         wheel.encoder_anomaly_mask = anomaly_mask
         wheel.status_flags = 1 if wheel_estop else 0
         self.wheel_pub.publish(wheel)
@@ -260,8 +290,18 @@ class FakeBaseNode(Node):
     def _publish_state(self) -> None:
         msg = ChassisLinkState()
         msg.header.stamp = self.get_clock().now().to_msg()
-        msg.link_state = ChassisLinkState.STATE_WIRE_SYNCHRONIZED
+        msg.link_state = (
+            ChassisLinkState.STATE_WAIT_POST_CLEAR_DISABLE_ACK
+            if self.rearm_required
+            else (
+                ChassisLinkState.STATE_DRIVE_ACTIVE
+                if self.enabled
+                else ChassisLinkState.STATE_WIRE_REARM_READY
+            )
+        )
+        msg.state_generation = self.state_generation
         msg.protocol_version = 3
+        msg.protocol_compatible = True
         msg.wire_session_id = self.transport_session_id
         msg.wire_sent_sequence = self.command_sequence
         msg.firmware_ack_available = True
@@ -270,6 +310,8 @@ class FakeBaseNode(Node):
         msg.firmware_applied_sequence = self.command_sequence
         msg.wire_rearm_required = self.rearm_required
         msg.wire_rearm_reason_flags = self.rearm_reason_flags
+        msg.status_age_ms = 0
+        msg.command_ack_age_ms = 0
         msg.config_sha256 = self.config_sha256
         self.link_state_pub.publish(msg)
 
@@ -281,6 +323,7 @@ class FakeBaseNode(Node):
         )
         control.estop_active = self.estop
         control.fault_stop_active = False
+        control.line_control_enabled = self.line_control_enabled
         control.status_sequence = self.status_sequence
         control.wire_session_id = self.transport_session_id
         self.firmware_control_pub.publish(control)
@@ -288,6 +331,7 @@ class FakeBaseNode(Node):
     def _publish_firmware_info(self) -> None:
         msg = FirmwareInfo()
         msg.header.stamp = self.get_clock().now().to_msg()
+        msg.wire_session_id = self.transport_session_id
         msg.protocol_version = 3
         msg.schema_version = 1
         msg.capabilities = 0x1F
@@ -296,6 +340,54 @@ class FakeBaseNode(Node):
         msg.parameter_crc32 = 0
         msg.simulated = True
         self.firmware_pub.publish(msg)
+
+    def _publish_disconnected_once(self) -> None:
+        if self.disconnected_published:
+            return
+        self.disconnected_published = True
+        self.state_generation += 1
+        self.enabled = False
+        self.model.release()
+        self.rearm_required = True
+        self.rearm_reason_flags |= 1
+        msg = ChassisLinkState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.link_state = ChassisLinkState.STATE_DISCONNECTED
+        msg.state_generation = self.state_generation
+        msg.protocol_version = 3
+        msg.protocol_compatible = False
+        msg.wire_session_id = self.transport_session_id
+        msg.firmware_ack_available = False
+        msg.wire_rearm_required = True
+        msg.wire_rearm_reason_flags = self.rearm_reason_flags
+        msg.status_age_ms = ChassisLinkState.AGE_INVALID
+        msg.command_ack_age_ms = ChassisLinkState.AGE_INVALID
+        msg.config_sha256 = self.config_sha256
+        self.link_state_pub.publish(msg)
+
+    def _publish_status_timeout_once(self) -> None:
+        if self.status_timeout_published:
+            return
+        self.status_timeout_published = True
+        self.state_generation += 1
+        self.enabled = False
+        self.model.release()
+        self.rearm_required = True
+        self.rearm_reason_flags |= 1 << 1
+        msg = ChassisLinkState()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.link_state = ChassisLinkState.STATE_WAIT_STATUS
+        msg.state_generation = self.state_generation
+        msg.protocol_version = 3
+        msg.protocol_compatible = True
+        msg.wire_session_id = self.transport_session_id
+        msg.firmware_ack_available = False
+        msg.wire_rearm_required = True
+        msg.wire_rearm_reason_flags = self.rearm_reason_flags
+        msg.status_age_ms = ChassisLinkState.AGE_INVALID
+        msg.command_ack_age_ms = ChassisLinkState.AGE_INVALID
+        msg.config_sha256 = self.config_sha256
+        self.link_state_pub.publish(msg)
 
     def _publish_diagnostics(self) -> None:
         array = DiagnosticArray()

@@ -46,7 +46,20 @@ def _compose(context):
             name="base_ekf",
             output="screen",
             parameters=[ekf_file],
-            remappings=[("odometry/filtered", LaunchConfiguration("odom_topic"))],
+            remappings=[("odometry/filtered", "odometry/filtered_internal")],
+        ),
+        Node(
+            package="robot_state_estimation",
+            executable="formal_odometry_node.py",
+            name="formal_odometry",
+            output="screen",
+            parameters=[
+                *node_params,
+                {
+                    "input_topic": "odometry/filtered_internal",
+                    "output_topic": LaunchConfiguration("odom_topic"),
+                },
+            ],
         ),
     ]
 

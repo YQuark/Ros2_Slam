@@ -1,0 +1,19 @@
+schema_version: 1
+release: v0.6.0-rc1
+platform_api_version: 5
+upper_baseline_commit: ae30e0a66957374822ce5efe4a464df67186d311
+firmware_candidate_commit: 366a0385290d526009e6cd3bbdaa7b74b2fecad6
+software_gates:
+  ros_ci: required
+  pty_report: verification/reports/pty/v0.6.0-rc1.yaml
+hardware_gates:
+  hil_report: verification/reports/hil/v0.6.0-rc1.yaml
+  vehicle_report: verification/reports/vehicle/v0.6.0-rc1.yaml
+  calibration_report: verification/reports/calibration/v0.6.0-rc1.yaml
+  dynamics_report: verification/reports/calibration/v0.6.0-rc1-vehicle-dynamics.yaml
+release_materials:
+  changelog: CHANGELOG.md
+  compatibility: compatibility/firmware.yaml
+  protocol: docs/interfaces/upper-protocol-v3.md
+  authority: docs/contracts/vehicle-command-authority.md
+  upgrade_and_rollback: docs/releases/v0.6.0-rc1.md

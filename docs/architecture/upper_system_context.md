@@ -1,6 +1,6 @@
 # 上位机系统上下文
 
-上位机以 Platform API 4 为稳定边界。候选 `Twist` 只能进入
+上位机以 Platform API 5 为稳定边界。候选 `Twist` 只能进入
 `robot_control`；真实与虚拟底盘都消费 `HostMotionCommand`，并提供相同的
 `WheelObservation`、`ImuObservation`、`ChassisLinkState`、
 `FirmwareControlState` 和 `FirmwareInfo`。状态估计独占轮式里程计与正式
