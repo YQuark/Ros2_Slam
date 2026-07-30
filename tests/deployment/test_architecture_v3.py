@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 import yaml
 
@@ -11,7 +12,10 @@ def test_robot_control_is_only_host_motion_command_publisher():
     for path in (ROOT / "src").glob("*/**/*.py"):
         if "/test/" in path.as_posix() or path.name.startswith("test_"):
             continue
-        if "create_publisher(HostMotionCommand" in path.read_text(encoding="utf-8"):
+        if re.search(
+            r"create_publisher\s*\(\s*HostMotionCommand\s*,",
+            path.read_text(encoding="utf-8"),
+        ):
             publishers.append(path.relative_to(ROOT).as_posix())
     assert publishers == ["src/robot_control/robot_control/cmd_vel_mux.py"]
 

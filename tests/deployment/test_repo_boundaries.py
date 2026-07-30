@@ -54,6 +54,12 @@ def test_platform_packages_exist_and_bringup_defaults_to_headless() -> None:
     assert 'get_package_share_directory("robot_state_estimation")' in system_launch
 
 
+def test_primary_cli_invokes_read_only_legacy_dispatcher_via_bash() -> None:
+    cli = (ROOT / "bin" / "robot").read_text(encoding="utf-8")
+
+    assert 'exec bash "${ROOT}/launch_scripts/robot.sh" "$@"' in cli
+
+
 def test_stm32_bridge_uses_explicit_command_and_raw_observation_defaults() -> None:
     bridge_node = (
         ROOT / "src" / "stm32_robot_bridge" / "stm32_robot_bridge" / "bridge_node_v3.py"

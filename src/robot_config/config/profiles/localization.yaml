@@ -1,0 +1,4 @@
+runtime:
+  mode: localization
+  fusion_mode: wheel
+  nav2_profile: robot_provisional

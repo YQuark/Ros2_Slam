@@ -1,6 +1,6 @@
 # ADR：跨层 rearm 语义
 
-状态：Superseded by `docs/contracts/rearm_contract.md`。
+状态：Superseded by `docs/contracts/rearm-contract.md`。
 
 通信层通过 `ChassisLinkState.rearm_required/rearm_reason_flags` 报告锁存原因；运动层
 通过 `MotionSupervisionState.release_host_candidate` 报告 Host 释放请求；控制层通过

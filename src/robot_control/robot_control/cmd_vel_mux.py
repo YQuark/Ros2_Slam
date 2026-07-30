@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 import secrets
 import time
-from typing import Dict
+from typing import Dict, Optional
 
 import rclpy
 from geometry_msgs.msg import Twist
 from rclpy.clock import Clock, ClockType
+from rclpy.duration import Duration
 from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.qos_event import PublisherEventCallbacks, SubscriptionEventCallbacks
 from robot_interfaces.msg import (
     ChassisLinkState,
     HostControlState,
@@ -18,10 +21,38 @@ from robot_interfaces.msg import (
 from robot_control.control_policy import (
     Command,
     CommandMux,
-    InvalidCommandError,
     MotionLimiter,
     SelectedCommand,
     SourceConfig,
+    SourceUpdateDisposition,
+)
+
+
+def _candidate_qos() -> QoSProfile:
+    return QoSProfile(
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1,
+        reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.VOLATILE,
+    )
+
+
+def _command_qos(deadline_sec: float, lifespan_sec: float) -> QoSProfile:
+    return QoSProfile(
+        history=HistoryPolicy.KEEP_LAST,
+        depth=1,
+        reliability=ReliabilityPolicy.RELIABLE,
+        durability=DurabilityPolicy.VOLATILE,
+        deadline=Duration(seconds=deadline_sec),
+        lifespan=Duration(seconds=lifespan_sec),
+    )
+
+
+STATE_QOS = QoSProfile(
+    history=HistoryPolicy.KEEP_LAST,
+    depth=5,
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.VOLATILE,
 )
 
 
@@ -45,6 +76,8 @@ class CmdVelMuxNode(Node):
         self.declare_parameter("motion_limiter_max_dt", 0.1)
         self.declare_parameter("timeout_sec", 0.25)
         self.declare_parameter("publish_hz", 20.0)
+        self.declare_parameter("command_deadline_sec", 0.10)
+        self.declare_parameter("command_lifespan_sec", 0.12)
         self.declare_parameter("host_motion_command_topic", "chassis/host_motion_command")
         self.declare_parameter("motion_supervision_topic", "motion/supervision_state")
         self.declare_parameter("chassis_link_state_topic", "chassis/link_state")
@@ -66,9 +99,36 @@ class CmdVelMuxNode(Node):
         )
 
         self.chassis_command_topic = str(self.get_parameter("host_motion_command_topic").value)
-        self.publisher = self.create_publisher(HostMotionCommand, self.chassis_command_topic, 10)
+        self.dds_deadline_miss_count = 0
+        self.publisher_liveliness_lost_count = 0
+        self.command_queue_drop_count = 0
+        deadline_sec = float(self.get_parameter("command_deadline_sec").value)
+        lifespan_sec = float(self.get_parameter("command_lifespan_sec").value)
+        publish_period_sec = 1.0 / max(float(self.get_parameter("publish_hz").value), 1.0)
+        if (
+            not 0.0
+            < publish_period_sec
+            < deadline_sec
+            <= lifespan_sec
+            < float(self.get_parameter("timeout_sec").value)
+        ):
+            raise RuntimeError(
+                "command timing must satisfy publish period < deadline <= lifespan < source lease"
+            )
+        self.publisher = self.create_publisher(
+            HostMotionCommand,
+            self.chassis_command_topic,
+            _command_qos(deadline_sec, lifespan_sec),
+            event_callbacks=PublisherEventCallbacks(
+                deadline=self._on_publish_deadline,
+                liveliness=self._on_publish_liveliness,
+                use_default_callbacks=False,
+            ),
+        )
         self.state_publisher = self.create_publisher(
-            HostControlState, str(self.get_parameter("host_control_state_topic").value), 10
+            HostControlState,
+            str(self.get_parameter("host_control_state_topic").value),
+            STATE_QOS,
         )
         self.sequence = 0
         self.command_epoch = 0
@@ -84,12 +144,15 @@ class CmdVelMuxNode(Node):
         self.last_active = False
         self.last_source = "idle"
         self.invalid_command_count = 0
+        self.invalid_command_count_by_source = {
+            source: 0 for source in self.source_config.topic_map()
+        }
         self.config_sha256 = str(self.get_parameter("config_sha256").value)
         self.require_supervision = bool(self.get_parameter("require_motion_supervision").value)
         self.supervision_timeout = float(self.get_parameter("supervision_timeout_sec").value)
         self.rearm_quiet_sec = float(self.get_parameter("rearm_quiet_sec").value)
         self.motion_state = None
-        self.motion_state_at = None
+        self.motion_state_at: Optional[float] = None
         self.motion_scale = 1.0
         self.supervision_seen = False
         self.rearm_required = True
@@ -98,8 +161,8 @@ class CmdVelMuxNode(Node):
         self.last_reject_reason = HostControlState.REJECT_NONE
         self.last_wire_session_id = 0
         self.wire_ready = False
-        self.quiet_started_at = self.monotonic_clock()
-        self.release_sent_wire_session = None
+        self.quiet_started_at: Optional[float] = self.monotonic_clock()
+        self.release_sent_wire_session: Optional[int] = None
         self.nav_active = False
         self.nav_goal_generation = 0
         self.required_nav_generation = 0
@@ -109,25 +172,30 @@ class CmdVelMuxNode(Node):
                 Twist,
                 topic,
                 self._make_callback(source),
-                10,
+                _candidate_qos(),
+                event_callbacks=SubscriptionEventCallbacks(
+                    liveliness=self._on_candidate_liveliness,
+                    message_lost=self._on_candidate_message_lost,
+                    use_default_callbacks=False,
+                ),
             )
         self.create_subscription(
             MotionSupervisionState,
             str(self.get_parameter("motion_supervision_topic").value),
             self._on_motion_state,
-            10,
+            STATE_QOS,
         )
         self.create_subscription(
             ChassisLinkState,
             str(self.get_parameter("chassis_link_state_topic").value),
             self._on_chassis_state,
-            10,
+            STATE_QOS,
         )
         self.create_subscription(
             NavigationGuardState,
             str(self.get_parameter("navigation_guard_state_topic").value),
             self._on_navigation_guard,
-            10,
+            STATE_QOS,
         )
 
         publish_hz = max(float(self.get_parameter("publish_hz").value), 1.0)
@@ -143,17 +211,23 @@ class CmdVelMuxNode(Node):
         def _callback(msg: Twist) -> None:
             if source == "nav" and not self.nav_active:
                 return
-            try:
-                self.mux.update(
-                    source,
-                    Command(linear_x=msg.linear.x, angular_z=msg.angular.z),
-                    self.monotonic_clock(),
-                )
-            except (InvalidCommandError, TypeError, ValueError) as exc:
+            decision = self.mux.update(
+                source,
+                Command(linear_x=msg.linear.x, angular_z=msg.angular.z),
+                self.monotonic_clock(),
+            )
+            if decision.disposition is not SourceUpdateDisposition.ACCEPTED:
                 self.invalid_command_count += 1
+                self.invalid_command_count_by_source[source] += 1
                 self.last_reject_reason = HostControlState.REJECT_INVALID
-                self.get_logger().error(f"Rejected {source} command: {exc}")
-                self._publish_release()
+                self.get_logger().error(f"Rejected {source} command: {decision.reason}")
+                if decision.disposition is SourceUpdateDisposition.REJECTED_ACTIVE_WITH_FALLBACK:
+                    self._publish_selected()
+                elif (
+                    decision.disposition is SourceUpdateDisposition.REJECTED_ACTIVE_RELEASE
+                    and self.last_active
+                ):
+                    self._publish_release()
                 return
 
             if self.rearm_required:
@@ -178,6 +252,18 @@ class CmdVelMuxNode(Node):
                 self._publish_selected()
 
         return _callback
+
+    def _on_publish_deadline(self, event) -> None:
+        self.dds_deadline_miss_count += max(int(event.total_count_change), 0)
+
+    def _on_publish_liveliness(self, event) -> None:
+        self.publisher_liveliness_lost_count += max(int(event.total_count_change), 0)
+
+    def _on_candidate_message_lost(self, event) -> None:
+        self.command_queue_drop_count += max(int(event.total_count_change), 0)
+
+    def _on_candidate_liveliness(self, event) -> None:
+        self.publisher_liveliness_lost_count += max(-int(event.alive_count_change), 0)
 
     def _publish_selected(self) -> None:
         now_sec = self.monotonic_clock()
@@ -317,6 +403,10 @@ class CmdVelMuxNode(Node):
         msg.selected_host_subsource = self._source_id(self.last_source)
         age = self.mux.newest_age(now_sec)
         msg.command_age_ms = 0xFFFFFFFF if age is None else min(int(age * 1000.0), 0xFFFFFFFF)
+        msg.selected_command_age_ms = msg.command_age_ms
+        msg.dds_deadline_miss_count = self.dds_deadline_miss_count
+        msg.publisher_liveliness_lost_count = self.publisher_liveliness_lost_count
+        msg.command_queue_drop_count = self.command_queue_drop_count
         msg.command_reject_reason = self.last_reject_reason
         msg.enable_intent = self.last_active and not self.rearm_required
         msg.rearm_required = self.rearm_required

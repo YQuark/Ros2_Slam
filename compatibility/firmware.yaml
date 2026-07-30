@@ -2,8 +2,11 @@ schema_version: 3
 platform_api_version: 5
 upper:
   branch: ARM
-  baseline_commit: ae30e0a66957374822ce5efe4a464df67186d311
-  release: v0.6.0-rc1
+  architecture_baseline_commit: 2f16c8b9127a9534bade4fe9f3abb33643b4bd0b
+  release_candidate_commit: null
+  tested_commit: null
+  released_tag: null
+  release: v0.6.0-rc2
   wire_protocols_supported: [3]
 protocol:
   name: upper_v3
@@ -16,14 +19,18 @@ protocol:
   required_capabilities: 31
 firmware:
   repository: Yaoser-x/SlamRobot_Chassis_Control
-  candidate_commit: 366a0385290d526009e6cd3bbdaa7b74b2fecad6
+  candidate_commit: bc472cc874e930aaed6eb8e7de73b41a2563dd85
+  candidate_tag: v1.0.0-rc1
+  tested_commit: null
   compatible_commit: null
   compatible_tag: null
+  parameter_crc32: null
+  hardware_revision: null
   status: implementation_ready_hil_pending
   implementation_spec: docs/interfaces/upper-protocol-v3.md
   golden_vector_file: tests/protocol/fixtures/upper_v3_golden.json
-  golden_vector_sha256: cb928ab64e165307155f1098956e16bdec3726db3f685e85c4a5305376fdc137
-  hil_report: verification/reports/hil/v0.6.0-rc1.yaml
+  golden_vector_sha256: 8406a0f8d0b450d1fc1af27ef6b2b5c17742285c732eeb8705da4bd2855e2a0e
+  hil_report: verification/reports/hil/v0.6.0-rc2.yaml
 incompatible_firmware:
   - tag: v1.0.0-beta4
     commit: a4ae10d592e840e979dd35c8a9b2ff2f5dd107e4
@@ -31,10 +38,18 @@ incompatible_firmware:
     reason: v0.4.0 intentionally removed the v2 runtime path
 timing:
   mux_source_timeout_ms: 250
+  host_publish_period_ms: 50
+  host_command_deadline_ms: 100
+  host_command_lifespan_ms: 120
   bridge_command_timeout_ms: 150
   bridge_keepalive_ms: 50
   command_ack_timeout_ms: 150
   bridge_status_timeout_ms: 250
   required_firmware_upper_timeout_ms: 200
 release_compatible: false
-release_blocker: Cross-repository UART HIL and the deployed firmware parameter CRC are not yet recorded.
+verification_status:
+  host: pending_rc2_execution
+  pty: pending_rc2_execution
+  uart_hil: pending
+  vehicle: pending
+release_blocker: UART HIL, deployed parameter CRC, hardware revision, calibration, vehicle and long-run evidence are not yet recorded.

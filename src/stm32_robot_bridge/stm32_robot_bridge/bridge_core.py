@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 import secrets
+import struct
 from collections import deque
 from dataclasses import dataclass, replace
 from enum import IntEnum
@@ -46,6 +47,18 @@ class StatusDisposition(IntEnum):
     OUT_OF_ORDER = 3
 
 
+class CommandDisposition(IntEnum):
+    ACCEPT_ENABLE = 1
+    ACCEPT_DISABLE = 2
+    IGNORE_DUPLICATE = 3
+    REJECT_STALE = 4
+    REJECT_OUT_OF_ORDER = 5
+    REJECT_OLD_SESSION = 6
+    REJECT_INVALID_VALUE = 7
+    REQUIRE_REARM = 8
+    GLOBAL_RELEASE = 9
+
+
 @dataclass(frozen=True)
 class FirmwareSnapshot:
     received_at: float
@@ -83,6 +96,14 @@ class ValidatedCommand:
     sequence: int
 
 
+@dataclass(frozen=True)
+class CommandDecision:
+    disposition: CommandDisposition
+    validated_command: Optional[ValidatedCommand]
+    reason: str
+    rearm_reason_flags: int
+
+
 class BridgeCore:
     def __init__(
         self,
@@ -104,6 +125,19 @@ class BridgeCore:
         self.snapshot = RuntimeSnapshot()
         self._retired_host_epochs: deque[int] = deque(maxlen=16)
         self._host_disable_observed = False
+        self._last_host_command: Optional[ValidatedCommand] = None
+
+    @property
+    def state(self) -> BridgeState:
+        return self.machine.state
+
+    @property
+    def can_drive(self) -> bool:
+        return self.machine.can_drive
+
+    @property
+    def state_generation(self) -> int:
+        return self.machine.generation
 
     def on_connected(self, session_id: Optional[int] = None) -> RuntimeSnapshot:
         if self.snapshot.command_session_id:
@@ -121,7 +155,15 @@ class BridgeCore:
             reset_generation=(self.snapshot.reset_generation + 1) & 0xFFFFFFFF,
         )
         self._host_disable_observed = False
+        self._last_host_command = None
         return self.snapshot
+
+    def record_wire_sequence(self, sequence: int) -> None:
+        self.snapshot = replace(self.snapshot, wire_sent_sequence=int(sequence) & 0xFFFFFFFF)
+
+    def on_clear_fault_requested(self) -> None:
+        self.machine.on_clear_fault_requested()
+        self.snapshot = replace(self.snapshot, state=self.machine.state)
 
     def on_disconnected(self) -> RuntimeSnapshot:
         self.machine.on_disconnected()
@@ -238,36 +280,125 @@ class BridgeCore:
         command_stamp_sec: float,
         now_ros_sec: float,
         now_monotonic: float,
-    ) -> ValidatedCommand:
-        # Header/ROS time is recording metadata. Safety freshness starts at the
-        # monotonic callback receipt below and is unaffected by /clock.
+    ) -> CommandDecision:
+        # Header/ROS time bounds queue admission.  Once accepted, safety lease
+        # freshness starts at monotonic callback receipt and is unaffected by
+        # later /clock changes.
         values = (vx, wz, now_monotonic)
         if not all(math.isfinite(float(value)) for value in values):
-            raise ValueError("command contains non-finite value")
+            current = self.snapshot.command_session_id
+            if current and int(session_id) == current:
+                self.require_rearm(REARM_HOST_REPLAY)
+                return self._decision(
+                    CommandDisposition.GLOBAL_RELEASE,
+                    None,
+                    "current command contains non-finite value",
+                )
+            return self._decision(
+                CommandDisposition.REJECT_INVALID_VALUE,
+                None,
+                "command contains non-finite value",
+            )
         session_id = int(session_id) & 0xFFFFFFFFFFFFFFFF
         sequence = int(sequence) & 0xFFFFFFFF
         if session_id == 0:
-            raise ValueError("session_id must be non-zero")
+            return self._decision(
+                CommandDisposition.REJECT_INVALID_VALUE,
+                None,
+                "session_id must be non-zero",
+            )
         current_epoch = self.snapshot.command_session_id
         epoch_changed = current_epoch not in (0, session_id)
         if session_id in self._retired_host_epochs:
-            self.require_rearm(REARM_HOST_REPLAY)
-            raise ValueError("retired ROS command epoch")
+            return self._decision(
+                CommandDisposition.REJECT_OLD_SESSION,
+                None,
+                "retired ROS command epoch",
+            )
+        normalized = ValidatedCommand(
+            self._float32(max(-self.hard_max_linear_mps, min(self.hard_max_linear_mps, float(vx)))),
+            self._float32(
+                max(-self.hard_max_angular_radps, min(self.hard_max_angular_radps, float(wz)))
+            ),
+            bool(enable),
+            int(source) & 0xFF,
+            session_id,
+            sequence,
+        )
+        if not normalized.enable:
+            normalized = ValidatedCommand(0.0, 0.0, False, 0, session_id, sequence)
         if current_epoch == session_id:
             if sequence == self.snapshot.command_sequence:
-                raise ValueError("duplicate ROS command sequence")
+                if normalized == self._last_host_command:
+                    return self._decision(
+                        CommandDisposition.IGNORE_DUPLICATE,
+                        normalized,
+                        "idempotent duplicate",
+                    )
+                self.require_rearm(REARM_HOST_REPLAY)
+                return self._decision(
+                    CommandDisposition.GLOBAL_RELEASE,
+                    None,
+                    "duplicate sequence has a different payload",
+                )
             if not sequence_is_forward(sequence, self.snapshot.command_sequence):
-                raise ValueError("out-of-order ROS command sequence")
-        elif enable and not self._host_disable_observed:
+                return self._decision(
+                    CommandDisposition.REJECT_OUT_OF_ORDER,
+                    None,
+                    "out-of-order ROS command sequence",
+                )
+        try:
+            command_stamp = float(command_stamp_sec)
+            ros_now = float(now_ros_sec)
+        except (TypeError, ValueError):
+            command_stamp = ros_now = float("nan")
+        if not math.isfinite(command_stamp) or not math.isfinite(ros_now):
+            return self._reject_freshness(
+                session_id,
+                current_epoch,
+                CommandDisposition.REJECT_INVALID_VALUE,
+                "command timestamp is not finite",
+            )
+        # A zero/zero pair is retained for deterministic non-ROS core tests and
+        # startup at ROS epoch zero.  Otherwise the header stamp is an
+        # admission bound; the active lease itself remains monotonic-clock
+        # based and therefore cannot be extended by /clock jumps.
+        if command_stamp != 0.0 or ros_now != 0.0:
+            age = ros_now - command_stamp
+            if age > self.max_command_age_sec:
+                return self._reject_freshness(
+                    session_id,
+                    current_epoch,
+                    CommandDisposition.REJECT_STALE,
+                    f"command is stale by {age:.6f} s",
+                )
+            if age < -self.max_command_age_sec:
+                return self._reject_freshness(
+                    session_id,
+                    current_epoch,
+                    CommandDisposition.REJECT_INVALID_VALUE,
+                    f"command timestamp is in the future by {-age:.6f} s",
+                )
+        if current_epoch != session_id and enable and not self._host_disable_observed:
             self.require_rearm(REARM_HOST_REPLAY)
-            raise ValueError("new command epoch requires a preceding disable")
+            return self._decision(
+                CommandDisposition.GLOBAL_RELEASE,
+                None,
+                "new command epoch requires a preceding disable",
+            )
         if enable and current_epoch == session_id and self._host_disable_observed:
             self.require_rearm(REARM_HOST_REPLAY)
-            raise ValueError("enable after disable requires a new command epoch")
+            return self._decision(
+                CommandDisposition.GLOBAL_RELEASE,
+                None,
+                "enable after disable requires a new command epoch",
+            )
         if epoch_changed:
-            self._retired_host_epochs.append(current_epoch)
+            if current_epoch:
+                self._retired_host_epochs.append(current_epoch)
         if not enable:
             self._host_disable_observed = True
+            self._last_host_command = normalized
             self.snapshot = replace(
                 self.snapshot,
                 state=self.machine.state,
@@ -278,39 +409,92 @@ class BridgeCore:
                 target_wz=0.0,
                 last_command_at=None,
             )
-            return ValidatedCommand(0.0, 0.0, False, 0, session_id, sequence)
+            return self._decision(
+                CommandDisposition.ACCEPT_DISABLE,
+                normalized,
+                "disable accepted",
+            )
         if self.snapshot.rearm_required:
-            raise ValueError("disable-enable rearm is required")
+            return self._decision(
+                CommandDisposition.REQUIRE_REARM,
+                None,
+                "disable-enable rearm is required",
+            )
         status_age = (
             None
             if self.snapshot.last_status_at is None
             else now_monotonic - self.snapshot.last_status_at
         )
         if status_age is None or status_age < 0.0 or status_age > self.status_timeout_sec:
-            raise ValueError("STATUS is unavailable or stale")
+            self.require_rearm(REARM_STATUS_TIMEOUT)
+            return self._decision(
+                CommandDisposition.GLOBAL_RELEASE,
+                None,
+                "STATUS is unavailable or stale",
+            )
         if self.snapshot.hello is None or not self.machine.can_drive:
-            raise ValueError("bridge state does not permit drive")
-        vx = max(-self.hard_max_linear_mps, min(self.hard_max_linear_mps, float(vx)))
-        wz = max(-self.hard_max_angular_radps, min(self.hard_max_angular_radps, float(wz)))
+            return self._decision(
+                CommandDisposition.REQUIRE_REARM,
+                None,
+                "bridge state does not permit drive",
+            )
         self.machine.on_drive_enabled()
         self._host_disable_observed = False
+        self._last_host_command = normalized
         self.snapshot = replace(
             self.snapshot,
             state=self.machine.state,
             command_session_id=session_id,
             command_sequence=sequence,
-            selected_source=int(source) & 0xFF,
-            target_vx=vx,
-            target_wz=wz,
+            selected_source=normalized.source,
+            target_vx=normalized.vx,
+            target_wz=normalized.wz,
             last_command_at=float(now_monotonic),
         )
-        return ValidatedCommand(vx, wz, True, int(source) & 0xFF, session_id, sequence)
+        return self._decision(
+            CommandDisposition.ACCEPT_ENABLE,
+            normalized,
+            "enable accepted",
+        )
+
+    def _reject_freshness(
+        self,
+        session_id: int,
+        current_epoch: int,
+        inactive_disposition: CommandDisposition,
+        reason: str,
+    ) -> CommandDecision:
+        if current_epoch and session_id == current_epoch:
+            self.require_rearm(REARM_HOST_REPLAY)
+            return self._decision(CommandDisposition.GLOBAL_RELEASE, None, reason)
+        return self._decision(inactive_disposition, None, reason)
+
+    def _decision(
+        self,
+        disposition: CommandDisposition,
+        command: Optional[ValidatedCommand],
+        reason: str,
+    ) -> CommandDecision:
+        return CommandDecision(
+            disposition,
+            command,
+            reason,
+            self.snapshot.rearm_reason_flags,
+        )
+
+    @staticmethod
+    def _float32(value: float) -> float:
+        return struct.unpack("<f", struct.pack("<f", float(value)))[0]
 
     def on_disable_sent(self, sequence: int) -> None:
         self.machine.on_disable_sent(sequence)
         self.snapshot = replace(
             self.snapshot,
             state=self.machine.state,
+            wire_sent_sequence=int(sequence) & 0xFFFFFFFF,
+            target_vx=0.0,
+            target_wz=0.0,
+            last_command_at=None,
             rearm_required=(
                 self.snapshot.rearm_required
                 or self.machine.state is BridgeState.WAIT_POST_CLEAR_DISABLE_ACK

@@ -1,0 +1,8 @@
+profile:
+  name: high_resolution_experimental
+  status: experimental
+overlay:
+  slam_toolbox:
+    ros__parameters:
+      resolution: 0.03
+      correlation_search_space_smear_deviation: 0.08

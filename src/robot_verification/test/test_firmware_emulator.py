@@ -30,3 +30,26 @@ def test_watchdog_fault_rearm_reboot_and_retired_session_are_fail_closed():
     assert not firmware.apply_velocity(velocity(7, 4, False), 0.24)
     assert firmware.apply_velocity(velocity(8, 1, False), 0.25)
     assert firmware.apply_velocity(velocity(8, 2, True), 0.26)
+
+
+def test_conflicting_duplicate_and_out_of_order_are_rejected_without_target_change():
+    firmware = FirmwareV3Emulator()
+    assert firmware.apply_velocity(velocity(7, 1, False), 0.0)
+    assert firmware.apply_velocity(velocity(7, 2, True, vx=0.2), 0.01)
+
+    assert not firmware.apply_velocity(velocity(7, 2, True, vx=0.3), 0.02)
+    assert firmware.host_enabled
+    assert not firmware.apply_velocity(velocity(7, 1, True, vx=0.2), 0.03)
+    assert firmware.host_enabled
+
+
+def test_sequence_wraparound_is_forward_and_layout_masks_are_explicit():
+    firmware = FirmwareV3Emulator(enabled_mask=0x06)
+    assert firmware.apply_velocity(velocity(7, 0xFFFFFFFE, False), 0.0)
+    assert firmware.apply_velocity(velocity(7, 0xFFFFFFFF, True), 0.01)
+    assert firmware.apply_velocity(velocity(7, 0, True), 0.02)
+
+    payload = firmware.status_payload()
+    assert payload[3] == 0x06
+    assert payload[62] == 0x06
+    assert payload[63] == 0

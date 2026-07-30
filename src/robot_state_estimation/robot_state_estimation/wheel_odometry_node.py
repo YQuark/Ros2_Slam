@@ -35,16 +35,26 @@ class WheelOdometryNode(Node):
             "odom_angular_scale": 1.0,
             "odom_angular_sign": 1.0,
             "max_dt_sec": 0.25,
-            "hard_max_speed_mps": 0.45,
+            "hard_max_wheel_peripheral_speed_mps": 0.70,
             "compatibility_state_topic": "platform/compatibility_state",
-            "wheel_variance_floor_m2": 0.000025,
-            "wheel_variance_per_meter": 0.0025,
+            "left_variance_floor_m2": 0.000025,
+            "left_variance_per_meter": 0.0025,
+            "right_variance_floor_m2": 0.000025,
+            "right_variance_per_meter": 0.0025,
+            "left_right_correlation": 0.0,
+            "turn_noise_gain": 0.5,
+            "slip_noise_gain": 1.0,
+            "degraded_single_wheel_multiplier": 4.0,
+            "unobserved_pose_variance": 1000000.0,
+            "unobserved_twist_variance": 1000000.0,
         }
         for name, value in defaults.items():
             self.declare_parameter(name, value)
         self.frame_id = str(self.get_parameter("frame_id").value)
         self.child_frame_id = str(self.get_parameter("child_frame_id").value)
-        self.hard_max_speed = float(self.get_parameter("hard_max_speed_mps").value)
+        self.hard_max_wheel_speed = float(
+            self.get_parameter("hard_max_wheel_peripheral_speed_mps").value
+        )
         self.odometry = EncoderOdometry(
             wheel_radius_m=float(self.get_parameter("wheel_radius").value),
             track_width_m=float(self.get_parameter("wheel_track_width").value),
@@ -53,10 +63,22 @@ class WheelOdometryNode(Node):
             linear_scale=float(self.get_parameter("odom_linear_scale").value),
             angular_scale=float(self.get_parameter("odom_angular_scale").value),
             angular_sign=float(self.get_parameter("odom_angular_sign").value),
-            wheel_variance_floor_m2=float(self.get_parameter("wheel_variance_floor_m2").value),
-            wheel_variance_per_meter=float(self.get_parameter("wheel_variance_per_meter").value),
+            left_variance_floor_m2=float(self.get_parameter("left_variance_floor_m2").value),
+            left_variance_per_meter=float(self.get_parameter("left_variance_per_meter").value),
+            right_variance_floor_m2=float(self.get_parameter("right_variance_floor_m2").value),
+            right_variance_per_meter=float(self.get_parameter("right_variance_per_meter").value),
+            left_right_correlation=float(self.get_parameter("left_right_correlation").value),
+            turn_noise_gain=float(self.get_parameter("turn_noise_gain").value),
+            slip_noise_gain=float(self.get_parameter("slip_noise_gain").value),
+            degraded_single_wheel_multiplier=float(
+                self.get_parameter("degraded_single_wheel_multiplier").value
+            ),
         )
         self.order = SampleOrderTracker()
+        self.unobserved_pose_variance = float(self.get_parameter("unobserved_pose_variance").value)
+        self.unobserved_twist_variance = float(
+            self.get_parameter("unobserved_twist_variance").value
+        )
         self.clock_mapper = McuClockMapper()
         qos = QoSProfile(depth=20, reliability=ReliabilityPolicy.RELIABLE)
         self.publisher = self.create_publisher(
@@ -111,12 +133,12 @@ class WheelOdometryNode(Node):
         try:
             left_speed, right_speed = layout.aggregate(msg.wheel_speed_mps)
         except WheelLayoutError:
-            self.rejected_count += 1
-            self.odometry.reset_sample_baseline()
-            return
-        wheel_wz = (right_speed - left_speed) / max(
-            float(self.get_parameter("wheel_track_width").value), 1e-6
-        )
+            # Upper-v3 speed quality does not qualify accumulated counts.
+            wheel_wz = 0.0
+        else:
+            wheel_wz = (right_speed - left_speed) / max(
+                float(self.get_parameter("wheel_track_width").value), 1e-6
+            )
         multiplier = covariance_multiplier(
             wheel_speeds=msg.wheel_speed_mps,
             enabled_mask=msg.motor_enabled_mask,
@@ -137,7 +159,7 @@ class WheelOdometryNode(Node):
             transport_session_id=msg.transport_session_id,
             reset_generation=msg.reset_generation,
             covariance_multiplier=multiplier,
-            hard_max_speed_mps=self.hard_max_speed,
+            hard_max_wheel_peripheral_speed_mps=self.hard_max_wheel_speed,
         )
         if not update.integrated or not update.trusted:
             return
@@ -167,11 +189,15 @@ class WheelOdometryNode(Node):
             p[7],
             p[8],
         )
+        for index in (14, 21, 28):
+            odom.pose.covariance[index] = self.unobserved_pose_variance
         t = update.twist_covariance
         odom.twist.covariance[0] = max(t[0], 1e-6)
         odom.twist.covariance[5] = t[1]
         odom.twist.covariance[30] = t[2]
         odom.twist.covariance[35] = max(t[3], 1e-6)
+        for index in (7, 14, 21, 28):
+            odom.twist.covariance[index] = self.unobserved_twist_variance
         self.publisher.publish(odom)
 
     @staticmethod

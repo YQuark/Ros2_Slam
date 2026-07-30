@@ -28,6 +28,10 @@ std_msgs/Header header
 uint8 control_state
 uint8 selected_host_subsource
 uint32 command_age_ms
+uint32 selected_command_age_ms
+uint32 dds_deadline_miss_count
+uint32 publisher_liveliness_lost_count
+uint32 command_queue_drop_count
 uint8 command_reject_reason
 bool enable_intent
 bool rearm_required

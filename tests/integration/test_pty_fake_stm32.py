@@ -6,7 +6,11 @@ import struct
 import pytest
 import serial
 
-from stm32_robot_bridge.bridge_core import BridgeCore, StatusDisposition
+from stm32_robot_bridge.bridge_core import (
+    BridgeCore,
+    CommandDisposition,
+    StatusDisposition,
+)
 from stm32_robot_bridge.bridge_state import BridgeState
 from stm32_robot_bridge.framing import FrameParser, build_frame
 from stm32_robot_bridge.protocol_v3 import (
@@ -129,7 +133,7 @@ def test_pty_upper_v3_hello_drive_timeout_fault_and_reconnect_rearm():
             now_monotonic=1.006,
         )
 
-        command = core.accept_command(
+        decision = core.accept_command(
             vx=0.8,
             wz=-2.0,
             enable=True,
@@ -140,6 +144,9 @@ def test_pty_upper_v3_hello_drive_timeout_fault_and_reconnect_rearm():
             now_ros_sec=10.01,
             now_monotonic=1.01,
         )
+        assert decision.disposition is CommandDisposition.ACCEPT_ENABLE
+        command = decision.validated_command
+        assert command is not None
         stream = CommandStream(0.15, 0.05, core.snapshot.wire_session_id)
         stream.update_command(command.vx, command.wz, 1.01)
         sender = lambda payload: write_all(device, build_frame(CMD_SET_VELOCITY, payload), stats)
@@ -151,18 +158,18 @@ def test_pty_upper_v3_hello_drive_timeout_fault_and_reconnect_rearm():
         assert stream.tick(1.20, sender)
         assert decode_velocity(fake.receive_frames())[:3] == (0.0, 0.0, 0)
         assert core.tick(1.20) == (True, "command_timeout")
-        with pytest.raises(ValueError, match="rearm"):
-            core.accept_command(
-                vx=0.1,
-                wz=0.0,
-                enable=True,
-                source=3,
-                session_id=100,
-                sequence=2,
-                command_stamp_sec=10.02,
-                now_ros_sec=10.03,
-                now_monotonic=1.21,
-            )
+        blocked = core.accept_command(
+            vx=0.1,
+            wz=0.0,
+            enable=True,
+            source=3,
+            session_id=100,
+            sequence=2,
+            command_stamp_sec=10.02,
+            now_ros_sec=10.03,
+            now_monotonic=1.21,
+        )
+        assert blocked.disposition is CommandDisposition.REQUIRE_REARM
 
         core.on_disconnected()
         core.on_connected(8)

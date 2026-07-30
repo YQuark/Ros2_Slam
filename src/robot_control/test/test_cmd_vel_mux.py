@@ -126,10 +126,10 @@ class MockNode:
     def get_clock(self):
         return self._clock
 
-    def create_publisher(self, msg_type, topic, qos_profile):
+    def create_publisher(self, msg_type, topic, qos_profile, **_kwargs):
         return MagicMock()
 
-    def create_subscription(self, msg_type, topic, callback, qos_profile):
+    def create_subscription(self, msg_type, topic, callback, qos_profile, **_kwargs):
         return MagicMock()
 
     def create_timer(self, timer_period_sec, callback, **_kwargs):
@@ -152,6 +152,11 @@ sys.modules["rclpy.node"].Node = MockNode
 sys.modules["rclpy.clock"] = MagicMock()
 sys.modules["rclpy.clock"].Clock = MagicMock()
 sys.modules["rclpy.clock"].ClockType = MagicMock()
+sys.modules["rclpy.duration"] = MagicMock()
+sys.modules["rclpy.duration"].Duration = MagicMock()
+sys.modules["rclpy.qos"] = MagicMock()
+sys.modules["rclpy.qos"].QoSProfile = MagicMock()
+sys.modules["rclpy.qos_event"] = MagicMock()
 
 # ---------------------------------------------------------------------------
 # 导入被测试模块
@@ -204,7 +209,9 @@ class TestCmdVelMuxNode:
         assert node.get_parameter("max_angular_jerk").value == 6.0
         assert node.get_parameter("timeout_sec").value == 0.25
         assert node.get_parameter("publish_hz").value == 20.0
-        assert node.get_parameter("host_motion_command_topic").value == "chassis/host_motion_command"
+        assert (
+            node.get_parameter("host_motion_command_topic").value == "chassis/host_motion_command"
+        )
 
     def test_research_sources_default_to_empty(self):
         node = make_mux()
@@ -443,3 +450,85 @@ class TestCmdVelMuxCallback:
         published = node.publisher.publish.call_args[0][0]
         assert published.enable is True
         assert published.host_subsource == _FakeHostMotionCommand.HOST_SUBSOURCE_NAV
+
+    def test_invalid_nav_does_not_interrupt_teleop(self):
+        from robot_control.control_policy import Command
+
+        node = make_mux()
+        node.mux.update("teleop", Command(0.2, 0.0), now_sec=0.0)
+        node.mux.update("nav", Command(0.1, 0.0), now_sec=0.0)
+        node.last_active = True
+        node.last_source = "teleop"
+        msg = MagicMock()
+        msg.linear.x = float("nan")
+        msg.angular.z = 0.0
+
+        node._make_callback("nav")(msg)
+
+        node.publisher.publish.assert_not_called()
+        assert node.mux.select(0.0).source == "teleop"
+
+    def test_invalid_research_does_not_interrupt_nav(self):
+        from robot_control.control_policy import Command
+
+        node = make_mux(research_sources=["mpc"])
+        node.mux.update("nav", Command(0.1, 0.0), now_sec=0.0)
+        node.last_active = True
+        node.last_source = "nav"
+        msg = MagicMock()
+        msg.linear.x = 0.0
+        msg.angular.z = float("inf")
+
+        node._make_callback("research/mpc")(msg)
+
+        node.publisher.publish.assert_not_called()
+        assert node.mux.select(0.0).source == "nav"
+
+    def test_invalid_active_source_falls_back_immediately(self):
+        from robot_control.control_policy import Command
+
+        node = make_mux()
+        node.mux.update("nav", Command(0.1, 0.0), now_sec=0.0)
+        node.mux.update("teleop", Command(0.2, 0.0), now_sec=0.0)
+        node.last_active = True
+        node.last_source = "teleop"
+        msg = MagicMock()
+        msg.linear.x = float("nan")
+        msg.angular.z = 0.0
+
+        node._make_callback("teleop")(msg)
+
+        published = node.publisher.publish.call_args[0][0]
+        assert published.enable is True
+        assert published.host_subsource == _FakeHostMotionCommand.HOST_SUBSOURCE_NAV
+
+    def test_invalid_source_spam_does_not_toggle_enable(self):
+        from robot_control.control_policy import Command
+
+        node = make_mux()
+        node.mux.update("teleop", Command(0.2, 0.0), now_sec=0.0)
+        node.last_active = True
+        node.last_source = "teleop"
+        msg = MagicMock()
+        msg.linear.x = float("nan")
+        msg.angular.z = 0.0
+        callback = node._make_callback("nav")
+
+        for _ in range(10):
+            callback(msg)
+
+        node.publisher.publish.assert_not_called()
+        assert node.invalid_command_count_by_source["nav"] == 10
+
+    def test_qos_event_counters_are_exposed_in_host_control_state(self):
+        node = make_mux()
+        node._on_publish_deadline(SimpleNamespace(total_count_change=2))
+        node._on_candidate_liveliness(SimpleNamespace(alive_count_change=-1))
+        node._on_candidate_message_lost(SimpleNamespace(total_count_change=3))
+
+        node._publish_control_state(0.0)
+
+        state = node.state_publisher.publish.call_args[0][0]
+        assert state.dds_deadline_miss_count == 2
+        assert state.publisher_liveliness_lost_count == 1
+        assert state.command_queue_drop_count == 3

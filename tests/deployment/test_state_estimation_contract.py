@@ -50,6 +50,8 @@ def test_real_base_tf_has_one_odom_to_base_link_owner():
         ROOT / "src" / "robot_state_estimation" / "launch" / "state_estimation.launch.py"
     ).read_text(encoding="utf-8")
     assert 'package="robot_localization"' in state_launch
+    assert 'if fusion_mode == "wheel_imu"' in state_launch
+    assert 'formal_input = "wheel/odom"' in state_launch
     assert "wheel_odom_republisher" not in state_launch
     assert "bridge v3 never owns odom->base_link TF" in (
         ROOT / "src/stm32_robot_bridge/stm32_robot_bridge/bridge_node_v3.py"
@@ -62,3 +64,19 @@ def test_real_base_tf_has_one_odom_to_base_link_owner():
     assert "TransformBroadcaster" in (
         ROOT / "src/robot_state_estimation/robot_state_estimation/formal_odometry_node.py"
     ).read_text(encoding="utf-8")
+    formal = (
+        ROOT / "src/robot_state_estimation/robot_state_estimation/formal_odometry_node.py"
+    ).read_text(encoding="utf-8")
+    assert "fresh_evidence_at" in formal
+    assert "transport_session_id" in formal
+
+
+def test_ekf_experiment_has_four_groups_and_keeps_wheel_default():
+    experiment = yaml.safe_load(
+        (ROOT / "verification/configs/experiments/ekf-comparison-v0.6.0-rc2.yaml").read_text()
+    )
+
+    assert set(experiment["groups"]) == {"A", "B", "C", "D"}
+    assert experiment["promotion"]["default"] == "A"
+    assert experiment["groups"]["A"]["base_fusion_mode"] == "wheel"
+    assert experiment["status"].startswith("provisional")

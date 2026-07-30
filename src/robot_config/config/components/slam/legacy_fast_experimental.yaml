@@ -1,0 +1,14 @@
+profile:
+  name: legacy_fast_experimental
+  status: experimental
+overlay:
+  slam_toolbox:
+    ros__parameters:
+      throttle_scans: 2
+      map_update_interval: 0.10
+      resolution: 0.08
+      minimum_travel_distance: 0.003
+      minimum_travel_heading: 0.003
+      scan_buffer_size: 6
+      correlation_search_space_dimension: 0.30
+      correlation_search_space_resolution: 0.02

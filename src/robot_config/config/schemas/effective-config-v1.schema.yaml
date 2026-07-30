@@ -1,0 +1,269 @@
+$schema: http://json-schema.org/draft-07/schema#
+type: object
+additionalProperties: false
+required: [schema_version, platform_api_version, release, release_mode,
+           unsafe_development_mode, protocol, platform, safety, motion,
+           motion_supervisor, hardware, calibration, calibration_bundle, runtime,
+           robot_id, profile, component_sha256]
+properties:
+  schema_version: {const: 1}
+  platform_api_version: {const: 5}
+  release: {type: string}
+  release_mode: {type: boolean}
+  unsafe_development_mode: {type: boolean}
+  robot_id: {type: string, minLength: 1}
+  profile: {enum: [fake, mapping, localization, navigation, hil, diagnostics]}
+  config_sha256: {type: string, pattern: '^[0-9a-f]{64}$'}
+  component_sha256:
+    type: object
+    minProperties: 9
+    additionalProperties: {type: string, pattern: '^[0-9a-f]{64}$'}
+  protocol:
+    type: object
+    additionalProperties: false
+    required: [name, version, required_capabilities]
+    properties:
+      name: {const: upper_v3}
+      version: {const: 3}
+      required_capabilities: {type: integer, minimum: 0}
+  platform:
+    type: object
+    additionalProperties: false
+    required: [frames, topics]
+    properties:
+      frames:
+        type: object
+        additionalProperties: false
+        required: [map, odom, base, imu, laser]
+        properties:
+          map: {type: string}
+          odom: {type: string}
+          base: {type: string}
+          imu: {type: string}
+          laser: {type: string}
+      topics:
+        type: object
+        additionalProperties: false
+        required: [host_motion_command, chassis_link_state, firmware_control_state,
+                   host_control_state, firmware_info, wheel_observation, imu_observation,
+                   motion_supervision_state, platform_compatibility_state,
+                   navigation_guard_state, wheel_odom, odom, imu, diagnostics]
+        properties:
+          host_motion_command: {type: string}
+          chassis_link_state: {type: string}
+          firmware_control_state: {type: string}
+          host_control_state: {type: string}
+          firmware_info: {type: string}
+          wheel_observation: {type: string}
+          imu_observation: {type: string}
+          motion_supervision_state: {type: string}
+          platform_compatibility_state: {type: string}
+          navigation_guard_state: {type: string}
+          wheel_odom: {type: string}
+          odom: {type: string}
+          imu: {type: string}
+          diagnostics: {type: string}
+  safety:
+    type: object
+    additionalProperties: false
+    required: [timing]
+    properties:
+      timing:
+        type: object
+        additionalProperties: false
+        required: [mux_source_timeout_sec, host_publish_period_sec,
+                   host_command_deadline_sec, host_command_lifespan_sec,
+                   bridge_command_timeout_sec, drive_keepalive_sec,
+                   firmware_upper_timeout_sec, status_timeout_sec,
+                   command_ack_timeout_sec, max_command_age_sec]
+        properties:
+          mux_source_timeout_sec: {type: number}
+          host_publish_period_sec: {type: number}
+          host_command_deadline_sec: {type: number}
+          host_command_lifespan_sec: {type: number}
+          bridge_command_timeout_sec: {type: number}
+          drive_keepalive_sec: {type: number}
+          firmware_upper_timeout_sec: {type: number}
+          status_timeout_sec: {type: number}
+          command_ack_timeout_sec: {type: number}
+          max_command_age_sec: {type: number}
+  motion:
+    type: object
+    additionalProperties: false
+    required: [soft_max_linear_mps, soft_max_angular_radps,
+               hard_max_linear_mps, hard_max_angular_radps, max_linear_accel_mps2,
+               max_angular_accel_radps2, max_linear_jerk_mps3, max_angular_jerk_radps3]
+    properties:
+      soft_max_linear_mps: {type: number}
+      soft_max_angular_radps: {type: number}
+      hard_max_linear_mps: {type: number}
+      hard_max_angular_radps: {type: number}
+      max_linear_accel_mps2: {type: number}
+      max_angular_accel_radps2: {type: number}
+      max_linear_jerk_mps3: {type: number}
+      max_angular_jerk_radps3: {type: number}
+  motion_supervisor:
+    type: object
+    additionalProperties: false
+    required: [enabled, wheel_pair_warn_mps, wheel_pair_critical_mps,
+               tracking_warn_mps, tracking_critical_mps, tracking_min_target_mps,
+               yaw_warn_radps, yaw_critical_radps, zero_command_linear_mps,
+               zero_command_angular_radps, unexpected_linear_mps,
+               unexpected_angular_radps, warn_score, degraded_score, critical_score,
+               critical_hold_sec, clear_score, clear_hold_sec, degraded_min_scale]
+    properties:
+      enabled: {type: boolean}
+      wheel_pair_warn_mps: {type: number}
+      wheel_pair_critical_mps: {type: number}
+      tracking_warn_mps: {type: number}
+      tracking_critical_mps: {type: number}
+      tracking_min_target_mps: {type: number}
+      yaw_warn_radps: {type: number}
+      yaw_critical_radps: {type: number}
+      zero_command_linear_mps: {type: number}
+      zero_command_angular_radps: {type: number}
+      unexpected_linear_mps: {type: number}
+      unexpected_angular_radps: {type: number}
+      warn_score: {type: number}
+      degraded_score: {type: number}
+      critical_score: {type: number}
+      critical_hold_sec: {type: number}
+      clear_score: {type: number}
+      clear_hold_sec: {type: number}
+      degraded_min_scale: {type: number}
+  hardware:
+    type: object
+    additionalProperties: false
+    required: [revision, base_port, lidar_port, baudrate, footprint_m,
+               lidar_mount_xyz_m, lidar_mount_yaw_rad]
+    properties:
+      revision: {type: integer}
+      base_port: {type: string}
+      lidar_port: {type: string}
+      baudrate: {type: integer}
+      footprint_m: {type: array, minItems: 3}
+      lidar_mount_xyz_m: {type: array, minItems: 3, maxItems: 3}
+      lidar_mount_yaw_rad: {type: number}
+  calibration:
+    type: object
+    additionalProperties: false
+    required: [schema_version, version, status, drive, odom_covariance,
+               limits, imu, lidar]
+    properties:
+      schema_version: {const: 1}
+      version: {type: string}
+      status: {enum: [provisional, final]}
+      drive:
+        type: object
+        additionalProperties: false
+        required: [wheel_radius_m, wheel_track_width_m,
+                   encoder_counts_per_revolution, odom_linear_scale,
+                   odom_angular_scale, odom_angular_sign]
+        properties:
+          wheel_radius_m: {type: number}
+          wheel_track_width_m: {type: number}
+          encoder_counts_per_revolution: {type: number}
+          odom_linear_scale: {type: number}
+          odom_angular_scale: {type: number}
+          odom_angular_sign: {type: number}
+      odom_covariance:
+        type: object
+        additionalProperties: false
+        required: [left_variance_floor_m2, left_variance_per_meter,
+                   right_variance_floor_m2, right_variance_per_meter,
+                   left_right_correlation, turn_noise_gain, slip_noise_gain,
+                   degraded_single_wheel_multiplier, unobserved_pose_variance,
+                   unobserved_twist_variance]
+        properties:
+          left_variance_floor_m2: {type: number}
+          left_variance_per_meter: {type: number}
+          right_variance_floor_m2: {type: number}
+          right_variance_per_meter: {type: number}
+          left_right_correlation: {type: number}
+          turn_noise_gain: {type: number}
+          slip_noise_gain: {type: number}
+          degraded_single_wheel_multiplier: {type: number}
+          unobserved_pose_variance: {type: number}
+          unobserved_twist_variance: {type: number}
+      limits:
+        type: object
+        additionalProperties: false
+        required: [hard_max_wheel_peripheral_speed_mps]
+        properties:
+          hard_max_wheel_peripheral_speed_mps: {type: number}
+      imu:
+        type: object
+        additionalProperties: false
+        required: [use_orientation, orientation_stddev,
+                   angular_velocity_stddev, linear_acceleration_stddev, status]
+        properties:
+          use_orientation: {type: boolean}
+          orientation_stddev: {type: number}
+          angular_velocity_stddev: {type: array, minItems: 3, maxItems: 3}
+          linear_acceleration_stddev: {type: array, minItems: 3, maxItems: 3}
+          status: {type: string}
+      lidar:
+        type: object
+        additionalProperties: false
+        required: [status, frame, translation_m, rotation_rpy_rad]
+        properties:
+          status: {enum: [provisional, final]}
+          frame: {type: string}
+          translation_m: {type: array, minItems: 3, maxItems: 3}
+          rotation_rpy_rad: {type: array, minItems: 3, maxItems: 3}
+  calibration_bundle:
+    type: object
+    additionalProperties: false
+    required: [identity, wheel_layout, geometry, imu, lidar]
+    properties:
+      identity:
+        type: object
+        additionalProperties: false
+        required: [hardware_revision, firmware_commit, firmware_parameter_crc32,
+                   upper_architecture_baseline_commit, upper_config_sha256]
+        properties:
+          hardware_revision: {type: integer}
+          firmware_commit: {type: string, pattern: '^[0-9a-f]{40}$'}
+          firmware_parameter_crc32: {type: integer}
+          upper_architecture_baseline_commit: {type: string}
+          upper_config_sha256: {type: string}
+      wheel_layout:
+        type: object
+        additionalProperties: false
+        required: [expected_enabled_mask, order]
+        properties:
+          expected_enabled_mask: {type: integer}
+          order: {const: [LF, LR, RF, RR]}
+      geometry:
+        type: object
+        additionalProperties: false
+        required: [wheel_radius_m, effective_track_width_m, counts_per_revolution]
+        properties:
+          wheel_radius_m: {type: number}
+          effective_track_width_m: {type: number}
+          counts_per_revolution: {type: number}
+      imu:
+        type: object
+        additionalProperties: false
+        required: [frame, axis_mapping, bias_identity]
+        properties:
+          frame: {type: string}
+          axis_mapping: {type: array, minItems: 3, maxItems: 3}
+          bias_identity: {type: string}
+      lidar:
+        type: object
+        additionalProperties: false
+        required: [frame, translation, rotation]
+        properties:
+          frame: {type: string}
+          translation: {type: array, minItems: 3, maxItems: 3}
+          rotation: {type: array, minItems: 3, maxItems: 3}
+  runtime:
+    type: object
+    additionalProperties: false
+    required: [mode, fusion_mode]
+    properties:
+      mode: {enum: [fake, mapping, localization, navigation, hil, diagnostics]}
+      fusion_mode: {enum: [wheel, wheel_imu]}
+      slam_profile: {type: string}
+      nav2_profile: {type: string}

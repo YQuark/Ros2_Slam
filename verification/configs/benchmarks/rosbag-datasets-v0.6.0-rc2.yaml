@@ -1,0 +1,77 @@
+schema_version: 1
+release: v0.6.0-rc2
+status: collection_pending
+default_output_root: /home/robot/robot_data/benchmarks/v0.6.0-rc2
+storage_id: sqlite3
+
+required_run_metadata:
+  - upper_commit
+  - firmware_commit
+  - hardware_revision
+  - firmware_parameter_crc32
+  - effective_config_sha256
+  - artifact_sha256
+  - calibration_version
+
+required_topics:
+  - /scan
+  - /wheel/observation
+  - /imu/observation
+  - /wheel/odom
+  - /imu/data
+  - /odom
+  - /tf
+  - /tf_static
+  - /cmd_vel/nav
+  - /cmd_vel/teleop
+  - /cmd_vel/test
+  - /chassis/host_motion_command
+  - /chassis/link_state
+  - /chassis/firmware_control_state
+  - /chassis/host_control_state
+  - /motion/supervision_state
+  - /navigation/guard_state
+  - /platform/compatibility_state
+  - /diagnostics
+
+datasets:
+  bag_00_static:
+    minimum_duration_sec: 600
+    repetitions: 1
+    procedure: 底盘 release 并静止 10 分钟，保持完整观测、估计与诊断链运行。
+  bag_01_straight:
+    minimum_duration_sec: 60
+    repetitions: 6
+    procedure: 以低、中、高速度分别正向和反向直行，保存外部距离基准。
+  bag_02_rotation_cw:
+    minimum_duration_sec: 60
+    repetitions: 3
+    procedure: 顺时针原地旋转五圈，保存外部角度基准和圈数。
+  bag_03_rotation_ccw:
+    minimum_duration_sec: 60
+    repetitions: 3
+    procedure: 逆时针原地旋转五圈，保存外部角度基准和圈数。
+  bag_04_square:
+    minimum_duration_sec: 90
+    repetitions: 3
+    procedure: 沿固定方形路线闭环，起终点使用同一外部位置和朝向基准。
+  bag_05_figure8:
+    minimum_duration_sec: 90
+    repetitions: 3
+    procedure: 沿固定 8 字路线行驶，覆盖左右转、交叉点和方向切换。
+  bag_06_mapping_train:
+    minimum_duration_sec: 300
+    repetitions: 2
+    procedure: 完整覆盖训练场地并形成真实闭环；仅用于参数搜索。
+  bag_07_mapping_validation:
+    minimum_duration_sec: 300
+    repetitions: 2
+    procedure: 使用独立路线和日期采集；只用于冻结候选的盲测验证。
+  bag_08_navigation_validation:
+    minimum_duration_sec: 600
+    repetitions: 50
+    procedure: 固定地图和十个目标，每个目标五次，记录误差、恢复、接管和通信降级。
+  bag_09_fault_injection:
+    minimum_duration_sec: 300
+    repetitions: 1
+    procedure: 按故障矩阵注入编码器、IMU、通信、进程和重启故障并记录 rearm 链。

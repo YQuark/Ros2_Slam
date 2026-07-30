@@ -2,9 +2,34 @@
 
 import math
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Tuple, cast
 
 from robot_chassis_model.wheel_layout import DEFAULT_ENABLED_MASK
+
+
+VALID_SCENARIOS = frozenset(
+    {
+        "normal",
+        "disconnect",
+        "disconnect_reconnect",
+        "status_freeze",
+        "duplicate_status",
+        "wheel_slip",
+        "encoder_fault",
+        "whole_side_failure",
+        "imu_drift",
+        "imu_loss",
+        "ack_received_not_applied",
+        "ack_rejected",
+        "clock_reset",
+    }
+)
+
+
+def scenario_accepts_enable(scenario: str) -> bool:
+    """Model firmware application semantics for deterministic ACK faults."""
+
+    return scenario not in {"ack_received_not_applied", "ack_rejected"}
 
 
 def signed_int32(value: int) -> int:
@@ -69,15 +94,24 @@ class FakeBaseModel:
         right = (self.vx + 0.5 * self.wz * self.track_width_m) * float(slip_scale)
         all_speeds = (left, left, right, right)
         all_targets = (target_left, target_left, target_right, target_right)
-        speeds = tuple(
-            value if self.enabled_mask & (1 << index) else 0.0
-            for index, value in enumerate(all_speeds)
+        speeds = cast(
+            Tuple[float, float, float, float],
+            tuple(
+                value if self.enabled_mask & (1 << index) else 0.0
+                for index, value in enumerate(all_speeds)
+            ),
         )
-        targets = tuple(
-            value if self.enabled_mask & (1 << index) else 0.0
-            for index, value in enumerate(all_targets)
+        targets = cast(
+            Tuple[float, float, float, float],
+            tuple(
+                value if self.enabled_mask & (1 << index) else 0.0
+                for index, value in enumerate(all_targets)
+            ),
         )
         for index, speed in enumerate(speeds):
             self._count_float[index] += speed * dt / self.meters_per_count
-        counts = tuple(signed_int32(round(value)) for value in self._count_float)
+        counts = cast(
+            Tuple[int, int, int, int],
+            tuple(signed_int32(round(value)) for value in self._count_float),
+        )
         return FakeSample(speeds, targets, counts, self.vx, self.wz)

@@ -1,0 +1,35 @@
+schema_version: 1
+release: v0.6.0-rc2
+status: provisional_pending_independent_bags
+groups:
+  A:
+    description: direct formal wheel odometry; no EKF process
+    base_fusion_mode: wheel
+  B:
+    description: EKF wheel vx and wheel wz
+    config: src/robot_state_estimation/config/ekf_wheel.yaml
+  C:
+    description: EKF wheel vx and IMU gyro_z
+    base_config: src/robot_state_estimation/config/ekf_base.yaml
+    overlay: verification/configs/experiments/ekf-c-wheel-gyro-overlay.yaml
+  D:
+    description: EKF wheel vx, wheel wz and IMU gyro_z
+    config: src/robot_state_estimation/config/ekf_base.yaml
+metrics:
+  - static_drift
+  - straight_endpoint_error
+  - rotation_angle_error
+  - square_closure_error
+  - figure8_closure_error
+  - innovation_residual
+  - rejected_measurements
+  - tf_latency_p95
+  - cpu_p95
+promotion:
+  default: A
+  candidate: D
+  requirements:
+    - independent validation bags outperform wheel-only
+    - static drift does not materially worsen
+    - IMU timeout falls back to wheel yaw rate
+    - formal_odometry remains the only odom to base_link publisher

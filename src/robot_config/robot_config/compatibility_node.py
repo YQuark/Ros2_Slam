@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Publish the machine-readable runtime compatibility gate."""
 
+from typing import Optional
+
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
@@ -40,9 +42,9 @@ class PlatformCompatibilityNode(Node):
             str(self.get_parameter("compatibility_state_topic").value),
             qos,
         )
-        self.firmware = None
-        self.link = None
-        self.observation = None
+        self.firmware: Optional[FirmwareInfo] = None
+        self.link: Optional[ChassisLinkState] = None
+        self.observation: Optional[WheelObservation] = None
         self.create_subscription(
             FirmwareInfo,
             str(self.get_parameter("firmware_info_topic").value),
@@ -90,41 +92,44 @@ class PlatformCompatibilityNode(Node):
     def _publish(self) -> None:
         output = PlatformCompatibilityState()
         output.header.stamp = self.get_clock().now().to_msg()
-        wire_session = 0 if self.link is None else int(self.link.wire_session_id)
+        link = self.link
+        firmware = self.firmware
+        observation = self.observation
+        wire_session = 0 if link is None else int(link.wire_session_id)
         output.wire_session_id = wire_session
         output.observation_session_id = (
-            0 if self.observation is None else int(self.observation.transport_session_id)
+            0 if observation is None else int(observation.transport_session_id)
         )
-        output.observation_ready = self.observation is not None
+        output.observation_ready = observation is not None
         link_ready = bool(
-            self.link is not None
-            and self.link.link_state
+            link is not None
+            and link.link_state
             in (ChassisLinkState.STATE_WIRE_REARM_READY, ChassisLinkState.STATE_DRIVE_ACTIVE)
-            and self.link.protocol_compatible
-            and not self.link.wire_rearm_required
+            and link.protocol_compatible
+            and not link.wire_rearm_required
         )
         identity_ready = bool(
-            self.firmware is not None and int(self.firmware.wire_session_id) == wire_session
+            firmware is not None and int(firmware.wire_session_id) == wire_session
         )
-        if not link_ready or not identity_ready or self.observation is None:
+        if not link_ready or not identity_ready or observation is None or firmware is None:
             output.state = PlatformCompatibilityState.STATE_UNKNOWN
             output.reason = "waiting for current-session link, HELLO, and wheel observation"
         else:
             result = evaluate_compatibility(
-                simulated=self.firmware.simulated,
-                firmware_commit=self.firmware.firmware_commit,
+                simulated=firmware.simulated,
+                firmware_commit=firmware.firmware_commit,
                 expected_firmware_commit=self.get_parameter("expected_firmware_commit").value,
-                hardware_revision=self.firmware.hardware_revision,
+                hardware_revision=firmware.hardware_revision,
                 expected_hardware_revision=self.get_parameter("expected_hardware_revision").value,
-                capabilities=self.firmware.capabilities,
+                capabilities=firmware.capabilities,
                 required_capabilities=self.get_parameter("required_capabilities").value,
-                parameter_crc32=self.firmware.parameter_crc32,
+                parameter_crc32=firmware.parameter_crc32,
                 expected_parameter_crc32=self.get_parameter("expected_parameter_crc32").value,
-                enabled_mask=self.observation.motor_enabled_mask,
+                enabled_mask=observation.motor_enabled_mask,
                 expected_enabled_mask=self.get_parameter("expected_enabled_mask").value,
-                protocol_version=self.firmware.protocol_version,
+                protocol_version=firmware.protocol_version,
                 expected_protocol_version=3,
-                schema_version=self.firmware.schema_version,
+                schema_version=firmware.schema_version,
                 expected_schema_version=1,
             )
             output.state = (

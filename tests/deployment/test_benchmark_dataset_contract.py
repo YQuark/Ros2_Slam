@@ -6,7 +6,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG_PATH = ROOT / "verification" / "configs" / "benchmarks" / "rosbag-datasets-v0.5.0-rc1.yaml"
+CONFIG_PATH = ROOT / "verification" / "configs" / "benchmarks" / "rosbag-datasets-v0.6.0-rc2.yaml"
 MODULE_PATH = ROOT / "tools" / "datasets" / "benchmark_bags.py"
 
 
@@ -17,18 +17,21 @@ def load_module():
     return module
 
 
-def test_dataset_catalog_covers_all_seven_benchmarks_and_required_topics():
+def test_dataset_catalog_covers_all_ten_benchmarks_and_required_topics():
     catalog = yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8"))
 
     assert catalog["schema_version"] == 1
     assert list(catalog["datasets"]) == [
-        "bag_01_static",
-        "bag_02_straight",
-        "bag_03_rotation",
+        "bag_00_static",
+        "bag_01_straight",
+        "bag_02_rotation_cw",
+        "bag_03_rotation_ccw",
         "bag_04_square",
         "bag_05_figure8",
-        "bag_06_mapping",
-        "bag_07_navigation",
+        "bag_06_mapping_train",
+        "bag_07_mapping_validation",
+        "bag_08_navigation_validation",
+        "bag_09_fault_injection",
     ]
     assert set(catalog["required_topics"]) == {
         "/scan",
@@ -40,10 +43,12 @@ def test_dataset_catalog_covers_all_seven_benchmarks_and_required_topics():
         "/tf",
         "/tf_static",
         "/cmd_vel/nav",
+        "/cmd_vel/teleop",
+        "/cmd_vel/test",
         "/chassis/host_motion_command",
         "/chassis/link_state",
         "/chassis/firmware_control_state",
-        "/chassis/control_state",
+        "/chassis/host_control_state",
         "/motion/supervision_state",
         "/navigation/guard_state",
         "/platform/compatibility_state",
@@ -52,6 +57,15 @@ def test_dataset_catalog_covers_all_seven_benchmarks_and_required_topics():
     for dataset in catalog["datasets"].values():
         assert dataset["minimum_duration_sec"] > 0
         assert dataset["procedure"]
+    assert set(catalog["required_run_metadata"]) == {
+        "upper_commit",
+        "firmware_commit",
+        "hardware_revision",
+        "firmware_parameter_crc32",
+        "effective_config_sha256",
+        "artifact_sha256",
+        "calibration_version",
+    }
 
 
 def test_record_plan_is_deterministic_and_rejects_unknown_dataset(tmp_path):
@@ -90,9 +104,18 @@ def test_metadata_validation_reports_missing_topics_duration_and_empty_streams()
         }
     }
 
-    result = module.validate_metadata(catalog, "bag_01_static", metadata)
+    result = module.validate_metadata(catalog, "bag_00_static", metadata)
 
     assert result.valid is False
     assert "/diagnostics" in result.missing_topics
     assert "/imu/data" in result.empty_topics
     assert result.duration_ok is False
+
+
+def test_run_metadata_fails_closed_when_traceability_is_incomplete():
+    module = load_module()
+    catalog = module.load_catalog(CONFIG_PATH)
+    complete = {name: "recorded" for name in catalog["required_run_metadata"]}
+    assert module.validate_run_metadata(catalog, complete) == ()
+    complete["firmware_parameter_crc32"] = None
+    assert module.validate_run_metadata(catalog, complete) == ("firmware_parameter_crc32",)

@@ -91,3 +91,44 @@ def test_wheel_only_unexpected_rotation_is_critical_after_hold() -> None:
     )
     assert result.level is SupervisorLevel.CRITICAL
     assert result.reason == "unexpected_motion"
+
+
+def test_stale_command_excludes_tracking_and_unexpected_motion_components() -> None:
+    result = MotionSupervisor(SupervisorConfig(critical_hold_sec=0.0)).update(
+        now_sec=1.0,
+        command_vx=0.0,
+        command_wz=0.0,
+        wheel_speeds=(0.2,) * 4,
+        wheel_targets=(1.0,) * 4,
+        feedback_vx=0.2,
+        wheel_wz=0.0,
+        gyro_z=None,
+        command_valid=False,
+    )
+    components = dict(result.components)
+
+    assert components["tracking"] == 0.0
+    assert components["unexpected_motion"] == 0.0
+    assert not result.release_host_candidate
+
+
+def test_supervision_score_is_exposed_as_components_not_probability() -> None:
+    result = MotionSupervisor().update(
+        now_sec=1.0,
+        command_vx=0.2,
+        command_wz=0.0,
+        wheel_speeds=(0.0, 0.2, 0.2, 0.0),
+        wheel_targets=(0.0, 0.2, 0.2, 0.0),
+        enabled_mask=0b0110,
+        speed_valid_mask=0b0110,
+        feedback_vx=0.2,
+        wheel_wz=0.0,
+        gyro_z=None,
+    )
+
+    assert set(dict(result.components)) == {
+        "wheel_pair",
+        "tracking",
+        "yaw",
+        "unexpected_motion",
+    }

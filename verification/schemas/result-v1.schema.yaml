@@ -1,7 +1,9 @@
 $schema: https://json-schema.org/draft/2020-12/schema
 title: Robot verification result v1
 type: object
-required: [schema_version, release, result, upper_commit, firmware_commit, hardware_revision, config_sha256, metrics]
+required: [schema_version, release, result, upper_commit, firmware_commit,
+           hardware_revision, config_sha256, artifact_sha256, parameter_crc32,
+           calibration_version, metrics]
 properties:
   schema_version: {const: 1}
   release: {type: string}
@@ -10,5 +12,8 @@ properties:
   firmware_commit: {type: [string, 'null']}
   hardware_revision: {type: [string, integer, 'null']}
   config_sha256: {type: [string, 'null']}
+  artifact_sha256: {type: [object, 'null']}
+  parameter_crc32: {type: [integer, 'null']}
+  calibration_version: {type: [string, 'null']}
   started_at: {type: [string, 'null']}
   metrics: {type: object}

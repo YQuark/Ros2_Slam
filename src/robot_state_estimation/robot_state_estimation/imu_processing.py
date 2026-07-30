@@ -66,4 +66,5 @@ def normalize_quaternion(values: Iterable[float]) -> Optional[Tuple[float, float
     norm = math.sqrt(sum(value * value for value in converted))
     if norm <= 1e-9:
         return None
-    return tuple(value / norm for value in converted)
+    normalized = tuple(value / norm for value in converted)
+    return normalized[0], normalized[1], normalized[2], normalized[3]

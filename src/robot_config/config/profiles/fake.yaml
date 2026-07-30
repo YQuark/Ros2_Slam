@@ -1,0 +1,3 @@
+runtime:
+  mode: fake
+  fusion_mode: wheel

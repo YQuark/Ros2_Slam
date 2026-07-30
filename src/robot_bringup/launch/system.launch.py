@@ -329,7 +329,10 @@ def generate_launch_description():
             DeclareLaunchArgument("use_rviz", default_value="false"),
             DeclareLaunchArgument(
                 "lidar_params_file",
-                default_value=os.path.join(sensing_share, "config", "ydlidar_x2.yaml"),
+                default_value=os.environ.get(
+                    "ROBOT_LIDAR_PARAMS",
+                    os.path.join(sensing_share, "config", "ydlidar_x2.yaml"),
+                ),
             ),
             DeclareLaunchArgument("lidar_raw_scan_topic", default_value="scan_raw"),
             DeclareLaunchArgument("lidar_scan_topic", default_value="scan"),

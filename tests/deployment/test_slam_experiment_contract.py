@@ -5,7 +5,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-CONFIG = ROOT / "verification" / "configs" / "experiments" / "slam-sweep-v0.4.0.yaml"
+CONFIG = ROOT / "verification" / "configs" / "experiments" / "slam-sweep-v0.6.0-rc2.yaml"
 MODULE = ROOT / "tools" / "experiments" / "experiment_gate.py"
 
 
@@ -23,8 +23,13 @@ def test_slam_sweep_covers_requested_parameters_datasets_and_metrics():
     assert config["strategy"] == "latin_hypercube_then_interaction"
     assert config["seed"] == 42
     assert config["coarse_candidate_count"] == 32
-    assert set(config["training_datasets"]) == {"bag_04_square", "bag_05_figure8"}
-    assert set(config["validation_datasets"]) == {"bag_06_mapping"}
+    assert set(config["training_datasets"]) == {"bag_06_mapping_train"}
+    assert set(config["validation_datasets"]) == {"bag_07_mapping_validation"}
+    assert config["evaluation_policy"] == {
+        "tune_on_validation": False,
+        "screenshot_is_evidence": False,
+        "require_raw_metrics": True,
+    }
     assert set(config["parameter_axes"]) == {
         "minimum_travel_distance",
         "minimum_travel_heading",

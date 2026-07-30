@@ -30,6 +30,13 @@ def load_catalog(path: Path) -> Dict[str, Any]:
     return catalog
 
 
+def validate_run_metadata(catalog: Dict[str, Any], metadata: Dict[str, Any]) -> Tuple[str, ...]:
+    """Return required provenance fields that are absent or explicitly unset."""
+
+    required = tuple(str(name) for name in catalog.get("required_run_metadata", ()))
+    return tuple(name for name in required if metadata.get(name) in (None, "", {}))
+
+
 def build_record_plan(
     catalog: Dict[str, Any],
     dataset: str,

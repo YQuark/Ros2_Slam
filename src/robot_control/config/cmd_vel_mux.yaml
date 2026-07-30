@@ -13,3 +13,5 @@ cmd_vel_mux:
     motion_limiter_max_dt: 0.1
     timeout_sec: 0.25
     publish_hz: 20.0
+    command_deadline_sec: 0.10
+    command_lifespan_sec: 0.12

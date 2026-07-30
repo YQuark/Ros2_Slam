@@ -8,3 +8,11 @@
 候选的建议。下位机仍拥有物理安全；Nav2 Goal 取消由 `robot_navigation_guard` 负责。
 
 证据：监督纯算法测试、Fake fault scenario 和 Topic 所有权测试。
+# rc2 terminology and freshness
+
+`robot_supervision` publishes deterministic `motion_consistency_risk` components and
+Host degradation advice. The API-5 field `score` is retained for compatibility but is
+not a slip probability. Stale gyro is excluded from yaw consistency; stale command is
+excluded from target tracking and unexpected-motion classification; incomplete wheel
+quality only affects components that remain observable. Threshold changes require a
+labelled ROC/FPR/FNR report and independent validation.

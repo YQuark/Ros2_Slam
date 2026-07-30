@@ -8,9 +8,10 @@
 后锁存 `rearm_required`。恢复序列固定为：
 
 ```text
-fault -> publish/hold disable -> clear candidate cache
-      -> WAIT_SOURCE_QUIET -> WAIT_FRESH_SOURCE
-      -> fresh command creates a new command session and enable edge
+fault -> HOST_CLEARED + publish disable -> clear candidate cache
+      -> WAIT_SOURCE_QUIET -> WAIT_WIRE_READY
+      -> WAIT_FRESH_HOST_INTENT
+      -> fresh command creates a new command epoch and enable edge
 ```
 
 状态恢复、旧 Nav2 Twist、旧 ROS command sequence 和旧 wire session 都不能

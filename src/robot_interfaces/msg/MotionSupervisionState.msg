@@ -19,6 +19,11 @@ std_msgs/Header header
 uint8 level
 uint32 reason_flags
 float32 score
+# API-5 compatibility name; this is motion_consistency_risk, not a probability.
+float32 wheel_pair_risk
+float32 tracking_risk
+float32 yaw_consistency_risk
+float32 unexpected_motion_risk
 float32 command_scale
 bool release_host_candidate
 uint64 command_epoch
@@ -26,6 +31,12 @@ uint32 command_sequence
 uint64 observation_session_id
 uint32 observation_sequence
 uint32 observation_age_ms
+uint32 gyro_age_ms
+uint32 command_age_ms
+uint8 wheel_valid_mask
+uint8 motor_enabled_mask
+bool gyro_valid
+bool command_valid
 uint8 left_valid_wheel_count
 uint8 right_valid_wheel_count
 string config_sha256

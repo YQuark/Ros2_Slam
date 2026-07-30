@@ -30,7 +30,7 @@ topics:
     reestablish: new_imu_sample
   wheel/odom:
     writer: robot_state_estimation
-    readers: [robot_localization]
+    readers: [formal_odometry, robot_localization]
     rejector: compatibility_gate
     final_fact: upper_estimator
     reset: wheel_odometry
@@ -39,7 +39,7 @@ topics:
     writer: formal_odometry
     readers: [nav2, slam]
     rejector: compatibility_gate
-    final_fact: gated_fused_upper_state
+    final_fact: gated_formal_upper_state
     reset: compatibility_gate
     reestablish: current_session_observation
 actions:
@@ -69,7 +69,7 @@ transforms:
     writer: formal_odometry
     readers: [nav2, slam, rviz]
     rejector: compatibility_gate
-    final_fact: gated_fused_upper_state
+    final_fact: gated_formal_upper_state
     reset: compatibility_gate
     reestablish: current_session_observation
 configuration:

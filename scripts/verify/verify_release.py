@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Fail-closed v0.6.0-rc1 release gate over machine-readable evidence."""
+"""Fail-closed v0.6.0-rc2 release gate over machine-readable evidence."""
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -11,7 +12,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-RELEASE = "v0.6.0-rc1"
+RELEASE = "v0.6.0-rc2"
 MANIFEST = ROOT / "verification" / "configs" / "release" / f"{RELEASE}.yaml"
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA = re.compile(r"^[0-9a-f]{40}$")
@@ -37,6 +38,9 @@ def _validate_result(name: str, report: dict, release: str) -> list[str]:
         "firmware_commit",
         "hardware_revision",
         "config_sha256",
+        "artifact_sha256",
+        "parameter_crc32",
+        "calibration_version",
         "metrics",
     }
     missing = sorted(required - set(report))
@@ -53,12 +57,35 @@ def _validate_result(name: str, report: dict, release: str) -> list[str]:
         report["firmware_commit"]
     ):
         failures.append(f"{name} has no traceable firmware commit")
-    if report["hardware_revision"] in (None, ""):
-        failures.append(f"{name} has no hardware revision")
+    if (
+        isinstance(report["hardware_revision"], bool)
+        or not isinstance(report["hardware_revision"], int)
+        or report["hardware_revision"] <= 0
+    ):
+        failures.append(f"{name} has no positive hardware revision")
     if not isinstance(report["config_sha256"], str) or not SHA256.fullmatch(
         report["config_sha256"]
     ):
         failures.append(f"{name} has no effective config SHA-256")
+    artifacts = report["artifact_sha256"]
+    if not isinstance(artifacts, dict) or not artifacts:
+        failures.append(f"{name} has no generated artifact SHA-256 manifest")
+    elif any(
+        not isinstance(path, str)
+        or not path
+        or not isinstance(digest, str)
+        or not SHA256.fullmatch(digest)
+        for path, digest in artifacts.items()
+    ):
+        failures.append(f"{name} has an invalid artifact SHA-256 manifest")
+    if (
+        isinstance(report["parameter_crc32"], bool)
+        or not isinstance(report["parameter_crc32"], int)
+        or not 0 < report["parameter_crc32"] <= 0xFFFFFFFF
+    ):
+        failures.append(f"{name} has no measured firmware parameter CRC")
+    if not isinstance(report["calibration_version"], str) or not report["calibration_version"]:
+        failures.append(f"{name} has no calibration version")
     if not isinstance(report["metrics"], dict) or not report["metrics"]:
         failures.append(f"{name} has no measured metrics")
     return failures
@@ -95,17 +122,48 @@ def release_failures(root=ROOT):
     )
     if compatibility_path.is_file():
         compatibility = _mapping(compatibility_path)
+        upper = compatibility.get("upper", {})
+        tested_upper_commit = upper.get("tested_commit")
+        if not isinstance(tested_upper_commit, str) or not GIT_SHA.fullmatch(tested_upper_commit):
+            failures.append("upper tested commit is not locked")
+        if upper.get("release_candidate_commit") != tested_upper_commit:
+            failures.append("upper release candidate differs from tested commit")
+        for name, report in reports.items():
+            if report.get("result") == "PASS" and report.get("upper_commit") != tested_upper_commit:
+                failures.append(f"{name} upper commit differs from tested commit")
         if compatibility.get("release_compatible") is not True:
             failures.append("firmware compatibility is not release-compatible")
         compatible_commit = compatibility.get("firmware", {}).get("compatible_commit")
+        tested_firmware_commit = compatibility.get("firmware", {}).get("tested_commit")
         if not isinstance(compatible_commit, str) or not GIT_SHA.fullmatch(compatible_commit):
             failures.append("compatible upper-v3 firmware commit is not locked")
+        if tested_firmware_commit != compatible_commit:
+            failures.append("tested firmware commit differs from compatibility lock")
         for report in reports.values():
             if (
                 report.get("result") == "PASS"
                 and report.get("firmware_commit") != compatible_commit
             ):
                 failures.append("report firmware commit differs from compatibility lock")
+        expected_crc = compatibility.get("firmware", {}).get("parameter_crc32")
+        expected_hardware = compatibility.get("firmware", {}).get("hardware_revision")
+        passing_reports = [report for report in reports.values() if report.get("result") == "PASS"]
+        for report in passing_reports:
+            if report.get("parameter_crc32") != expected_crc:
+                failures.append("report parameter CRC differs from compatibility lock")
+            if report.get("hardware_revision") != expected_hardware:
+                failures.append("report hardware revision differs from compatibility lock")
+        config_hashes = {report.get("config_sha256") for report in passing_reports}
+        calibration_versions = {report.get("calibration_version") for report in passing_reports}
+        artifact_manifests = {
+            json.dumps(report.get("artifact_sha256"), sort_keys=True) for report in passing_reports
+        }
+        if len(config_hashes) > 1:
+            failures.append("PASS reports do not share one effective config SHA-256")
+        if len(calibration_versions) > 1:
+            failures.append("PASS reports do not share one calibration version")
+        if len(artifact_manifests) > 1:
+            failures.append("PASS reports do not share one generated artifact manifest")
     return failures
 
 

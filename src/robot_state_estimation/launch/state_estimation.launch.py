@@ -18,14 +18,7 @@ def _compose(context):
         raise RuntimeError("base_fusion_mode must be wheel or wheel_imu")
     effective_params = LaunchConfiguration("effective_params_file").perform(context).strip()
     node_params = [effective_params] if effective_params else []
-    ekf_file = (
-        LaunchConfiguration("ekf_wheel_params_file").perform(context)
-        if fusion_mode == "wheel"
-        else LaunchConfiguration("ekf_wheel_imu_params_file").perform(context)
-    )
-    if not os.path.isfile(ekf_file):
-        raise RuntimeError(f"EKF params file does not exist: {ekf_file}")
-    return [
+    nodes = [
         Node(
             package="robot_state_estimation",
             executable="wheel_odometry_node.py",
@@ -40,14 +33,24 @@ def _compose(context):
             output="screen",
             parameters=node_params,
         ),
-        Node(
-            package="robot_localization",
-            executable="ekf_node",
-            name="base_ekf",
-            output="screen",
-            parameters=[ekf_file],
-            remappings=[("odometry/filtered", "odometry/filtered_internal")],
-        ),
+    ]
+    formal_input = "wheel/odom"
+    if fusion_mode == "wheel_imu":
+        ekf_file = LaunchConfiguration("ekf_wheel_imu_params_file").perform(context)
+        if not os.path.isfile(ekf_file):
+            raise RuntimeError(f"EKF params file does not exist: {ekf_file}")
+        nodes.append(
+            Node(
+                package="robot_localization",
+                executable="ekf_node",
+                name="base_ekf",
+                output="screen",
+                parameters=[ekf_file],
+                remappings=[("odometry/filtered", "odometry/filtered_internal")],
+            )
+        )
+        formal_input = "odometry/filtered_internal"
+    nodes.append(
         Node(
             package="robot_state_estimation",
             executable="formal_odometry_node.py",
@@ -56,12 +59,13 @@ def _compose(context):
             parameters=[
                 *node_params,
                 {
-                    "input_topic": "odometry/filtered_internal",
+                    "input_topic": formal_input,
                     "output_topic": LaunchConfiguration("odom_topic"),
                 },
             ],
-        ),
-    ]
+        )
+    )
+    return nodes
 
 
 def generate_launch_description():

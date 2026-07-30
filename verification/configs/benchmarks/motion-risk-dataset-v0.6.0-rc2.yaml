@@ -1,0 +1,24 @@
+schema_version: 1
+release: v0.6.0-rc2
+status: dataset_pending
+required_columns:
+  - scenario
+  - fault_label
+  - motion_consistency_risk
+  - wheel_pair_risk
+  - tracking_risk
+  - yaw_consistency_risk
+  - unexpected_motion_risk
+scenarios:
+  - normal_straight
+  - normal_turn
+  - in_place_rotation
+  - varied_surface
+  - external_push
+  - single_wheel_lift
+  - single_wheel_stall
+  - encoder_freeze
+  - nonzero_target_no_motion
+  - zero_command_unexpected_motion
+  - imu_loss
+promotion: threshold suggestions require independent validation and manual config review

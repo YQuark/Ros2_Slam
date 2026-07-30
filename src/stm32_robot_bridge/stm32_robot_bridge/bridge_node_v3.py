@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import secrets
 import time
-from dataclasses import replace
+from typing import Optional, Tuple
 
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
@@ -20,6 +20,7 @@ from rclpy.qos import (
     ReliabilityPolicy,
     qos_profile_sensor_data,
 )
+from rclpy.qos_event import SubscriptionEventCallbacks
 from robot_interfaces.msg import (
     ChassisLinkState,
     FirmwareInfo,
@@ -43,6 +44,7 @@ from stm32_robot_bridge.bridge_core import (
     REARM_FIRMWARE_REJECT,
     REARM_TRANSPORT,
     BridgeCore,
+    CommandDisposition,
     StatusDisposition,
 )
 from stm32_robot_bridge.bridge_state import BridgeState
@@ -62,6 +64,7 @@ from stm32_robot_bridge.protocol_v3 import (
     CMD_STATUS,
     PROTOCOL_VERSION,
     CommandStream,
+    StatusPayload,
     decode_diagnostic_payload,
     decode_hello_payload,
     decode_imu_status_payload,
@@ -75,13 +78,14 @@ from stm32_robot_bridge.protocol_v3 import (
 from stm32_robot_bridge.transport_supervisor import SerialTransportSupervisor
 
 
-def _qos_command(deadline_sec: float) -> QoSProfile:
+def _qos_command(deadline_sec: float, lifespan_sec: float) -> QoSProfile:
     return QoSProfile(
         history=HistoryPolicy.KEEP_LAST,
         depth=1,
         reliability=ReliabilityPolicy.RELIABLE,
         durability=DurabilityPolicy.VOLATILE,
         deadline=Duration(seconds=deadline_sec),
+        lifespan=Duration(seconds=lifespan_sec),
     )
 
 
@@ -120,6 +124,7 @@ class STM32BridgeV3(Node):
             "status_timeout": 0.25,
             "command_ack_timeout_sec": 0.15,
             "max_command_age_sec": 0.15,
+            "command_lifespan_sec": 0.12,
             "hard_max_linear_mps": 0.45,
             "hard_max_angular_radps": 1.5,
         }
@@ -149,12 +154,15 @@ class STM32BridgeV3(Node):
             secrets.randbits(64) or 1,
         )
         self.last_ack_evidence_at = time.monotonic()
-        self.pending_disable_started_at = None
+        self.pending_disable_started_at: Optional[float] = None
         self.last_applied_sequence = 0
         self.release_count = 0
         self.invalid_command_count = 0
-        self.last_status = None
-        self.enabled_mask = None
+        self.command_deadline_miss_count = 0
+        self.command_publisher_lost_count = 0
+        self.command_queue_drop_count = 0
+        self.last_status: Optional[StatusPayload] = None
+        self.enabled_mask: Optional[int] = None
 
         if serial is None:
             raise RuntimeError("python3-serial is required")
@@ -196,7 +204,16 @@ class STM32BridgeV3(Node):
             HostMotionCommand,
             str(self.get_parameter("host_motion_command_topic").value),
             self.on_chassis_command,
-            _qos_command(float(self.get_parameter("cmd_timeout").value)),
+            _qos_command(
+                float(self.get_parameter("max_command_age_sec").value),
+                float(self.get_parameter("command_lifespan_sec").value),
+            ),
+            event_callbacks=SubscriptionEventCallbacks(
+                deadline=self._on_command_deadline,
+                liveliness=self._on_command_liveliness,
+                message_lost=self._on_command_message_lost,
+                use_default_callbacks=False,
+            ),
         )
         self.create_service(SetBool, "~/wire_estop", self.on_estop)
         self.create_service(Trigger, "~/wire_clear_fault", self.on_clear_fault)
@@ -209,27 +226,39 @@ class STM32BridgeV3(Node):
             "upper protocol v3 only; beta4/v2 firmware is intentionally incompatible"
         )
 
-        self.last_imu_identity = None
+        self.last_imu_identity: Optional[Tuple[int, int, int]] = None
 
     def on_chassis_command(self, msg: HostMotionCommand) -> None:
         now_ros = self.get_clock().now().nanoseconds * 1e-9
         now_mono = time.monotonic()
         stamp = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
-        try:
-            command = self.core.accept_command(
-                vx=msg.twist.linear.x,
-                wz=msg.twist.angular.z,
-                enable=bool(msg.enable),
-                source=int(msg.host_subsource),
-                session_id=int(msg.command_epoch),
-                sequence=int(msg.sequence),
-                command_stamp_sec=stamp,
-                now_ros_sec=now_ros,
-                now_monotonic=now_mono,
-            )
-        except ValueError as exc:
+        decision = self.core.accept_command(
+            vx=msg.twist.linear.x,
+            wz=msg.twist.angular.z,
+            enable=bool(msg.enable),
+            source=int(msg.host_subsource),
+            session_id=int(msg.command_epoch),
+            sequence=int(msg.sequence),
+            command_stamp_sec=stamp,
+            now_ros_sec=now_ros,
+            now_monotonic=now_mono,
+        )
+        if decision.disposition is CommandDisposition.GLOBAL_RELEASE:
             self.invalid_command_count += 1
-            self._release(f"rejected command: {exc}")
+            self._release(f"rejected command: {decision.reason}")
+            return
+        if decision.disposition not in (
+            CommandDisposition.ACCEPT_ENABLE,
+            CommandDisposition.ACCEPT_DISABLE,
+        ):
+            if decision.disposition is not CommandDisposition.IGNORE_DUPLICATE:
+                self.invalid_command_count += 1
+                self.get_logger().warn(f"ignored command: {decision.reason}")
+            return
+        command = decision.validated_command
+        if command is None:  # defensive: accepted dispositions always carry a command
+            self.invalid_command_count += 1
+            self._release("accepted command decision has no validated command")
             return
         if not command.enable:
             self._release("command disabled")
@@ -238,6 +267,15 @@ class STM32BridgeV3(Node):
         self.command_stream.update_command(command.vx, command.wz, now_mono)
         if self.command_stream.sequence != previous_wire_sequence:
             self.last_ack_evidence_at = now_mono
+
+    def _on_command_deadline(self, event) -> None:
+        self.command_deadline_miss_count += max(int(event.total_count_change), 0)
+
+    def _on_command_liveliness(self, event) -> None:
+        self.command_publisher_lost_count += max(-int(event.alive_count_change), 0)
+
+    def _on_command_message_lost(self, event) -> None:
+        self.command_queue_drop_count += max(int(event.total_count_change), 0)
 
     def control_tick(self) -> None:
         for event in self.transport.drain_events():
@@ -255,14 +293,12 @@ class STM32BridgeV3(Node):
         if release:
             self._release(reason)
             self._publish_link_state()
-        if self.core.machine.can_drive and self.command_stream.enabled:
+        if self.core.can_drive and self.command_stream.enabled:
             self.command_stream.tick(
                 now, lambda payload: self.transport.submit(CMD_SET_VELOCITY, payload, coalesce=True)
             )
-            self.core.snapshot = replace(
-                self.core.snapshot, wire_sent_sequence=self.command_stream.sequence
-            )
-        if self.core.machine.state is BridgeState.WAIT_POST_CLEAR_DISABLE_ACK:
+            self.core.record_wire_sequence(self.command_stream.sequence)
+        if self.core.state is BridgeState.WAIT_POST_CLEAR_DISABLE_ACK:
             self.command_stream.tick_disabled(
                 now,
                 lambda payload: self.transport.submit(
@@ -274,7 +310,7 @@ class STM32BridgeV3(Node):
             self._release("command ACK timeout")
             self._publish_link_state()
         if (
-            self.core.machine.state is BridgeState.WAIT_POST_CLEAR_DISABLE_ACK
+            self.core.state is BridgeState.WAIT_POST_CLEAR_DISABLE_ACK
             and self.pending_disable_started_at is not None
             and now - self.pending_disable_started_at > self.ack_timeout
         ):
@@ -303,9 +339,7 @@ class STM32BridgeV3(Node):
             self.command_stream.release(
                 lambda payload: self.transport.submit(CMD_SET_VELOCITY, payload, critical=True)
             )
-        self.core.snapshot = replace(
-            self.core.snapshot, wire_sent_sequence=self.command_stream.sequence
-        )
+        self.core.record_wire_sequence(self.command_stream.sequence)
         self._publish_link_state()
 
     def _handle_frame(self, cmd: int, payload: bytes, received_at: float) -> None:
@@ -372,7 +406,7 @@ class STM32BridgeV3(Node):
         ):
             self.last_applied_sequence = status.last_applied_sequence
             self.last_ack_evidence_at = float(received_at)
-            if self.core.machine.state is BridgeState.WIRE_REARM_READY:
+            if self.core.state is BridgeState.WIRE_REARM_READY:
                 self.pending_disable_started_at = None
 
     def _publish_status(self, status, disposition: StatusDisposition) -> None:
@@ -404,7 +438,7 @@ class STM32BridgeV3(Node):
         if (
             self.core.snapshot.rearm_required
             and not status.status_flags & 0x03
-            and self.core.machine.state in (BridgeState.WAIT_STATUS, BridgeState.WAIT_FAULT_CLEAR)
+            and self.core.state in (BridgeState.WAIT_STATUS, BridgeState.WAIT_FAULT_CLEAR)
         ):
             self._release("post-clear wire disable", force_fresh=True)
         if self.command_stream.enabled and (
@@ -448,15 +482,8 @@ class STM32BridgeV3(Node):
         ):
             self.release_count += 1
             self.core.on_disable_sent(self.command_stream.sequence)
-            if self.core.machine.state is BridgeState.WAIT_POST_CLEAR_DISABLE_ACK:
+            if self.core.state is BridgeState.WAIT_POST_CLEAR_DISABLE_ACK:
                 self.pending_disable_started_at = time.monotonic()
-            self.core.snapshot = replace(
-                self.core.snapshot,
-                wire_sent_sequence=self.command_stream.sequence,
-                target_vx=0.0,
-                target_wz=0.0,
-                last_command_at=None,
-            )
             self._publish_link_state()
         if reason:
             self.get_logger().warn(reason)
@@ -478,8 +505,7 @@ class STM32BridgeV3(Node):
             CMD_CLEAR_FAULT, encode_clear_fault_payload(), critical=True
         )
         if response.success:
-            self.core.machine.on_clear_fault_requested()
-            self.core.snapshot = replace(self.core.snapshot, state=self.core.machine.state)
+            self.core.on_clear_fault_requested()
             self._publish_link_state()
         response.message = "clear fault queued" if response.success else "queue full"
         return response
@@ -504,7 +530,7 @@ class STM32BridgeV3(Node):
         msg = ChassisLinkState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.link_state = int(s.state)
-        msg.state_generation = self.core.machine.generation
+        msg.state_generation = self.core.state_generation
         msg.protocol_version = 3
         msg.protocol_compatible = s.protocol_compatible
         msg.incompatibility_flags = s.incompatibility_flags
@@ -591,6 +617,9 @@ class STM32BridgeV3(Node):
             "rearm_reason_flags": snapshot.rearm_reason_flags,
             "release_count": self.release_count,
             "invalid_command_count": self.invalid_command_count,
+            "dds_deadline_miss_count": self.command_deadline_miss_count,
+            "publisher_liveliness_lost_count": self.command_publisher_lost_count,
+            "command_queue_drop_count": self.command_queue_drop_count,
             "command_timeout_sec": self.get_parameter("cmd_timeout").value,
             "status_timeout_sec": self.status_timeout,
             "serial_rx_frames": self.transport.stats.rx_frames,

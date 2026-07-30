@@ -10,14 +10,24 @@ calibration:
     odom_angular_scale: 1.0
     odom_angular_sign: 1.0
   odom_covariance:
-    wheel_variance_floor_m2: 0.000025
-    wheel_variance_per_meter: 0.0025
+    left_variance_floor_m2: 0.000025
+    left_variance_per_meter: 0.0025
+    right_variance_floor_m2: 0.000025
+    right_variance_per_meter: 0.0025
+    left_right_correlation: 0.0
+    turn_noise_gain: 0.5
+    slip_noise_gain: 1.0
+    degraded_single_wheel_multiplier: 4.0
+    unobserved_pose_variance: 1000000.0
+    unobserved_twist_variance: 1000000.0
+  limits:
+    hard_max_wheel_peripheral_speed_mps: 0.70  # physical confirmation pending
 calibration_bundle:
   identity:
     hardware_revision: 131072
-    firmware_commit: 366a0385290d526009e6cd3bbdaa7b74b2fecad6
+    firmware_commit: bc472cc874e930aaed6eb8e7de73b41a2563dd85
     firmware_parameter_crc32: 0  # 待实机读取；0 会使正式兼容门 fail-closed
-    upper_commit: ae30e0a
+    upper_architecture_baseline_commit: 2f16c8b
     upper_config_sha256: pending_compile
   wheel_layout:
     expected_enabled_mask: 6

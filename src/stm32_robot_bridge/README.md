@@ -10,4 +10,9 @@ cd /home/robot/ros2_ws
 
 bridge 发布原始 `wheel/observation`、`imu/observation`、`chassis/link_state`、`chassis/firmware_control_state`、`chassis/firmware_info` 与 diagnostics。它不计算 odometry、不处理估计协方差，也不拥有任何 TF。协议规范见 `docs/interfaces/upper-protocol-v3.md`。
 
+ROS command header 先执行最大 100 ms 的准入年龄检查；接纳后的 150 ms lease、ACK
+和 STATUS watchdog 使用 monotonic time。重复命令幂等且不刷新 lease，旧 session 和
+乱序命令不改变当前目标；活动 epoch 的非法值以及通信/ACK/STATUS 故障要求 release
+和 rearm。
+
 源码中的 v2 文件仅是 v0.4.x 黄金回归 fixture，不被 CMake 安装。beta4/v2 固件不能驱动本运行时。

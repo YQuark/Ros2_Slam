@@ -1,0 +1,37 @@
+schema_version: 1
+release: v0.6.0-rc2
+firmware_candidate_commit: bc472cc874e930aaed6eb8e7de73b41a2563dd85
+hardware:
+  host: Raspberry Pi 4B
+  target: STM32 physical board
+  transport: physical UART
+  motor_setup: power disconnected or wheels suspended
+required_stop_events: &stop_events
+  - fault_injected_at
+  - last_valid_host_command_at
+  - release_sent_at
+  - release_received_at
+  - firmware_control_source_changed_at
+  - motor_target_zero_at
+  - wheel_speed_below_threshold_at
+scenarios:
+  - {id: power_on_release, required_events: [fault_injected_at, motor_target_zero_at]}
+  - {id: hello_capability, required_events: [fault_injected_at, hello_received_at]}
+  - {id: disable_enable, required_events: [fault_injected_at, release_received_at, enable_applied_at]}
+  - {id: duplicate_sequence, required_events: [fault_injected_at, duplicate_ack_at]}
+  - {id: out_of_order_sequence, required_events: [fault_injected_at, rejected_ack_at]}
+  - {id: old_session_replay, required_events: [fault_injected_at, rejected_ack_at]}
+  - {id: ack_received_not_applied, required_events: *stop_events, max_motor_target_zero_ms: 200}
+  - {id: ack_rejected, required_events: *stop_events, max_motor_target_zero_ms: 200}
+  - {id: status_stop, required_events: *stop_events, max_motor_target_zero_ms: 300}
+  - {id: unplug_uart, required_events: *stop_events, max_motor_target_zero_ms: 250}
+  - {id: kill_bridge, required_events: *stop_events, max_motor_target_zero_ms: 250}
+  - {id: kill_cmd_vel_mux, required_events: *stop_events, max_motor_target_zero_ms: 350}
+  - {id: stm32_reset, required_events: *stop_events, max_motor_target_zero_ms: 250}
+  - {id: host_reset, required_events: *stop_events, max_motor_target_zero_ms: 250}
+  - {id: estop, required_events: *stop_events, max_motor_target_zero_ms: 200}
+  - {id: fault_stop, required_events: *stop_events, max_motor_target_zero_ms: 200}
+  - {id: clear_without_edge, required_events: [fault_injected_at, clear_at, enable_blocked_at]}
+  - {id: clear_with_disable_enable, required_events: [fault_injected_at, clear_at, disable_applied_at, enable_applied_at]}
+  - {id: crc_partial_sticky_garbage, required_events: [fault_injected_at, parser_recovered_at]}
+  - {id: parameter_crc_mismatch, required_events: [fault_injected_at, compatibility_blocked_at]}

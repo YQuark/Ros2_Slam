@@ -1,24 +1,43 @@
 # 系统架构索引
 
-`SYSTEM_OVERVIEW.md` 作为仓库根目录入口保留。当前平台为 Raspberry Pi 4B + ROS2 Humble + YDLIDAR X2 + STM32 两轮差速底盘。
+当前实现基线为 Platform API 5、Upper Protocol v3、候选版本
+`v0.6.0-rc2`。本文件只做入口索引，代码级事实以消息定义、配置事实源和下列
+权威文档为准。
 
-建议按以下顺序阅读：
+## 推荐阅读顺序
 
-1. [项目范围](./docs/00-项目范围.md) — 项目定位、平台约束、硬件清单
-2. [快速开始](./docs/01-快速开始.md) — 构建、启动命令、预期状态
-3. [系统架构](./docs/02-系统架构.md) — 分层、节点、话题、TF 树
-4. [建图指南](./docs/04-建图指南.md) — 建图流程、SLAM 参数档
-5. [运维与排障](./docs/07-运维与排障.md) — 日常检查、故障排查
+1. [当前系统架构](./docs/architecture/system-overview.md)
+2. [包职责矩阵](./docs/architecture/package_responsibility_matrix.md)
+3. [Topic 所有权](./docs/architecture/topic_ownership_matrix.md)
+4. [TF 所有权](./docs/architecture/tf-ownership.md)
+5. [配置单一事实源](./docs/architecture/configuration.md)
+6. [Host 命令契约](./docs/contracts/host-command-contract.md)
+7. [观测契约](./docs/contracts/observation-contract.md)
+8. [双层 rearm 契约](./docs/contracts/rearm-contract.md)
+9. [Upper Protocol v3](./docs/interfaces/upper-protocol-v3.md)
+10. [rc2 状态与发布门](./docs/releases/v0.6.0-rc2.md)
 
-当前体系只有两层推荐入口：
+## 当前主链
 
-1. 技术入口：`src/robot_bringup/launch/system.launch.py`
-2. 运维入口：`bin/robot`
+```text
+Twist candidates
+  -> robot_control
+  -> HostMotionCommand
+  -> Real Bridge / Fake Base
+  -> Upper v3 / simulated provider
 
-如果你还在使用 `start_mapping.sh`、`start_navigation.sh` 等脚本，可以继续使用；它们只是兼容包装，不承载主逻辑。
+WheelObservation -> wheel_odometry -> wheel/odom --------+
+ImuObservation   -> imu_adapter    -> imu/data             |
+                                                          +-> formal_odometry
+wheel_imu only: wheel/odom + imu/data -> internal EKF -----+   -> /odom + odom->base_link
+```
 
-当前仓库推荐按这条路径理解：
+`robot_control` 只拥有 Host 子来源选择；固件拥有最终来源仲裁、物理运动许可和
+电机输出。Bridge 不拥有里程计、TF、监督或导航。无论 wheel-only 还是
+wheel+IMU，正式 `/odom` 与 `odom -> base_link` 的唯一发布者都是
+`formal_odometry`。
 
-1. 先看根目录 [README.md](./README.md) 了解目录分层
-2. 再看 [docs/02-系统架构.md](./docs/02-系统架构.md) 了解代码层级
-3. 最后按 [docs/01-快速开始.md](./docs/01-快速开始.md) 或 [launch_scripts/README.md](./launch_scripts/README.md) 启动
+运维入口为 `bin/robot`，工程编排入口为
+`src/robot_bringup/launch/system.launch.py`。真实底盘必须使用编译后的 effective
+config；当前参数 CRC、UART HIL、正式标定和实车证据尚未完成，因此不能宣称真实
+导航已经发布兼容。

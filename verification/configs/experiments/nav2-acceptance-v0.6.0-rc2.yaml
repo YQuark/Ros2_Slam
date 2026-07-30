@@ -1,0 +1,39 @@
+schema_version: 1
+name: v0.6.0-rc2-nav2-acceptance
+status: dynamics_and_dataset_pending
+baseline_params: src/robot_config/config/components/nav2/base.yaml
+dataset: bag_08_navigation_validation
+fixed_map_sha256: null
+repetitions_per_target: 5
+vehicle_characterization:
+  report: verification/reports/calibration/v0.6.0-rc2-vehicle-dynamics.yaml
+  required_status: PASS
+  required_measurements:
+    - minimum_stable_linear_mps
+    - minimum_stable_angular_radps
+    - maximum_stable_linear_accel_mps2
+    - maximum_stable_angular_accel_radps2
+    - braking_deceleration_mps2
+    - braking_distance_by_speed
+    - in_place_rotation_overshoot_rad
+    - direction_change_time_sec
+targets:
+  - {id: target_01, pose: null}
+  - {id: target_02, pose: null}
+  - {id: target_03, pose: null}
+  - {id: target_04, pose: null}
+  - {id: target_05, pose: null}
+  - {id: target_06, pose: null}
+  - {id: target_07, pose: null}
+  - {id: target_08, pose: null}
+  - {id: target_09, pose: null}
+  - {id: target_10, pose: null}
+acceptance:
+  total_trials: {operator: '>=', limit: 50}
+  success_rate_percent: {operator: '>=', limit: 90.0}
+  position_error_p95_m: {operator: '<=', limit: 0.20}
+  yaw_error_p95_rad: {operator: '<=', limit: 0.35}
+  recovery_count: {operator: '<=', limit: 10}
+  collision_count: {operator: '<=', limit: 0}
+  manual_intervention_count: {operator: '<=', limit: 0}
+  communication_degradation_count: {operator: '<=', limit: 0}

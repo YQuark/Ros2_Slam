@@ -2,6 +2,7 @@
 """Convert raw Upper-v3 IMU observations to field-valid sensor_msgs/Imu."""
 
 import math
+from typing import Optional
 
 import rclpy
 from builtin_interfaces.msg import Time as TimeMessage
@@ -18,6 +19,7 @@ from robot_state_estimation.imu_processing import (
     normalize_quaternion,
 )
 from robot_state_estimation.time_mapper import (
+    ClockEstimate,
     McuClockMapper,
     SampleDisposition,
     SampleOrderTracker,
@@ -60,6 +62,12 @@ class ImuAdapterNode(Node):
             qos_profile_sensor_data,
         )
         self.rejected_count = 0
+        self.gyro_rejected_count = 0
+        self.accel_rejected_count = 0
+        self.orientation_rejected_count = 0
+        self.timestamp_invalid_count = 0
+        self.clock_reset_count = 0
+        self.last_clock_estimate: Optional[ClockEstimate] = None
 
     def _on_observation(self, msg: ImuObservation) -> None:
         if int(msg.schema_version) != ImuObservation.SCHEMA_VERSION:
@@ -77,16 +85,16 @@ class ImuAdapterNode(Node):
             self.clock_mapper.reset()
         receive_sec = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
         gyro = finite_vector(msg.angular_velocity_dps, 3)
-        if not validity.gyro_valid or gyro is None:
-            self.rejected_count += 1
-            return
         sample_ros_sec = receive_sec
         if validity.timestamp_valid:
-            sample_ros_sec = self.clock_mapper.update(
-                msg.mcu_sample_time_ms, receive_sec
-            ).sample_ros_sec
+            self.last_clock_estimate = self.clock_mapper.update(msg.mcu_sample_time_ms, receive_sec)
+            sample_ros_sec = self.last_clock_estimate.sample_ros_sec
+            if self.last_clock_estimate.reset:
+                self.clock_reset_count += 1
         else:
+            self.timestamp_invalid_count += 1
             self.clock_mapper.reset()
+            self.last_clock_estimate = None
         imu = Imu()
         imu.header.stamp = self._time_message(sample_ros_sec)
         imu.header.frame_id = self.frame_id
@@ -96,6 +104,7 @@ class ImuAdapterNode(Node):
         )
         if not self.use_orientation or not validity.orientation_valid or orientation is None:
             imu.orientation_covariance[0] = -1.0
+            self.orientation_rejected_count += 1
         else:
             (
                 imu.orientation.x,
@@ -105,11 +114,15 @@ class ImuAdapterNode(Node):
             ) = orientation
             for index in (0, 4, 8):
                 imu.orientation_covariance[index] = self.orientation_stddev**2 * warning_multiplier
-        imu.angular_velocity.x = math.radians(gyro[0])
-        imu.angular_velocity.y = math.radians(gyro[1])
-        imu.angular_velocity.z = math.radians(gyro[2])
-        for index, stddev in zip((0, 4, 8), self.gyro_stddev):
-            imu.angular_velocity_covariance[index] = stddev**2 * warning_multiplier
+        if validity.gyro_valid and gyro is not None:
+            imu.angular_velocity.x = math.radians(gyro[0])
+            imu.angular_velocity.y = math.radians(gyro[1])
+            imu.angular_velocity.z = math.radians(gyro[2])
+            for index, stddev in zip((0, 4, 8), self.gyro_stddev):
+                imu.angular_velocity_covariance[index] = stddev**2 * warning_multiplier
+        else:
+            imu.angular_velocity_covariance[0] = -1.0
+            self.gyro_rejected_count += 1
         accel = finite_vector(msg.acceleration_g, 3)
         if validity.accel_valid and accel is not None:
             imu.linear_acceleration.x = accel[0] * GRAVITY_MPS2
@@ -119,6 +132,7 @@ class ImuAdapterNode(Node):
                 imu.linear_acceleration_covariance[index] = stddev**2 * warning_multiplier
         else:
             imu.linear_acceleration_covariance[0] = -1.0
+            self.accel_rejected_count += 1
         self.publisher.publish(imu)
 
     @staticmethod

@@ -1,0 +1,29 @@
+schema_version: 1
+release: v0.6.0-rc2
+platform_api_version: 5
+upper_architecture_baseline_commit: 2f16c8b9127a9534bade4fe9f3abb33643b4bd0b
+firmware_candidate_commit: bc472cc874e930aaed6eb8e7de73b41a2563dd85
+firmware_candidate_tag: v1.0.0-rc1
+software_gates:
+  ros_ci: required
+  protocol_cross_test: required
+  pty_report: verification/reports/pty/v0.6.0-rc2.yaml
+hardware_gates:
+  protocol_report: verification/reports/protocol/v0.6.0-rc2.yaml
+  hil_report: verification/reports/hil/v0.6.0-rc2.yaml
+  calibration_report: verification/reports/calibration/v0.6.0-rc2.yaml
+  dynamics_report: verification/reports/calibration/v0.6.0-rc2-vehicle-dynamics.yaml
+  wheel_odom_report: verification/reports/odometry/v0.6.0-rc2.yaml
+  imu_report: verification/reports/imu/v0.6.0-rc2.yaml
+  ekf_report: verification/reports/ekf/v0.6.0-rc2.yaml
+  slam_report: verification/reports/slam/v0.6.0-rc2.yaml
+  nav2_report: verification/reports/nav2/v0.6.0-rc2.yaml
+  fault_injection_report: verification/reports/fault-injection/v0.6.0-rc2.yaml
+  long_run_report: verification/reports/long-run/v0.6.0-rc2.yaml
+  vehicle_report: verification/reports/vehicle/v0.6.0-rc2.yaml
+release_materials:
+  changelog: CHANGELOG.md
+  compatibility: compatibility/firmware.yaml
+  protocol: docs/interfaces/upper-protocol-v3.md
+  authority: docs/contracts/vehicle-command-authority.md
+  upgrade_and_rollback: docs/releases/v0.6.0-rc2.md

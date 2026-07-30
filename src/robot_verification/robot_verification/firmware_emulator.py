@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import struct
 from collections import deque
+from typing import Deque, Optional
 
 
 ACK_SESSION_VALID = 1 << 0
 ACK_RECEIVED = 1 << 1
 ACK_APPLIED = 1 << 2
-ACK_REJECTED = 1 << 3
+ACK_DUPLICATE = 1 << 3
+ACK_REJECTED = 1 << 4
 
 
 def _forward(new: int, old: int) -> bool:
@@ -23,7 +25,7 @@ class FirmwareV3Emulator:
     def __init__(self, *, host_watchdog_sec: float = 0.2, enabled_mask: int = 0x06):
         self.host_watchdog_sec = float(host_watchdog_sec)
         self.enabled_mask = int(enabled_mask) & 0x0F
-        self.retired_sessions = deque(maxlen=8)
+        self.retired_sessions: Deque[int] = deque(maxlen=8)
         self.status_sequence = 0
         self.sample_time_ms = 0
         self.session = 0
@@ -31,8 +33,8 @@ class FirmwareV3Emulator:
         self.applied_sequence = 0
         self.ack_flags = 0
         self.reject_reason = 0
-        self.last_payload = None
-        self.last_host_at = None
+        self.last_payload: Optional[bytes] = None
+        self.last_host_at: Optional[float] = None
         self.host_enabled = False
         self.estop = False
         self.fault = False
@@ -49,7 +51,7 @@ class FirmwareV3Emulator:
                 if payload != self.last_payload:
                     return self._reject(3)
                 self.last_host_at = float(now_sec)
-                self.ack_flags = ACK_SESSION_VALID | ACK_RECEIVED | ACK_APPLIED
+                self.ack_flags = ACK_SESSION_VALID | ACK_RECEIVED | ACK_APPLIED | ACK_DUPLICATE
                 self.reject_reason = 0
                 return True
             if not _forward(sequence, self.received_sequence):
@@ -131,7 +133,7 @@ class FirmwareV3Emulator:
         return (
             bytes((3, 1))
             + struct.pack("<I", 0x1F)
-            + bytes.fromhex("366a0385290d526009e6cd3bbdaa7b74b2fecad6")
+            + bytes.fromhex("bc472cc874e930aaed6eb8e7de73b41a2563dd85")
             + struct.pack("<II", 0x00020000, 0)
         )
 

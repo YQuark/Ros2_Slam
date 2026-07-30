@@ -44,6 +44,7 @@ class SupervisorResult:
     command_scale: float
     release_host_candidate: bool
     reason: str
+    components: Tuple[Tuple[str, float], ...]
 
 
 def observation_requires_release(
@@ -87,19 +88,21 @@ class MotionSupervisor:
         feedback_vx: float,
         wheel_wz: float,
         gyro_z: Optional[float],
+        command_valid: bool = True,
     ) -> SupervisorResult:
         c = self.config
         if not c.enabled:
             self.level = SupervisorLevel.NORMAL
             self._critical_since = self._clear_since = None
-            return SupervisorResult(0.0, self.level, 1.0, False, "disabled")
+            return SupervisorResult(0.0, self.level, 1.0, False, "disabled", ())
         layout = WheelLayout(enabled_mask, speed_valid_mask, anomaly_mask)
         pair = layout.pair_disagreement(wheel_speeds)
         tracking = 0.0
-        for index in layout.left_indices + layout.right_indices:
-            target, actual = wheel_targets[index], wheel_speeds[index]
-            if abs(target) >= c.tracking_min_target_mps:
-                tracking = max(tracking, abs(target - actual))
+        if command_valid:
+            for index in layout.left_indices + layout.right_indices:
+                target, actual = wheel_targets[index], wheel_speeds[index]
+                if abs(target) >= c.tracking_min_target_mps:
+                    tracking = max(tracking, abs(target - actual))
         components: Dict[str, float] = {
             "wheel_pair": _normalize(pair, c.wheel_pair_warn_mps, c.wheel_pair_critical_mps),
             "tracking": _normalize(tracking, c.tracking_warn_mps, c.tracking_critical_mps),
@@ -110,7 +113,8 @@ class MotionSupervisor:
             ),
             "unexpected_motion": (
                 1.0
-                if abs(command_vx) < c.zero_command_linear_mps
+                if command_valid
+                and abs(command_vx) < c.zero_command_linear_mps
                 and abs(command_wz) < c.zero_command_angular_radps
                 and (
                     abs(feedback_vx) > c.unexpected_linear_mps
@@ -120,7 +124,7 @@ class MotionSupervisor:
                 else 0.0
             ),
         }
-        reason = max(components, key=components.get)
+        reason = max(components, key=lambda name: components[name])
         score = components[reason]
         if score >= c.critical_score:
             self._critical_since = now_sec if self._critical_since is None else self._critical_since
@@ -144,5 +148,10 @@ class MotionSupervisor:
             fraction = max(0.0, min(1.0, (score - c.degraded_score) / span))
             scale = 0.60 + fraction * (c.degraded_min_scale - 0.60)
         return SupervisorResult(
-            score, self.level, scale, self.level is SupervisorLevel.CRITICAL, reason
+            score,
+            self.level,
+            scale,
+            self.level is SupervisorLevel.CRITICAL,
+            reason,
+            tuple(sorted(components.items())),
         )

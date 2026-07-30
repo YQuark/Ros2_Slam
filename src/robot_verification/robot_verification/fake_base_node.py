@@ -4,6 +4,7 @@
 import math
 import time
 from collections import deque
+from typing import Deque, Optional
 
 import rclpy
 from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
@@ -26,7 +27,12 @@ from robot_interfaces.msg import (
 from sensor_msgs.msg import BatteryState
 from std_srvs.srv import SetBool, Trigger
 
-from robot_verification.fake_base_model import FakeBaseModel, StatusSampleLatch
+from robot_verification.fake_base_model import (
+    FakeBaseModel,
+    StatusSampleLatch,
+    VALID_SCENARIOS,
+    scenario_accepts_enable,
+)
 from robot_chassis_model.wheel_layout import DEFAULT_ENABLED_MASK
 
 
@@ -72,6 +78,11 @@ class FakeBaseNode(Node):
         self.imu_frame = str(self.get_parameter("imu_frame_id").value)
         self.cmd_timeout = float(self.get_parameter("cmd_timeout").value)
         self.scenario = str(self.get_parameter("scenario").value)
+        if self.scenario not in VALID_SCENARIOS:
+            raise ValueError(
+                f"unknown fake-base scenario {self.scenario!r}; "
+                f"expected one of {sorted(VALID_SCENARIOS)}"
+            )
         self.enabled_mask = int(self.get_parameter("expected_enabled_mask").value) & 0x0F
         self.model = FakeBaseModel(
             wheel_radius_m=float(self.get_parameter("wheel_radius").value),
@@ -88,12 +99,12 @@ class FakeBaseNode(Node):
         self.mcu_time_ms = 0
         self.last_tick = time.monotonic()
         self.started_at = self.last_tick
-        self.last_command_at = None
+        self.last_command_at: Optional[float] = None
         self.command_epoch = 0
         self.command_sequence = 0
         self.selected_source = 0
         self.enabled = False
-        self.retired_command_epochs = deque(maxlen=16)
+        self.retired_command_epochs: Deque[int] = deque(maxlen=16)
         self.disable_epoch = 0
         # Match a newly connected real transport: motion is closed until an
         # explicit upper-layer disable is followed by a fresh enable command.
@@ -106,6 +117,7 @@ class FakeBaseNode(Node):
         self.reset_generation = 1
         self.disconnected_published = False
         self.status_timeout_published = False
+        self.clock_reset_injected = False
         self.static_qos = QoSProfile(
             depth=1,
             reliability=ReliabilityPolicy.RELIABLE,
@@ -180,6 +192,14 @@ class FakeBaseNode(Node):
             return
         if self.rearm_required or self.estop or session == self.disable_epoch:
             return
+        if not scenario_accepts_enable(self.scenario):
+            self.enabled = False
+            self.selected_source = 0
+            self.last_command_at = None
+            self.model.release()
+            self.rearm_required = True
+            self.rearm_reason_flags |= 1 << 3 if self.scenario == "ack_rejected" else 1 << 2
+            return
         self.enabled = True
         # Firmware sees exactly one physical source for every ROS subsource.
         self.selected_source = 1  # COMMAND_SOURCE_HOST
@@ -227,12 +247,24 @@ class FakeBaseNode(Node):
         if self.scenario == "status_freeze" and elapsed >= 2.0:
             self._publish_status_timeout_once()
             return
+        if self.scenario == "clock_reset" and elapsed >= 2.0 and not self.clock_reset_injected:
+            self.clock_reset_injected = True
+            self.transport_session_id = (self.transport_session_id + 1) & 0xFFFFFFFFFFFFFFFF
+            self.reset_generation += 1
+            self.mcu_time_ms = 0
+            self.status_latch = StatusSampleLatch()
+            self._publish_firmware_info()
         slip = 0.55 if self.scenario == "wheel_slip" and elapsed >= 2.0 else 1.0
         sample = self.model.step(dt, slip_scale=slip)
         self.mcu_time_ms = (self.mcu_time_ms + int(round(dt * 1000.0))) & 0xFFFFFFFF
         self.tick_count += 1
         duplicate = self.scenario == "duplicate_status" and self.tick_count % 10 == 0
-        anomaly_mask = 0x01 if self.scenario == "encoder_fault" and elapsed >= 2.0 else 0
+        anomaly_mask = 0
+        if elapsed >= 2.0:
+            if self.scenario == "encoder_fault":
+                anomaly_mask = 0x02
+            elif self.scenario == "whole_side_failure":
+                anomaly_mask = 0x03
         candidate_snapshot = (
             sample,
             self.mcu_time_ms,
@@ -268,19 +300,20 @@ class FakeBaseNode(Node):
         wheel.status_flags = 1 if wheel_estop else 0
         self.wheel_pub.publish(wheel)
 
-        imu = ImuObservation()
-        imu.header.stamp, imu.header.frame_id = stamp, self.imu_frame
-        imu.schema_version = ImuObservation.SCHEMA_VERSION
-        imu.transport_session_id = self.transport_session_id
-        imu.mcu_sample_time_ms = self.mcu_time_ms
-        imu.sensor_time = self.mcu_time_ms
-        imu.sample_sequence = self.imu_sequence
-        imu.acceleration_g = [0.0, 0.0, 1.0]
-        drift = 0.5 if self.scenario == "imu_drift" and elapsed >= 2.0 else 0.0
-        imu.angular_velocity_dps = [0.0, 0.0, math.degrees(imu_sample.wz + drift)]
-        imu.orientation.w = 1.0
-        imu.status_flags = 0x0B
-        self.imu_pub.publish(imu)
+        if not (self.scenario == "imu_loss" and elapsed >= 2.0):
+            imu = ImuObservation()
+            imu.header.stamp, imu.header.frame_id = stamp, self.imu_frame
+            imu.schema_version = ImuObservation.SCHEMA_VERSION
+            imu.transport_session_id = self.transport_session_id
+            imu.mcu_sample_time_ms = self.mcu_time_ms
+            imu.sensor_time = self.mcu_time_ms
+            imu.sample_sequence = self.imu_sequence
+            imu.acceleration_g = [0.0, 0.0, 1.0]
+            drift = 0.5 if self.scenario == "imu_drift" and elapsed >= 2.0 else 0.0
+            imu.angular_velocity_dps = [0.0, 0.0, math.degrees(imu_sample.wz + drift)]
+            imu.orientation.w = 1.0
+            imu.status_flags = 0x0B
+            self.imu_pub.publish(imu)
 
         battery = BatteryState()
         battery.header.stamp = stamp
@@ -308,6 +341,11 @@ class FakeBaseNode(Node):
         msg.firmware_session_id = self.transport_session_id
         msg.firmware_received_sequence = self.command_sequence
         msg.firmware_applied_sequence = self.command_sequence
+        if self.scenario == "ack_received_not_applied" and self.command_sequence:
+            msg.firmware_applied_sequence = (self.command_sequence - 1) & 0xFFFFFFFF
+        elif self.scenario == "ack_rejected" and self.command_sequence:
+            msg.firmware_applied_sequence = (self.command_sequence - 1) & 0xFFFFFFFF
+            msg.firmware_reject_reason = 1
         msg.wire_rearm_required = self.rearm_required
         msg.wire_rearm_reason_flags = self.rearm_reason_flags
         msg.status_age_ms = 0

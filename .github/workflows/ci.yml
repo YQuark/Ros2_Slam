@@ -19,7 +19,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           repository: Yaoser-x/SlamRobot_Chassis_Control
-          ref: 366a0385290d526009e6cd3bbdaa7b74b2fecad6
+          ref: bc472cc874e930aaed6eb8e7de73b41a2563dd85
           path: firmware-contract
 
       - name: Configure git safe directory
@@ -28,7 +28,7 @@ jobs:
       - name: Install system deps
         run: |
           apt-get update
-          apt-get install -y python3-pip python3-serial shellcheck
+          apt-get install -y python3-pip python3-serial python3-jsonschema shellcheck
           pip3 install \
             "pytest<8" pytest-cov \
             black==24.10.0 ruff==0.8.6 mypy==1.14.1 yamllint==1.35.1
@@ -65,6 +65,12 @@ jobs:
           yamllint .
           find scripts launch_scripts -type f -name '*.sh' -print0 | \
             xargs -0 shellcheck --severity=error
+
+      - name: Firmware host contract tests
+        run: |
+          cmake -S firmware-contract/tests/host -B firmware-contract/build-host
+          cmake --build firmware-contract/build-host --parallel 2
+          ctest --test-dir firmware-contract/build-host --output-on-failure
 
       - name: colcon build
         run: |
@@ -106,3 +112,6 @@ jobs:
 
       - name: repo boundaries check
         run: python3 scripts/verify/check_repo_boundaries.py
+
+      - name: version and release consistency
+        run: python3 scripts/verify/check_version_consistency.py

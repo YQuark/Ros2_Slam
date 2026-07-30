@@ -2,6 +2,7 @@ import math
 import pytest
 
 from robot_state_estimation.imu_processing import classify_quality
+from robot_state_estimation.formal_odometry_policy import evidence_matches_odometry
 from robot_state_estimation.time_mapper import (
     McuClockMapper,
     SampleDisposition,
@@ -10,6 +11,7 @@ from robot_state_estimation.time_mapper import (
 from robot_state_estimation.wheel_odometry import (
     EncoderOdometry,
     covariance_multiplier,
+    se2_increment,
     signed_int32_delta,
 )
 
@@ -56,14 +58,57 @@ def test_clock_mapper_uses_sensor_delta_and_handles_wrap():
     assert second.sample_ros_sec > first.sample_ros_sec
 
 
-def test_encoder_odometry_integrates_straight_and_rejects_anomaly():
+def test_encoder_odometry_integrates_straight_and_degrades_single_wheel_anomaly():
     odom = make_odom()
     odom.update((0, 0, 0, 0), sample_time_sec=0.0)
     update = odom.update((100, 100, 100, 100), sample_time_sec=0.1)
     assert update.integrated and update.pose.x > 0.0
     before = update.pose
-    rejected = odom.update((200, 200, 200, 200), sample_time_sec=0.2, anomaly_mask=1)
-    assert not rejected.integrated and rejected.pose == before
+    degraded = odom.update((200, 200, 200, 200), sample_time_sec=0.2, anomaly_mask=1)
+    assert degraded.integrated and degraded.degraded
+    assert degraded.pose.x > before.x
+
+
+def test_speed_invalid_does_not_invalidate_encoder_counts():
+    odom = make_odom()
+    odom.update((0, 0, 0, 0), sample_time_sec=0.0, speed_valid_mask=0)
+    update = odom.update((100, 100, 100, 100), sample_time_sec=0.1, speed_valid_mask=0)
+
+    assert update.integrated
+    assert not update.degraded
+
+
+def test_whole_side_failure_does_not_integrate_pose():
+    odom = make_odom()
+    odom.update((0, 0, 0, 0), sample_time_sec=0.0)
+    failed = odom.update((100, 100, 100, 100), sample_time_sec=0.1, anomaly_mask=0b0011)
+
+    assert not failed.integrated
+    assert failed.pose.x == 0.0
+    recovered = odom.update((200, 200, 200, 200), sample_time_sec=0.2)
+    assert recovered.integrated
+    assert recovered.dt == pytest.approx(0.2)
+    assert recovered.pose.x == pytest.approx(200 * odom.meters_per_count)
+
+
+def test_formal_odometry_accepts_bounded_estimator_latency_only():
+    latest_wheel_ns = 10_200_000_000
+    assert evidence_matches_odometry(10_150_000_000, latest_wheel_ns, 0.25)
+    assert evidence_matches_odometry(10_250_000_000, latest_wheel_ns, 0.25)
+    assert not evidence_matches_odometry(9_900_000_000, latest_wheel_ns, 0.25)
+    assert not evidence_matches_odometry(10_500_000_000, latest_wheel_ns, 0.25)
+
+
+def test_one_bad_sample_preserves_other_wheels_and_recovers_baseline():
+    odom = make_odom()
+    odom.update((0, 0, 0, 0), sample_time_sec=0.0)
+    first = odom.update((100000, 100, 100, 100), sample_time_sec=0.1)
+    second = odom.update((200, 200, 200, 200), sample_time_sec=0.2)
+    third = odom.update((300, 300, 300, 300), sample_time_sec=0.3)
+
+    assert first.integrated and first.degraded
+    assert second.integrated and second.degraded
+    assert third.integrated and not third.degraded
 
 
 def test_encoder_odometry_integrates_rotation_and_arc():
@@ -79,6 +124,48 @@ def test_encoder_odometry_integrates_rotation_and_arc():
     curved = arc.update((50, 50, 100, 100), sample_time_sec=0.1)
     assert curved.integrated
     assert curved.pose.x > 0.0 and curved.pose.y > 0.0 and curved.pose.yaw > 0.0
+
+
+def test_se2_exponential_matches_exact_arc_and_is_stable_at_small_angle():
+    distance, angle = 0.8, 0.6
+    dx, dy = se2_increment(distance, angle, 0.0)
+    radius = distance / angle
+    assert dx == pytest.approx(radius * math.sin(angle))
+    assert dy == pytest.approx(radius * (1.0 - math.cos(angle)))
+
+    tiny_dx, tiny_dy = se2_increment(1.0, 1.0e-12, 0.0)
+    assert tiny_dx == pytest.approx(1.0, abs=1.0e-15)
+    assert tiny_dy == pytest.approx(0.5e-12, abs=1.0e-18)
+
+
+def test_correlated_wheel_noise_produces_symmetric_positive_covariance():
+    odom = EncoderOdometry(
+        wheel_radius_m=0.05,
+        track_width_m=0.20,
+        counts_per_revolution=1000,
+        left_right_correlation=0.4,
+        turn_noise_gain=0.5,
+    )
+    odom.update((0, 0, 0, 0), sample_time_sec=0.0)
+    update = odom.update((50, 50, 100, 100), sample_time_sec=0.1)
+    covariance = update.pose_covariance
+
+    assert covariance[1] == pytest.approx(covariance[3])
+    assert covariance[2] == pytest.approx(covariance[6])
+    assert covariance[5] == pytest.approx(covariance[7])
+    assert covariance[0] >= 0.0
+    assert covariance[4] >= 0.0
+    assert covariance[8] >= 0.0
+
+
+def test_invalid_wheel_correlation_is_rejected():
+    with pytest.raises(ValueError, match="correlation"):
+        EncoderOdometry(
+            wheel_radius_m=0.05,
+            track_width_m=0.20,
+            counts_per_revolution=1000,
+            left_right_correlation=1.0,
+        )
 
 
 def test_default_m2_m3_layout_does_not_halve_distance():
@@ -119,9 +206,7 @@ def test_layout_change_resets_integration_baseline():
 
 def test_reset_generation_resets_baseline_even_with_same_wire_session():
     odom = make_odom()
-    odom.update(
-        (0, 0, 0, 0), sample_time_sec=0.0, transport_session_id=7, reset_generation=1
-    )
+    odom.update((0, 0, 0, 0), sample_time_sec=0.0, transport_session_id=7, reset_generation=1)
     reset = odom.update(
         (100, 100, 100, 100),
         sample_time_sec=0.1,
@@ -142,9 +227,7 @@ def test_reset_generation_resets_baseline_even_with_same_wire_session():
 )
 def test_two_and_four_drive_layouts_share_one_distance_algorithm(enabled, counts):
     odom = make_odom()
-    odom.update(
-        (0, 0, 0, 0), sample_time_sec=0.0, enabled_mask=enabled, speed_valid_mask=enabled
-    )
+    odom.update((0, 0, 0, 0), sample_time_sec=0.0, enabled_mask=enabled, speed_valid_mask=enabled)
     update = odom.update(
         counts, sample_time_sec=0.1, enabled_mask=enabled, speed_valid_mask=enabled
     )
@@ -154,8 +237,8 @@ def test_two_and_four_drive_layouts_share_one_distance_algorithm(enabled, counts
 
 def test_implausible_enabled_wheel_jump_is_rejected():
     odom = make_odom()
-    odom.update((0, 0, 0, 0), sample_time_sec=0.0)
-    jump = odom.update((100000, 0, 0, 0), sample_time_sec=0.1)
+    odom.update((0, 0, 0, 0), sample_time_sec=0.0, enabled_mask=0b0110)
+    jump = odom.update((0, 100000, 100, 0), sample_time_sec=0.1, enabled_mask=0b0110)
     assert not jump.integrated
 
 
@@ -209,7 +292,7 @@ def test_twist_covariance_is_per_sample_not_accumulated_pose_uncertainty():
             odom.update(
                 (index * 10,) * 4,
                 sample_time_sec=index * 0.1,
-                hard_max_speed_mps=2.0,
+                hard_max_wheel_peripheral_speed_mps=2.0,
             )
         )
     assert updates[-1].pose_covariance[0] > updates[0].pose_covariance[0]

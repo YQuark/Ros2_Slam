@@ -1,12 +1,15 @@
 safety:
   timing:
     mux_source_timeout_sec: 0.25
+    host_publish_period_sec: 0.05
+    host_command_deadline_sec: 0.10
+    host_command_lifespan_sec: 0.12
     bridge_command_timeout_sec: 0.15
     drive_keepalive_sec: 0.05
     firmware_upper_timeout_sec: 0.20
     status_timeout_sec: 0.25
     command_ack_timeout_sec: 0.15
-    max_command_age_sec: 0.15
+    max_command_age_sec: 0.10
 motion:
   soft_max_linear_mps: 0.40
   soft_max_angular_radps: 1.50

@@ -8,10 +8,10 @@
 | --- | --- | --- |
 | 雷达建图 | 已支持 | `YDLIDAR X2 -> /scan -> slam_toolbox` |
 | 摄像头建图 | 后续扩展 | 摄像头默认不进入当前激光 SLAM 主链路 |
-| 真实底盘导航 | 阻塞 | 固定固件 `366a038` 已实现 upper v3；参数 CRC、UART HIL 和实车验收尚未完成 |
+| 真实底盘导航 | 阻塞 | 固件候选 `bc472cc` / `v1.0.0-rc1` 已冻结 upper v3；参数 CRC、UART HIL 和实车验收尚未完成 |
 | 虚拟底盘联调 | 已支持 | `base_mode:=fake` |
-| 串口自动识别 | 已支持 | 自动区分底盘串口与雷达串口 |
-| 底盘 EKF 融合 | 显式开关 | 正式 wheel odom 由 `robot_state_estimation` 生成，Bridge 不拥有 odom/TF |
+| 串口设备隔离 | 已支持 | 雷达可检测；底盘默认固定 `/dev/serial0`，`base_port=auto` 已废弃 |
+| 底盘 EKF 融合 | 实验开关 | 默认 wheel-only；正式 `/odom`/TF 始终由 `formal_odometry` 发布 |
 | 激光运行时覆写 | 已支持 | `mapping` / `navigation` 支持 `--lidar-reversion`、`--lidar-inverted`、`--lidar-yaw-*` |
 
 ## 统一入口
@@ -34,14 +34,17 @@ source /home/robot/ros2_ws/install/setup.bash
 
 ```bash
 cd /home/robot/ros2_ws
-./bin/robot mapping lidar --manual --real-base --no-rviz
+./bin/robot mapping lidar --manual --fake-base --rviz
 ./bin/robot save-map my_map
-./bin/robot navigation --real-base --map my_map --no-rviz
+./bin/robot navigation /home/robot/ros2_maps/my_map.yaml --fake-base --rviz
 ```
 
+上述命令只验证上位机拓扑。真实底盘只能在对应门禁通过后，
+把 `--fake-base` 替换为 `--real-base --base-port /dev/serial0`。
 标准导航流程只有一条：
 
-1. 运行 `./bin/robot navigation --real-base --map my_map`
+1. 运行 `./bin/robot navigation /home/robot/ros2_maps/my_map.yaml --fake-base --rviz`；
+   门禁通过后才使用 `--real-base`
 2. 在 RViz 中先执行 `2D Pose Estimate`
 3. 等激光与地图基本重合后，再用 `2D Goal Pose` 下发目标
 
@@ -49,15 +52,16 @@ cd /home/robot/ros2_ws
 
 ## 当前默认约定
 
-- 底盘正式串口：`/dev/stm32_chassis`
+- 底盘默认串口：`/dev/serial0`；可用编译配置或 `--base-port` 显式覆盖
 - 雷达正式串口：`/dev/ydlidar`
-- 雷达参数文件：`src/robot_sensing/config/ydlidar_x2.yaml`
+- 雷达参数基线：`src/robot_config/config/components/lidar.yaml`；运行时只使用配置编译产物
 - 默认激光手性修正：`inverted: true`
-- 雷达 yaw、轮径、有效轮距待实测；单轮编码器/电机方向归固件参数管理
+- 雷达 yaw、轮径、有效轮距、单轮最大周速均为 provisional，待实测；编码器/电机方向归固件参数管理
 - 默认导航行为树：`src/robot_bringup/behavior_trees/navigate_to_pose_recovery.xml`
 - 默认底盘命令时序：mux 250 ms、bridge 150 ms、keepalive 50 ms、固件 watchdog 200 ms
 - 上位机配置事实源：`src/robot_config/config`；固件参数由下位机管理，跨机以参数 CRC/标定包校验
-- Platform API 4 / Upper Protocol v3；固定下位机候选 `366a038`，发布兼容仍为 false
+- Platform API 5 / Upper Protocol v3；固定下位机候选 `bc472cc` (`v1.0.0-rc1`)，发布兼容仍为 false
+- 当前证据状态：软件单测、PTY 和黄金向量可重放；rc2 机器报告仍为 `NOT_RUN`，真实 UART HIL、参数 CRC、车辆、标定、SLAM/Nav2 和长稳均为 pending
 
 ## 仓库分层
 
@@ -105,6 +109,7 @@ ros2_ws
 - [系统架构](./docs/02-系统架构.md)
 - [硬件接线与设备识别](./docs/03-硬件接线与设备识别.md)
 - [Upper protocol v3](./docs/interfaces/upper-protocol-v3.md)
+- [Platform API 5](./docs/interfaces/platform-api-5.md)
 - [建图指南](./docs/04-建图指南.md)
 - [建图测试流程](./docs/05-建图测试流程.md)
 - [导航拆解调试](./docs/05b-导航拆解调试.md)
@@ -123,3 +128,4 @@ ros2_ws
 - 对外平台接口固定为 `/scan`、`/odom`、`/tf`、`/tf_static` 和 `/cmd_vel/*` 候选输入
 - 文档统一按“单阶段默认、两阶段回退”的导航语义描述
 - 代码是真值来源，文档随代码更新
+- 实车命令只描述操作路径，不代表 Gate B/C/D 已通过；兼容门关闭时禁止绕过

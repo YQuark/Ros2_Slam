@@ -15,7 +15,8 @@ Twist sources -> robot_control -> HostMotionCommand -> Real/Fake base provider
 
 WheelObservation + ImuObservation -> robot_state_estimation
                                   -> wheel/odom + imu/data
-                                  -> robot_localization -> odom + odom->base_link
+                                  -> optional internal EKF
+                                  -> formal_odometry -> odom + odom->base_link
 
 HostMotionCommand + observations -> robot_supervision -> MotionSupervisionState
                                                         -> robot_control

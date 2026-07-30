@@ -1,0 +1,31 @@
+schema_version: 1
+name: v0.6.0-rc2-slam-sweep
+status: dataset_pending
+strategy: latin_hypercube_then_interaction
+seed: 42
+coarse_candidate_count: 32
+interaction_finalists: 6
+baseline_params: src/robot_config/config/components/slam/base.yaml
+training_datasets: [bag_06_mapping_train]
+validation_datasets: [bag_07_mapping_validation]
+parameter_axes:
+  minimum_travel_distance: [0.005, 0.02, 0.05]
+  minimum_travel_heading: [0.005, 0.02, 0.05]
+  minimum_time_interval: [0.05, 0.10, 0.20]
+  throttle_scans: [1, 2, 3]
+  resolution: [0.05, 0.03, 0.08]
+  loop_search_maximum_distance: [3.0, 2.0, 4.0]
+acceptance:
+  closure_position_error_m: {operator: '<=', limit: 0.15}
+  closure_yaw_error_rad: {operator: '<=', limit: 0.10}
+  wall_ghost_width_p95_m: {operator: '<=', limit: 0.10}
+  false_loop_closures: {operator: '<=', limit: 0}
+  map_node_count: {operator: '<=', limit: 15000}
+  cpu_p95_percent: {operator: '<=', limit: 80.0}
+  memory_peak_mb: {operator: '<=', limit: 1200.0}
+  tf_latency_p95_sec: {operator: '<=', limit: 0.10}
+  scan_drop_rate_percent: {operator: '<=', limit: 1.0}
+evaluation_policy:
+  tune_on_validation: false
+  screenshot_is_evidence: false
+  require_raw_metrics: true

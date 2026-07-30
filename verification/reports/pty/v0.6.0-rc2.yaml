@@ -1,0 +1,9 @@
+schema_version: 1
+release: v0.6.0-rc2
+result: NOT_RUN
+upper_commit: null
+firmware_commit: bc472cc874e930aaed6eb8e7de73b41a2563dd85
+protocol_version: 3
+scenarios: []
+metrics: {}
+evidence: tests/integration/test_pty_fake_stm32.py

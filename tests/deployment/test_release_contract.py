@@ -7,7 +7,7 @@ import yaml
 
 
 ROOT = Path(__file__).resolve().parents[2]
-FIRMWARE_COMMIT = "366a0385290d526009e6cd3bbdaa7b74b2fecad6"
+FIRMWARE_COMMIT = "bc472cc874e930aaed6eb8e7de73b41a2563dd85"
 
 
 def test_firmware_contract_pins_v3_candidate_and_remains_hil_blocked() -> None:
@@ -15,10 +15,15 @@ def test_firmware_contract_pins_v3_candidate_and_remains_hil_blocked() -> None:
         (ROOT / "compatibility" / "firmware.yaml").read_text(encoding="utf-8")
     )
 
-    assert contract["upper"]["baseline_commit"] == "ae30e0a66957374822ce5efe4a464df67186d311"
-    assert contract["upper"]["release"] == "v0.6.0-rc1"
+    assert (
+        contract["upper"]["architecture_baseline_commit"]
+        == "2f16c8b9127a9534bade4fe9f3abb33643b4bd0b"
+    )
+    assert contract["upper"]["release"] == "v0.6.0-rc2"
     assert contract["upper"]["wire_protocols_supported"] == [3]
     assert contract["firmware"]["candidate_commit"] == FIRMWARE_COMMIT
+    assert contract["firmware"]["candidate_tag"] == "v1.0.0-rc1"
+    assert contract["firmware"]["tested_commit"] is None
     assert contract["firmware"]["compatible_commit"] is None
     vector_path = ROOT / contract["firmware"]["golden_vector_file"]
     assert (
@@ -31,6 +36,12 @@ def test_firmware_contract_pins_v3_candidate_and_remains_hil_blocked() -> None:
     assert contract["timing"]["bridge_keepalive_ms"] == 50
     assert contract["timing"]["bridge_command_timeout_ms"] == 150
     assert contract["timing"]["bridge_status_timeout_ms"] == 250
+    assert (
+        contract["timing"]["host_publish_period_ms"]
+        < contract["timing"]["host_command_deadline_ms"]
+        <= contract["timing"]["host_command_lifespan_ms"]
+        < contract["timing"]["bridge_command_timeout_ms"]
+    )
     assert (
         contract["timing"]["bridge_keepalive_ms"] < contract["timing"]["bridge_command_timeout_ms"]
     )
@@ -53,9 +64,9 @@ def test_unified_verify_entrypoints_exist_and_use_python_module_pytest() -> None
 def test_release_documentation_entrypoints_exist() -> None:
     assert (ROOT / "CHANGELOG.md").is_file()
     assert (ROOT / "docs" / "releases" / "v0.5.0-rc1.md").is_file()
-    assert (ROOT / "docs" / "releases" / "v0.6.0-rc1.md").is_file()
-    assert (ROOT / "verification" / "reports" / "hil" / "v0.6.0-rc1.yaml").is_file()
-    assert (ROOT / "verification" / "reports" / "vehicle" / "v0.6.0-rc1.yaml").is_file()
+    assert (ROOT / "docs" / "releases" / "v0.6.0-rc2.md").is_file()
+    assert (ROOT / "verification" / "reports" / "hil" / "v0.6.0-rc2.yaml").is_file()
+    assert (ROOT / "verification" / "reports" / "vehicle" / "v0.6.0-rc2.yaml").is_file()
 
 
 def test_ci_enforces_quality_and_module_coverage_thresholds() -> None:
@@ -84,10 +95,10 @@ def test_hil_contract_lists_all_fault_injections_and_is_fail_closed() -> None:
     assert len(contract["scenarios"]) == 16
     assert len({scenario["id"] for scenario in contract["scenarios"]}) == 16
     hil = yaml.safe_load(
-        (ROOT / "verification/reports/hil/v0.6.0-rc1.yaml").read_text(encoding="utf-8")
+        (ROOT / "verification/reports/hil/v0.6.0-rc2.yaml").read_text(encoding="utf-8")
     )
     vehicle = yaml.safe_load(
-        (ROOT / "verification/reports/vehicle/v0.6.0-rc1.yaml").read_text(encoding="utf-8")
+        (ROOT / "verification/reports/vehicle/v0.6.0-rc2.yaml").read_text(encoding="utf-8")
     )
     assert hil["result"] == vehicle["result"] == "NOT_RUN"
 
@@ -99,7 +110,7 @@ def test_bridge_executor_path_contains_no_blocking_sleep() -> None:
     assert "time.sleep(" not in bridge
 
 
-def test_v060_rc1_release_gate_is_machine_readable_and_fail_closed() -> None:
+def test_v060_rc2_release_gate_is_machine_readable_and_fail_closed() -> None:
     path = ROOT / "scripts/verify/verify_release.py"
     spec = importlib.util.spec_from_file_location("verify_release", path)
     module = importlib.util.module_from_spec(spec)
@@ -109,3 +120,29 @@ def test_v060_rc1_release_gate_is_machine_readable_and_fail_closed() -> None:
     assert any(
         "firmware compatibility is not release-compatible" in failure for failure in failures
     )
+
+
+def test_release_result_validation_rejects_boolean_identity_and_bad_artifact_hash() -> None:
+    path = ROOT / "scripts/verify/verify_release.py"
+    spec = importlib.util.spec_from_file_location("verify_release_validation", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    report = {
+        "schema_version": 1,
+        "release": "v0.6.0-rc2",
+        "result": "PASS",
+        "upper_commit": "a" * 40,
+        "firmware_commit": "b" * 40,
+        "hardware_revision": True,
+        "config_sha256": "c" * 64,
+        "artifact_sha256": {"ros-params.yaml": "bad"},
+        "parameter_crc32": True,
+        "calibration_version": "v1",
+        "metrics": {"sample_count": 1},
+    }
+
+    failures = module._validate_result("audit", report, "v0.6.0-rc2")
+
+    assert any("positive hardware" in failure for failure in failures)
+    assert any("invalid artifact" in failure for failure in failures)
+    assert any("parameter CRC" in failure for failure in failures)

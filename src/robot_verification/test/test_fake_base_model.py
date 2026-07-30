@@ -1,6 +1,8 @@
 from robot_verification.fake_base_model import (
     FakeBaseModel,
     StatusSampleLatch,
+    VALID_SCENARIOS,
+    scenario_accepts_enable,
     signed_int32,
 )
 
@@ -42,3 +44,23 @@ def test_duplicate_status_reuses_sequence_and_complete_sample_snapshot():
     assert repeated == first
     assert next_sequence == first_sequence + 1
     assert next_sample == ("sample-c", 60)
+
+
+def test_fake_base_scenario_catalog_covers_observation_and_ack_faults():
+    assert {
+        "disconnect",
+        "disconnect_reconnect",
+        "status_freeze",
+        "duplicate_status",
+        "wheel_slip",
+        "encoder_fault",
+        "whole_side_failure",
+        "imu_drift",
+        "imu_loss",
+        "ack_received_not_applied",
+        "ack_rejected",
+        "clock_reset",
+    } <= VALID_SCENARIOS
+    assert scenario_accepts_enable("normal")
+    assert not scenario_accepts_enable("ack_received_not_applied")
+    assert not scenario_accepts_enable("ack_rejected")

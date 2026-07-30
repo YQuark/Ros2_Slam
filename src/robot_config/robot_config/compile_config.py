@@ -13,7 +13,9 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--robot-id", default="robot_001")
     parser.add_argument(
-        "--profile", choices=("mapping", "navigation", "diagnostics"), default="mapping"
+        "--profile",
+        choices=("fake", "mapping", "localization", "navigation", "hil", "diagnostics"),
+        default="mapping",
     )
     args = parser.parse_args()
     paths = compile_effective_config(

@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### v0.6.0-rc2 implementation
+
+- 固定 Platform API 5 与 Upper v3 下位机候选 `bc472cc` / `v1.0.0-rc1`，明确区分 candidate、tested 和 compatible。
+- 收口 Host 命令隔离、Bridge 会话决策、正式里程计、IMU/EKF、运动一致性风险和全系统配置编译。
+- 软件、PTY、Fake Base、HIL、Bag、SLAM 和 Nav2 验证按可追溯证据编排；真实 UART HIL、标定和实车报告仍为发布阻塞。
+- 文档按当前代码重新对齐正式 odom/TF 所有者、Draft 7 配置契约、双层 rearm、
+  QoS/时序、Fake/Real 拓扑和 `NOT_RUN` 证据语义。
+
 ### v0.6.0-rc1 implementation
 
 - ROS Platform API 升级为 v5，冻结 Host 候选、Bridge 协议适配、固件整车仲裁、安全许可和电机输出的职权边界；Upper v3 字节协议不变。

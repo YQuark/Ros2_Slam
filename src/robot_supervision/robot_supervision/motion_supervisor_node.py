@@ -2,6 +2,7 @@
 """ROS adapter for motion supervision decisions."""
 
 import time
+from typing import Any, Optional
 
 import rclpy
 from rclpy.clock import Clock, ClockType
@@ -42,14 +43,14 @@ class MotionSupervisorNode(Node):
         self.imu_timeout = float(self.get_parameter("imu_timeout_sec").value)
         self.command_timeout = float(self.get_parameter("command_timeout_sec").value)
         self.config_sha256 = str(self.get_parameter("config_sha256").value)
-        self.last_command = None
-        self.last_command_at = None
-        self.last_command_identity = None
-        self.last_gyro_z = None
-        self.last_imu_at = None
-        self.last_observation_at = None
-        self.last_observation = None
-        self.last_sample_identity = None
+        self.last_command: Optional[Any] = None
+        self.last_command_at: Optional[float] = None
+        self.last_command_identity: Optional[tuple[int, int]] = None
+        self.last_gyro_z: Optional[float] = None
+        self.last_imu_at: Optional[float] = None
+        self.last_observation_at: Optional[float] = None
+        self.last_observation: Optional[Any] = None
+        self.last_sample_identity: Optional[tuple[int, int]] = None
         self.publisher = self.create_publisher(
             MotionSupervisionState,
             str(self.get_parameter("motion_supervision_topic").value),
@@ -118,9 +119,13 @@ class MotionSupervisorNode(Node):
             return
         speeds = tuple(float(value) for value in msg.wheel_speed_mps)
         targets = tuple(float(value) for value in msg.wheel_target_mps)
+        if len(speeds) != 4 or len(targets) != 4:
+            return
+        wheel_speeds = (speeds[0], speeds[1], speeds[2], speeds[3])
+        wheel_targets = (targets[0], targets[1], targets[2], targets[3])
         layout = WheelLayout(msg.motor_enabled_mask, msg.speed_valid_mask, msg.encoder_anomaly_mask)
         try:
-            left, right = layout.aggregate(speeds)
+            left, right = layout.aggregate(wheel_speeds)
         except WheelLayoutError:
             self._publish(
                 SupervisorLevel.CRITICAL,
@@ -132,26 +137,27 @@ class MotionSupervisorNode(Node):
             return
         command_vx = 0.0
         command_wz = 0.0
-        if self.last_command is not None and self.last_command.enable:
-            command_vx = float(self.last_command.twist.linear.x)
-            command_wz = float(self.last_command.twist.angular.z)
-        gyro = (
-            self.last_gyro_z
-            if self.last_imu_at is not None and now - self.last_imu_at <= self.imu_timeout
-            else None
+        command_fresh = self.last_command is not None and self._fresh(
+            self.last_command_at, self.command_timeout, now
         )
+        command = self.last_command
+        if command_fresh and command is not None and command.enable:
+            command_vx = float(command.twist.linear.x)
+            command_wz = float(command.twist.angular.z)
+        gyro = self.last_gyro_z if self._fresh(self.last_imu_at, self.imu_timeout, now) else None
         result = self.supervisor.update(
             now_sec=now,
             command_vx=command_vx,
             command_wz=command_wz,
-            wheel_speeds=speeds,
-            wheel_targets=targets,
+            wheel_speeds=wheel_speeds,
+            wheel_targets=wheel_targets,
             enabled_mask=msg.motor_enabled_mask,
             speed_valid_mask=msg.speed_valid_mask,
             anomaly_mask=msg.encoder_anomaly_mask,
             feedback_vx=0.5 * (left + right),
             wheel_wz=(right - left) / self.track_width,
             gyro_z=gyro,
+            command_valid=command_fresh,
         )
         reason_map = {
             "wheel_pair": MotionSupervisionState.REASON_WHEEL_PAIR,
@@ -170,6 +176,7 @@ class MotionSupervisorNode(Node):
             result.command_scale,
             result.release_host_candidate,
             reason_flags,
+            components=dict(result.components),
         )
 
     def _health_tick(self) -> None:
@@ -199,7 +206,7 @@ class MotionSupervisorNode(Node):
                 MotionSupervisionState.REASON_COMMAND_STALE,
             )
 
-    def _publish(self, level, score, scale, release, reason_flags) -> None:
+    def _publish(self, level, score, scale, release, reason_flags, components=None) -> None:
         msg = MotionSupervisionState()
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.level = int(level) + 1
@@ -207,6 +214,11 @@ class MotionSupervisorNode(Node):
         msg.score = float(score)
         msg.command_scale = float(scale)
         msg.release_host_candidate = bool(release)
+        components = components or {}
+        msg.wheel_pair_risk = float(components.get("wheel_pair", 0.0))
+        msg.tracking_risk = float(components.get("tracking", 0.0))
+        msg.yaw_consistency_risk = float(components.get("yaw", 0.0))
+        msg.unexpected_motion_risk = float(components.get("unexpected_motion", 0.0))
         if self.last_command is not None:
             msg.command_epoch = self.last_command.command_epoch
             msg.command_sequence = self.last_command.sequence
@@ -220,13 +232,26 @@ class MotionSupervisorNode(Node):
             )
             msg.left_valid_wheel_count = len(layout.left_indices)
             msg.right_valid_wheel_count = len(layout.right_indices)
-        msg.observation_age_ms = (
-            0xFFFFFFFF
-            if self.last_observation_at is None
-            else min(int(max(time.monotonic() - self.last_observation_at, 0.0) * 1000), 0xFFFFFFFF)
-        )
+            msg.wheel_valid_mask = layout.eligible_mask
+            msg.motor_enabled_mask = self.last_observation.motor_enabled_mask
+        msg.observation_age_ms = self._age_ms(self.last_observation_at)
+        msg.gyro_age_ms = self._age_ms(self.last_imu_at)
+        msg.command_age_ms = self._age_ms(self.last_command_at)
+        now = time.monotonic()
+        msg.gyro_valid = self._fresh(self.last_imu_at, self.imu_timeout, now)
+        msg.command_valid = self._fresh(self.last_command_at, self.command_timeout, now)
         msg.config_sha256 = self.config_sha256
         self.publisher.publish(msg)
+
+    @staticmethod
+    def _age_ms(timestamp: Optional[float]) -> int:
+        if timestamp is None:
+            return 0xFFFFFFFF
+        return min(int(max(time.monotonic() - timestamp, 0.0) * 1000), 0xFFFFFFFF)
+
+    @staticmethod
+    def _fresh(timestamp: Optional[float], timeout: float, now: float) -> bool:
+        return timestamp is not None and 0.0 <= now - timestamp <= timeout
 
 
 def main(args=None) -> None:

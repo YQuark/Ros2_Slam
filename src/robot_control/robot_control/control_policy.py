@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from enum import Enum, auto
 import math
 from typing import Dict, Iterable, Mapping, Optional, Tuple
 
@@ -12,6 +13,13 @@ DEFAULT_PRIORITIES: Mapping[str, int] = {
 
 class InvalidCommandError(ValueError):
     pass
+
+
+class SourceUpdateDisposition(Enum):
+    ACCEPTED = auto()
+    REJECTED_NON_ACTIVE = auto()
+    REJECTED_ACTIVE_WITH_FALLBACK = auto()
+    REJECTED_ACTIVE_RELEASE = auto()
 
 
 def require_finite(value: float, name: str) -> float:
@@ -35,6 +43,13 @@ class SelectedCommand:
     source: str
     command: Command
     active: bool
+
+
+@dataclass(frozen=True)
+class SourceUpdateDecision:
+    disposition: SourceUpdateDisposition
+    selected: SelectedCommand
+    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -89,13 +104,18 @@ class CommandMux:
         self._commands: Dict[str, tuple[Command, float]] = {}
         self.reject_count = 0
 
-    def update(self, source: str, command: Command, now_sec: float) -> bool:
+    def update(self, source: str, command: Command, now_sec: float) -> SourceUpdateDecision:
         if source not in self._priorities:
-            return False
+            return SourceUpdateDecision(
+                SourceUpdateDisposition.REJECTED_NON_ACTIVE,
+                self.select(now_sec),
+                f"unknown source: {source}",
+            )
+        stamp = require_finite(now_sec, "command timestamp")
+        selected_before = self.select(stamp)
         try:
             linear_x = require_finite(command.linear_x, "linear_x")
             angular_z = require_finite(command.angular_z, "angular_z")
-            stamp = require_finite(now_sec, "command timestamp")
             if abs(linear_x) > self._input_linear_abs_max:
                 raise InvalidCommandError(
                     f"linear_x exceeds absolute input limit {self._input_linear_abs_max}"
@@ -104,9 +124,16 @@ class CommandMux:
                 raise InvalidCommandError(
                     f"angular_z exceeds absolute input limit {self._input_angular_abs_max}"
                 )
-        except InvalidCommandError:
+        except InvalidCommandError as exc:
             self.reject(source)
-            raise
+            selected_after = self.select(stamp)
+            if selected_before.source != source:
+                disposition = SourceUpdateDisposition.REJECTED_NON_ACTIVE
+            elif selected_after.active:
+                disposition = SourceUpdateDisposition.REJECTED_ACTIVE_WITH_FALLBACK
+            else:
+                disposition = SourceUpdateDisposition.REJECTED_ACTIVE_RELEASE
+            return SourceUpdateDecision(disposition, selected_after, str(exc))
 
         self._commands[source] = (
             Command(
@@ -115,7 +142,7 @@ class CommandMux:
             ),
             stamp,
         )
-        return True
+        return SourceUpdateDecision(SourceUpdateDisposition.ACCEPTED, self.select(stamp))
 
     def reject(self, source: str) -> None:
         self._commands.pop(source, None)

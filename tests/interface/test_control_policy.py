@@ -10,9 +10,9 @@ sys.path.insert(0, str(ROOT / "src" / "robot_control"))
 from robot_control.control_policy import (
     Command,
     CommandMux,
-    InvalidCommandError,
     MotionLimiter,
     SourceConfig,
+    SourceUpdateDisposition,
 )
 
 
@@ -81,8 +81,11 @@ def test_mux_rejects_non_finite_and_clears_only_that_source() -> None:
         Command(float("inf"), 0.0),
         Command(0.0, float("-inf")),
     ):
-        with pytest.raises(InvalidCommandError):
-            mux.update("teleop", command, now_sec=1.1)
+        decision = mux.update("teleop", command, now_sec=1.1)
+        assert decision.disposition in (
+            SourceUpdateDisposition.REJECTED_NON_ACTIVE,
+            SourceUpdateDisposition.REJECTED_ACTIVE_WITH_FALLBACK,
+        )
 
     selected = mux.select(now_sec=1.1)
     assert selected.source == "nav"
@@ -100,10 +103,14 @@ def test_mux_rejects_implausible_absolute_input_before_soft_clamp() -> None:
         input_angular_abs_max=20.0,
     )
 
-    with pytest.raises(InvalidCommandError):
-        mux.update("teleop", Command(5.1, 0.0), now_sec=1.0)
-    with pytest.raises(InvalidCommandError):
-        mux.update("teleop", Command(0.0, 20.1), now_sec=1.0)
+    assert (
+        mux.update("teleop", Command(5.1, 0.0), now_sec=1.0).disposition
+        is SourceUpdateDisposition.REJECTED_NON_ACTIVE
+    )
+    assert (
+        mux.update("teleop", Command(0.0, 20.1), now_sec=1.0).disposition
+        is SourceUpdateDisposition.REJECTED_NON_ACTIVE
+    )
 
     assert mux.select(1.0).active is False
 

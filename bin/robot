@@ -11,35 +11,20 @@ esac
 RUN_ID="$(date -u +%Y%m%dT%H%M%SZ)-${PROFILE}-$$"
 RUN_DIR="${ROBOT_DATA_ROOT:-/home/robot/robot_data}/runs/${RUN_ID}"
 mkdir -p "$RUN_DIR"
+CONFIG_DIR="${RUN_DIR}/config"
 
 export PYTHONPATH="${ROOT}/src/robot_config:${PYTHONPATH:-}"
 python3 -m robot_config.compile_config \
   --config-root "${ROOT}/src/robot_config/config" \
-  --output-dir "$RUN_DIR" \
+  --output-dir "$CONFIG_DIR" \
   --profile "$PROFILE" >/dev/null
-export ROBOT_EFFECTIVE_PARAMS="${RUN_DIR}/ros-params.yaml"
-export ROBOT_EFFECTIVE_CONFIG="${RUN_DIR}/effective-config.yaml"
-export PYTHONPATH="${ROOT}/tools/experiments:${PYTHONPATH}"
-python3 "${ROOT}/verification/runners/experiments/generate_profile.py" \
-  --base "${ROOT}/src/robot_bringup/config/slam_toolbox_mapping.yaml" \
-  --profile "${ROOT}/src/robot_bringup/config/slam_profiles/quality.yaml" \
-  --output "${RUN_DIR}/slam-quality.yaml" >/dev/null
-python3 "${ROOT}/verification/runners/experiments/generate_profile.py" \
-  --base "${ROOT}/src/robot_bringup/config/slam_toolbox_mapping.yaml" \
-  --profile "${ROOT}/src/robot_bringup/config/slam_profiles/high_resolution_experimental.yaml" \
-  --output "${RUN_DIR}/slam-high-resolution-experimental.yaml" >/dev/null
-python3 "${ROOT}/verification/runners/experiments/generate_profile.py" \
-  --base "${ROOT}/src/robot_bringup/config/slam_toolbox_mapping.yaml" \
-  --profile "${ROOT}/src/robot_bringup/config/slam_profiles/legacy_fast_experimental.yaml" \
-  --output "${RUN_DIR}/slam-legacy-fast-experimental.yaml" >/dev/null
-export ROBOT_SLAM_PARAMS_QUALITY="${RUN_DIR}/slam-quality.yaml"
-export ROBOT_SLAM_PARAMS_PRECISION="${RUN_DIR}/slam-high-resolution-experimental.yaml"
-export ROBOT_SLAM_PARAMS_FAST="${RUN_DIR}/slam-legacy-fast-experimental.yaml"
-python3 "${ROOT}/verification/runners/experiments/generate_profile.py" \
-  --base "${ROOT}/src/robot_bringup/config/nav2_params_robot.yaml" \
-  --profile "${ROOT}/src/robot_bringup/config/nav2_profiles/navigation.yaml" \
-  --output "${RUN_DIR}/nav2-navigation.yaml" >/dev/null
-export ROBOT_NAV2_PARAMS="${RUN_DIR}/nav2-navigation.yaml"
+export ROBOT_EFFECTIVE_PARAMS="${CONFIG_DIR}/ros-params.yaml"
+export ROBOT_EFFECTIVE_CONFIG="${CONFIG_DIR}/effective-config.yaml"
+export ROBOT_SLAM_PARAMS_QUALITY="${CONFIG_DIR}/slam-params.yaml"
+export ROBOT_SLAM_PARAMS_PRECISION="${CONFIG_DIR}/slam-precision-params.yaml"
+export ROBOT_SLAM_PARAMS_FAST="${CONFIG_DIR}/slam-fast-params.yaml"
+export ROBOT_NAV2_PARAMS="${CONFIG_DIR}/nav2-params.yaml"
+export ROBOT_LIDAR_PARAMS="${CONFIG_DIR}/lidar-params.yaml"
 echo "effective config: ${ROBOT_EFFECTIVE_CONFIG}"
 echo "ROS params:       ${ROBOT_EFFECTIVE_PARAMS}"
-exec "${ROOT}/launch_scripts/robot.sh" "$@"
+exec bash "${ROOT}/launch_scripts/robot.sh" "$@"
